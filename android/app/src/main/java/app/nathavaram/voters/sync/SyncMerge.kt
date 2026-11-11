@@ -1,7 +1,7 @@
 package app.nathavaram.voters.sync
 
-import app.nathavaram.voters.data.ConflictEntity
-import app.nathavaram.voters.data.VoterEntity
+import app.nathavaram.voters.store.ConflictEntity
+import app.nathavaram.voters.store.VoterEntity
 import app.nathavaram.voters.domain.Timestamps
 
 enum class PushKind { APPLIED, CONFLICT, VOTER_ID_CONFLICT, VALIDATION_ERROR, UNKNOWN }

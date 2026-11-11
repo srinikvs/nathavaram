@@ -16,7 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import app.nathavaram.voters.data.ConflictEntity
+import app.nathavaram.voters.store.ConflictEntity
 import app.nathavaram.voters.sync.ConflictDiff
 import app.nathavaram.voters.sync.ResultStatus
 

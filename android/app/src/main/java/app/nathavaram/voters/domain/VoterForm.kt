@@ -1,6 +1,6 @@
 package app.nathavaram.voters.domain
 
-import app.nathavaram.voters.data.VoterEntity
+import app.nathavaram.voters.store.VoterEntity
 
 /** Snake_case keys used for form fields and validation errors. */
 object FieldKey {

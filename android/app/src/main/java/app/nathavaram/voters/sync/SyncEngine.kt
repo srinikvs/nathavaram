@@ -1,8 +1,8 @@
 package app.nathavaram.voters.sync
 
 import androidx.room.withTransaction
-import app.nathavaram.voters.data.AppDatabase
-import app.nathavaram.voters.data.SyncStateEntity
+import app.nathavaram.voters.store.AppDatabase
+import app.nathavaram.voters.store.SyncStateEntity
 import app.nathavaram.voters.domain.ClockSkew
 import app.nathavaram.voters.domain.Timestamps
 import java.time.Instant

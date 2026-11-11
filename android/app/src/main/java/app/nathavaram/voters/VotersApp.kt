@@ -2,12 +2,12 @@ package app.nathavaram.voters
 
 import android.app.Application
 import androidx.room.Room
-import app.nathavaram.voters.data.AppDatabase
-import app.nathavaram.voters.data.SettingsStore
-import app.nathavaram.voters.data.VoterRepository
 import app.nathavaram.voters.net.HttpApi
 import app.nathavaram.voters.security.EncryptedTokenStore
 import app.nathavaram.voters.security.TokenStore
+import app.nathavaram.voters.store.AppDatabase
+import app.nathavaram.voters.store.SettingsStore
+import app.nathavaram.voters.store.VoterRepository
 import app.nathavaram.voters.sync.SyncEngine
 import app.nathavaram.voters.sync.SyncScheduler
 import okhttp3.OkHttpClient

@@ -9,9 +9,9 @@ import app.nathavaram.voters.Fixtures.ID_3
 import app.nathavaram.voters.Fixtures.T1
 import app.nathavaram.voters.Fixtures.T2
 import app.nathavaram.voters.Fixtures.T3
-import app.nathavaram.voters.data.AppDatabase
-import app.nathavaram.voters.data.ConflictEntity
-import app.nathavaram.voters.data.SyncStateEntity
+import app.nathavaram.voters.store.AppDatabase
+import app.nathavaram.voters.store.ConflictEntity
+import app.nathavaram.voters.store.SyncStateEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After

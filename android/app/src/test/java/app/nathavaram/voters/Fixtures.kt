@@ -1,6 +1,6 @@
 package app.nathavaram.voters
 
-import app.nathavaram.voters.data.VoterEntity
+import app.nathavaram.voters.store.VoterEntity
 import app.nathavaram.voters.sync.VoterDto
 
 /** Synthetic test data only: fake names, mobiles 90000000xx, voter ids ZZZ00000xx. */

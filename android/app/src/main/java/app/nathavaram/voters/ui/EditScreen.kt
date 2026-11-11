@@ -28,7 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import app.nathavaram.voters.data.SaveResult
+import app.nathavaram.voters.store.SaveResult
 import app.nathavaram.voters.domain.FieldKey
 import app.nathavaram.voters.domain.VoterForm
 import app.nathavaram.voters.domain.Vocab

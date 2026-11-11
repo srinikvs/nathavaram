@@ -5,9 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.nathavaram.voters.BuildConfig
 import app.nathavaram.voters.VotersApp
-import app.nathavaram.voters.data.ConflictEntity
-import app.nathavaram.voters.data.SaveResult
-import app.nathavaram.voters.data.VoterEntity
+import app.nathavaram.voters.store.ConflictEntity
+import app.nathavaram.voters.store.SaveResult
+import app.nathavaram.voters.store.VoterEntity
 import app.nathavaram.voters.domain.BaseUrl
 import app.nathavaram.voters.domain.VoterForm
 import app.nathavaram.voters.net.ApiException
