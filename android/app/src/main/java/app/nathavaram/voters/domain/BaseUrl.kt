@@ -1,0 +1,25 @@
+package app.nathavaram.voters.domain
+
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
+/** Validates the operator-entered server address. There is no built-in default. */
+object BaseUrl {
+    sealed interface Result {
+        data class Ok(val url: String) : Result
+        data class Invalid(val reason: String) : Result
+    }
+
+    fun normalize(input: String, allowCleartext: Boolean): Result {
+        val trimmed = input.trim().trimEnd('/')
+        if (trimmed.isEmpty()) return Result.Invalid("Enter the server address")
+        val url = trimmed.toHttpUrlOrNull()
+            ?: return Result.Invalid("Enter a full address such as https://host")
+        if (url.query != null || url.fragment != null) {
+            return Result.Invalid("The address must not contain a query or fragment")
+        }
+        if (!url.isHttps && !allowCleartext) {
+            return Result.Invalid("HTTPS is required")
+        }
+        return Result.Ok(trimmed)
+    }
+}
