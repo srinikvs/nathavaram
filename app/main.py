@@ -16,6 +16,7 @@ from app import __version__
 from app.config import ROOT, load_settings
 from app import database
 from app.database import dispose_db, get_db, init_db
+from app.deps import csrf_guard
 from app.migrate import run_migrations
 from app.routers import auth, reports, sync, users, voters
 from app.services.bootstrap import seed_admin
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        dependencies=[Depends(csrf_guard)],
     )
     app.state.settings = settings
 

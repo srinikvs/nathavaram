@@ -2,24 +2,29 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlencode
-
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.config import ROOT
-from app.constants import DATA_FIELDS, GENDERS, LABEL_BY_FIELD, PARTIES
+from app.constants import DATA_FIELDS, GENDERS, LABEL_BY_FIELD, PARTIES, SEARCH_FILTER_FIELDS
 from app.database import get_db
 from app.deps import resolve_user, source_for
 from app.errors import ServiceError
 from app.schemas import UserCreate, VoterSearch, VoterWrite
 from app.security import create_access_token
-from app.services.impex import ImportRejected, import_csv
+from app.services.impex import ImportRejected, import_csv, voters_to_csv, voters_to_xlsx
 from app.services.reports import build_report
 from app.services.users import authenticate, create_user, list_users
-from app.services.voters import create_voter, get_active, replace_voter, search_voters, soft_delete
+from app.services.voters import (
+    create_voter,
+    export_voters,
+    get_active,
+    replace_voter,
+    search_voters,
+    soft_delete,
+)
 from app.web.templates import render
 
 router = APIRouter()
@@ -118,26 +123,28 @@ def logout(request: Request):
     return response
 
 
-@router.get("/voters")
-def voter_list(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    try:
-        query = VoterSearch.model_validate(dict(request.query_params))
-    except ValidationError as exc:
-        return render(
-            request,
-            "voters/list.html",
-            {
-                "user": user,
-                "voters": [],
-                "total": 0,
-                "query": VoterSearch(),
-                "error": _form_errors(exc)[0],
-                "export_query": "",
-            },
-            status_code=422,
-        )
+def _forbidden(request: Request, user):
+    return render(request, "403.html", {"user": user}, status_code=403)
+
+
+def _search_from_form(form) -> VoterSearch:
+    """Read filters from a posted form. Blank fields are dropped."""
+    keys = (*SEARCH_FILTER_FIELDS, "page", "page_size")
+    values = {key: str(form.get(key)) for key in keys if form.get(key) not in (None, "")}
+    return VoterSearch.model_validate(values)
+
+
+def _filter_values(query: VoterSearch) -> dict[str, str]:
+    """Active filters, for hidden inputs on the pager and export forms."""
+    return {
+        key: str(getattr(query, key))
+        for key in SEARCH_FILTER_FIELDS
+        if getattr(query, key) not in (None, "")
+    }
+
+
+def _render_list(request: Request, db: Session, user, query: VoterSearch):
     rows, total = search_voters(db, query)
-    params = {key: value for key, value in request.query_params.items() if key not in {"page", "page_size"}}
     return render(
         request,
         "voters/list.html",
@@ -147,10 +154,82 @@ def voter_list(request: Request, db: Session = Depends(get_db), user=Depends(web
             "total": total,
             "query": query,
             "error": None,
-            "export_query": urlencode(params),
+            "filter_values": _filter_values(query),
             "genders": GENDERS,
             "parties": PARTIES,
         },
+    )
+
+
+def _list_error(request: Request, user, exc: ValidationError):
+    return render(
+        request,
+        "voters/list.html",
+        {
+            "user": user,
+            "voters": [],
+            "total": 0,
+            "query": VoterSearch(),
+            "error": _form_errors(exc)[0],
+            "filter_values": {},
+            "genders": GENDERS,
+            "parties": PARTIES,
+        },
+        status_code=422,
+    )
+
+
+@router.get("/voters")
+def voter_list(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
+    # Filters are never read from the URL; only pagination is.
+    paging = {key: value for key, value in request.query_params.items() if key in {"page", "page_size"}}
+    try:
+        query = VoterSearch.model_validate(paging)
+    except ValidationError as exc:
+        return _list_error(request, user, exc)
+    return _render_list(request, db, user, query)
+
+
+@router.post("/voters/search")
+async def voter_search(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
+    form = await request.form()
+    try:
+        query = _search_from_form(form)
+    except ValidationError as exc:
+        return _list_error(request, user, exc)
+    return _render_list(request, db, user, query)
+
+
+@router.post("/voters/export.csv")
+async def export_csv_form(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
+    if user.role != "admin":
+        return _forbidden(request, user)
+    form = await request.form()
+    try:
+        query = _search_from_form(form)
+    except ValidationError as exc:
+        return _list_error(request, user, exc)
+    payload = voters_to_csv(export_voters(db, query)).encode("utf-8-sig")
+    return Response(
+        content=payload,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="nathavaram-voters.csv"'},
+    )
+
+
+@router.post("/voters/export.xlsx")
+async def export_xlsx_form(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
+    if user.role != "admin":
+        return _forbidden(request, user)
+    form = await request.form()
+    try:
+        query = _search_from_form(form)
+    except ValidationError as exc:
+        return _list_error(request, user, exc)
+    return Response(
+        content=voters_to_xlsx(export_voters(db, query)),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="nathavaram-voters.xlsx"'},
     )
 
 
@@ -264,6 +343,8 @@ def delete_confirm(
     db: Session = Depends(get_db),
     user=Depends(web_user),
 ):
+    if user.role != "admin":
+        return _forbidden(request, user)
     try:
         voter = get_active(db, voter_id)
     except ServiceError:
@@ -274,9 +355,12 @@ def delete_confirm(
 @router.post("/voters/{voter_id}/delete")
 def delete_submit(
     voter_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     user=Depends(web_user),
 ):
+    if user.role != "admin":
+        return _forbidden(request, user)
     try:
         soft_delete(db, voter_id, source_for(user))
     except ServiceError:
@@ -291,11 +375,15 @@ def reports(request: Request, db: Session = Depends(get_db), user=Depends(web_us
 
 @router.get("/import")
 def import_form(request: Request, user=Depends(web_user)):
+    if user.role != "admin":
+        return _forbidden(request, user)
     return render(request, "import.html", {"user": user, "report": None, "error": None})
 
 
 @router.post("/import")
 async def import_submit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
+    if user.role != "admin":
+        return _forbidden(request, user)
     form = await request.form()
     upload = form.get("file")
     if upload is None or not hasattr(upload, "read"):
@@ -326,8 +414,9 @@ async def import_submit(request: Request, db: Session = Depends(get_db), user=De
 
 
 @router.get("/sample.csv")
-def sample_csv(user=Depends(web_user)):
-    _ = user
+def sample_csv(request: Request, user=Depends(web_user)):
+    if user.role != "admin":
+        return _forbidden(request, user)
     path = ROOT / "sample" / "voters_sample.csv"
     return FileResponse(path, media_type="text/csv; charset=utf-8", filename="voters_sample.csv")
 

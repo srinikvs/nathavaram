@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import User
-from app.security import InvalidTokenError, decode_access_token
+from app.security import InvalidTokenError, csrf_matches, decode_access_token
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -33,6 +33,43 @@ def resolve_user(
     if user is None or not user.is_active:
         return None
     return user
+
+
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+CSRF_EXEMPT_PATHS = {"/login", "/api/auth/login"}
+CSRF_HEADER = "x-csrf-token"
+CSRF_FORM_FIELD = "csrf_token"
+
+
+def _uses_bearer(request: Request) -> bool:
+    header = request.headers.get("authorization", "")
+    scheme, _, value = header.partition(" ")
+    return scheme.lower() == "bearer" and bool(value.strip())
+
+
+async def csrf_guard(request: Request) -> None:
+    """Reject cookie-authenticated unsafe requests that lack the session's CSRF token.
+
+    Bearer-token requests are exempt: a browser never attaches that header on its own.
+    The token is read from the X-CSRF-Token header or the csrf_token form field.
+    """
+    if request.method in SAFE_METHODS or request.url.path in CSRF_EXEMPT_PATHS:
+        return
+    if _uses_bearer(request):
+        return
+    settings = request.app.state.settings
+    session_token = request.cookies.get(settings.cookie_name)
+    if not session_token:
+        return
+    supplied = request.headers.get(CSRF_HEADER)
+    if not supplied:
+        content_type = request.headers.get("content-type", "").lower()
+        if content_type.startswith(("application/x-www-form-urlencoded", "multipart/form-data")):
+            form = await request.form()
+            value = form.get(CSRF_FORM_FIELD)
+            supplied = value if isinstance(value, str) else None
+    if not csrf_matches(session_token, supplied, settings):
+        raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
 
 
 def require_user(

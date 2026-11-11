@@ -37,7 +37,15 @@ These columns are not part of the paper list. They exist so an offline Android c
 | `created_at` | text | UTC timestamp `YYYY-MM-DDTHH:MM:SS.ffffffZ`. Text, not a database datetime, so SQLite and PostgreSQL keep the same precision |
 | `updated_at` | text | Same format. Last-write-wins compares this value. API and web edits stamp the server clock. A winning sync push keeps the device timestamp |
 | `revision` | integer, indexed | Server revision copied from `sync_state` when this row last changed. Pull asks for `revision > since` |
-| `deleted_at` | text, null | Soft delete. Null means the voter is active. Reports, search, and export skip rows where this is set. Sync pull includes them |
+| `deleted_at` | text, null | Soft delete. Null means the voter is active. Reports, search, and export skip rows where this is set. Sync pull includes them as stripped tombstones |
+
+### Tombstones
+
+Deleting a voter (web, REST `DELETE`, or a sync delete) erases the personal data in the same transaction. The row keeps only `id`, `created_at`, `updated_at`, `revision`, `deleted_at`, and `source_id`. All nullable voter columns become null. Three columns are `NOT NULL`, so they hold inert values instead of the original data: `first_name` is `""`, `gender` is `Unknown`, and `voter_id` is the row id without dashes. No schema change or migration is needed. Because the unique index only covers active rows, the original VoterId is free to be used again. Only an admin can delete through the web or REST API.
+
+### Search
+
+Search filters (`q`, `voter_id`, `caste`, `mobile`, and the other filters) are sent in a POST body (`POST /api/voters/search`, or the web search form). They are not accepted in a GET query string, so they do not appear in URLs or access logs. `GET /api/voters` takes only `page` and `page_size`.
 | `source_id` | text, null | Who wrote the row last. Web saves use `web:<username>`. Sync push stores the device id |
 
 `sync_state` is a single row (`id = 1`) holding `current_revision`. Every insert, update, import row, and applied sync change increments it by one and stores that value on the voter. The counter starts at 0.

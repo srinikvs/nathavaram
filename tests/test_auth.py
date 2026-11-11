@@ -55,7 +55,9 @@ def test_user_role_cannot_manage_users_but_can_add_voters(ctx):
     assert login.status_code == 200
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     assert ctx.client.get("/api/users", headers=headers).status_code == 403
-    added = ctx.client.post("/api/voters", headers=headers, json=voter_payload())
+    admin_id = ctx.client.get("/api/auth/me", headers=ctx.auth).json()["id"]
+    assert ctx.client.patch(f"/api/users/{admin_id}", headers=headers, json={"role": "user"}).status_code == 403
+    added =ctx.client.post("/api/voters", headers=headers, json=voter_payload())
     assert added.status_code == 201, added.text
 
 
@@ -71,6 +73,73 @@ def test_placeholder_secret_is_rejected(monkeypatch):
     monkeypatch.setenv("ADMIN_PASSWORD", "")
     with pytest.raises(RuntimeError):
         load_settings()
+
+
+def _env(monkeypatch, **values: str) -> None:
+    base = {
+        "SECRET_KEY": "test-secret-key-0123456789",
+        "ADMIN_USERNAME": "",
+        "ADMIN_PASSWORD": "",
+        "APP_ENV": "test",
+        "COOKIE_SECURE": "false",
+    }
+    base.update(values)
+    for key, value in base.items():
+        monkeypatch.setenv(key, value)
+
+
+@pytest.mark.parametrize("env_name", ["production", "PRODUCTION", " prod "])
+def test_production_rejects_insecure_cookies(monkeypatch, env_name):
+    _env(monkeypatch, APP_ENV=env_name, COOKIE_SECURE="false")
+    with pytest.raises(RuntimeError, match="COOKIE_SECURE"):
+        load_settings()
+
+
+def test_production_accepts_secure_cookies(monkeypatch):
+    _env(monkeypatch, APP_ENV="production", COOKIE_SECURE="true")
+    settings = load_settings()
+    assert settings.cookie_secure is True
+
+
+def test_non_production_may_use_insecure_cookies(monkeypatch):
+    for env_name in ("development", "test"):
+        _env(monkeypatch, APP_ENV=env_name, COOKIE_SECURE="false")
+        assert load_settings().cookie_secure is False
+
+
+def test_create_app_refuses_to_start_in_production_without_secure_cookies(monkeypatch, tmp_path):
+    _env(
+        monkeypatch,
+        APP_ENV="production",
+        COOKIE_SECURE="false",
+        DATABASE_URL="sqlite:///" + (tmp_path / "prod.db").as_posix(),
+    )
+    from app.main import create_app
+
+    with pytest.raises(RuntimeError, match="COOKIE_SECURE"):
+        create_app()
+
+
+def test_session_cookie_is_secure_when_configured(monkeypatch, tmp_path):
+    _env(
+        monkeypatch,
+        APP_ENV="production",
+        COOKIE_SECURE="true",
+        DATABASE_URL="sqlite:///" + (tmp_path / "secure.db").as_posix(),
+        ADMIN_USERNAME="admin",
+        ADMIN_PASSWORD="admin-pass-123",
+        BCRYPT_ROUNDS="4",
+    )
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    with TestClient(create_app()) as client:
+        login = client.post("/api/auth/login", json={"username": "admin", "password": "admin-pass-123"})
+        assert login.status_code == 200, login.text
+        cookie = login.headers["set-cookie"].lower()
+        assert "secure" in cookie
+        assert "httponly" in cookie
 
 
 def test_gitignore_covers_secrets_and_databases():

@@ -1,7 +1,9 @@
 """Pull changes since a revision and push batched offline edits.
 
 Conflict policy (also documented in docs/SYNC.md):
-- Last-write-wins by updated_at.
+- A change that carries base_revision is a conflict when the server row has moved past it.
+- Without base_revision (or when it is current): last-write-wins by updated_at.
+- Every change runs in its own savepoint, so one rejected change never rolls back the batch.
 - The server assigns a new revision only when a change is stored.
 - Equal timestamps with the same content are an idempotent replay.
 - Equal timestamps with different content keep the server row.
@@ -14,14 +16,15 @@ from datetime import datetime, timezone
 
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.constants import DATA_FIELDS, SYNC_BATCH_LIMIT
 from app.models import Voter
 from app.schemas import SyncChange, SyncPullResponse, SyncPushRequest, SyncPushResponse, SyncResult, VoterPublic, VoterWrite
 from app.services.revision import allocate_revision, current_revision
-from app.services.voters import voter_to_public
-from app.validation import check_client_timestamp, dump_dt, parse_dt
+from app.services.voters import strip_to_tombstone, voter_to_public
+from app.validation import canonical_voter_id, check_client_timestamp, dump_dt, parse_dt
 
 
 def _server_time() -> str:
@@ -61,13 +64,45 @@ def push_changes(db: Session, body: SyncPushRequest) -> SyncPushResponse:
         raise ServiceError(f"A sync batch can contain at most {SYNC_BATCH_LIMIT} changes", 422)
     results: list[SyncResult] = []
     for change in body.changes:
-        results.append(_apply_one(db, change, body.device_id))
+        results.append(_apply_guarded(db, change, body.device_id))
     db.commit()
     return SyncPushResponse(
         server_time=_server_time(),
         server_revision=current_revision(db),
         results=results,
     )
+
+
+def _apply_guarded(db: Session, change: SyncChange, device_id: str) -> SyncResult:
+    """Apply one change inside a savepoint; a database clash rejects only this change."""
+    try:
+        with db.begin_nested():
+            return _apply_one(db, change, device_id)
+    except IntegrityError:
+        record_id = str(change.id)
+        owner = None
+        if change.voter_id:
+            try:
+                owner = _active_voter_id_owner(db, canonical_voter_id(change.voter_id), exclude_id=record_id)
+            except ValueError:
+                owner = None
+        if owner is None:
+            return SyncResult(
+                id=record_id,
+                status="voter_id_conflict",
+                message="VoterId belongs to another active record",
+            )
+        return SyncResult(
+            id=record_id,
+            status="voter_id_conflict",
+            message=f"VoterId {owner.voter_id} belongs to another active record",
+            server_revision=owner.revision,
+            server_record=voter_to_public(owner),
+        )
+
+
+def _stale_base(existing: Voter, base_revision: int | None) -> bool:
+    return base_revision is not None and existing.revision > base_revision
 
 
 def _apply_one(db: Session, change: SyncChange, device_id: str) -> SyncResult:
@@ -129,7 +164,7 @@ def _apply_one(db: Session, change: SyncChange, device_id: str) -> SyncResult:
             server_record=voter_to_public(voter),
         )
 
-    return _merge_existing(db, existing, snapshot, incoming, device_id, deleted=False)
+    return _merge_existing(db, existing, snapshot, incoming, device_id, change.base_revision)
 
 
 def _apply_delete(
@@ -161,7 +196,10 @@ def _apply_delete(
         )
     if incoming == stored and existing.deleted_at is None:
         return _conflict(existing, "Server record has the same updated_at and is still active")
+    if existing.deleted_at is None and _stale_base(existing, change.base_revision):
+        return _conflict(existing, "Server record changed after base_revision")
     stamp = dump_dt(incoming)
+    strip_to_tombstone(existing)
     existing.deleted_at = stamp
     existing.updated_at = stamp
     existing.source_id = device_id
@@ -181,13 +219,13 @@ def _merge_existing(
     snapshot: VoterWrite,
     incoming: datetime,
     device_id: str,
-    deleted: bool,
+    base_revision: int | None,
 ) -> SyncResult:
     stored = parse_dt(existing.updated_at)
     if incoming < stored:
         return _conflict(existing, "Server record is newer")
     if incoming == stored:
-        if _same_content(existing, snapshot, deleted=deleted):
+        if _same_content(existing, snapshot, deleted=False):
             return SyncResult(
                 id=existing.id,
                 status="applied",
@@ -196,6 +234,8 @@ def _merge_existing(
                 server_record=voter_to_public(existing),
             )
         return _conflict(existing, "Server record has the same updated_at and different content")
+    if _stale_base(existing, base_revision):
+        return _conflict(existing, "Server record changed after base_revision")
     _write_snapshot(existing, snapshot)
     existing.deleted_at = None
     existing.updated_at = dump_dt(incoming)

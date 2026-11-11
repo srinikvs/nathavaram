@@ -14,7 +14,9 @@ _USERNAME = re.compile(r"^[A-Za-z0-9._-]{3,32}$")
 _GENDER_LOOKUP = {value.casefold(): value for value in GENDERS}
 _PARTY_LOOKUP = {value.casefold(): value for value in PARTIES}
 
-MIN_TIMESTAMP = datetime(2000, 1, 1, tzinfo=timezone.utc)
+FORMULA_PREFIXES = frozenset({"=", "+", "-", "@", "\t", "\r"})
+
+MIN_TIMESTAMP =datetime(2000, 1, 1, tzinfo=timezone.utc)
 FUTURE_SKEW = timedelta(minutes=5)
 
 
@@ -194,6 +196,17 @@ def csv_safe(value: object) -> str:
     if value is None:
         return ""
     text = str(value)
-    if text[:1] in {"=", "+", "-", "@"}:
+    if text[:1] in FORMULA_PREFIXES:
         return "'" + text
     return text
+
+
+def csv_unsafe(value: str) -> str:
+    """Undo csv_safe on import: drop one leading quote the exporter added.
+
+    Only a quote directly in front of a formula character is removed, so a +91 mobile
+    round-trips and ordinary text that starts with a quote is left alone.
+    """
+    if len(value) > 1 and value[0] == "'" and value[1] in FORMULA_PREFIXES:
+        return value[1:]
+    return value

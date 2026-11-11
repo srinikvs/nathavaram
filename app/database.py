@@ -36,10 +36,16 @@ def init_db(url: str) -> sessionmaker[Session]:
 
         @event.listens_for(engine, "connect")
         def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:  # noqa: ANN001
+            # Let SQLAlchemy own BEGIN so SAVEPOINT (used per sync change) is reliable.
+            dbapi_connection.isolation_level = None
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.close()
+
+        @event.listens_for(engine, "begin")
+        def _sqlite_begin(connection) -> None:  # noqa: ANN001
+            connection.exec_driver_sql("BEGIN")
 
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
     return SessionLocal

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.conftest import csrf_from_page
+
 
 def _form(**overrides) -> dict:
     data = {
@@ -47,18 +49,20 @@ def test_pages_require_login_and_round_trip_a_voter(ctx):
     assert "VoterId" in listing.text
     assert "Add voter" in listing.text
 
-    invalid = ctx.client.post("/voters/new", data=_form(voter_id="", first_name=""))
+    token = csrf_from_page(listing.text)
+    invalid = ctx.client.post("/voters/new", data=_form(voter_id="", first_name="", csrf_token=token))
     assert invalid.status_code == 400
     assert "VoterId" in invalid.text
 
-    saved = ctx.client.post("/voters/new", data=_form(), follow_redirects=False)
+    saved = ctx.client.post("/voters/new", data=_form(csrf_token=token), follow_redirects=False)
     assert saved.status_code == 303
     edit = ctx.client.get(saved.headers["location"])
     assert edit.status_code == 200
     assert "Jana Sena" in edit.text
     assert "Prefer not to say" in edit.text
     assert "Webperson" in edit.text
-    assert ctx.client.get("/voters?q=webperson").text.count("Webperson") >= 1
+    found = ctx.client.post("/voters/search", data={"csrf_token": token, "q": "webperson"})
+    assert found.text.count("Webperson") >= 1
 
     reports = ctx.client.get("/reports")
     assert reports.status_code == 200
@@ -72,7 +76,7 @@ def test_pages_require_login_and_round_trip_a_voter(ctx):
         json={"username": "field.user", "password": "field-pass-123", "role": "user"},
     )
     assert created.status_code == 201
-    ctx.client.post("/logout", follow_redirects=False)
+    ctx.client.post("/logout", data={"csrf_token": token}, follow_redirects=False)
     ctx.client.post(
         "/login",
         data={"username": "field.user", "password": "field-pass-123"},

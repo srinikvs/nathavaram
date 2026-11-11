@@ -77,6 +77,19 @@ TEXT_LIMITS: dict[str, int] = {
     "gender": 16,
 }
 
+# Filters that can expose personal data. They travel in a POST body, never in a URL.
+SEARCH_FILTER_FIELDS: tuple[str, ...] = (
+    "q",
+    "voter_id",
+    "house_no",
+    "booth",
+    "ward",
+    "caste",
+    "party",
+    "mobile",
+    "gender",
+)
+
 SYNC_BATCH_LIMIT = 500
 IMPORT_ROW_LIMIT = 20_000
 IMPORT_BYTE_LIMIT = 5 * 1024 * 1024

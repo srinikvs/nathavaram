@@ -35,6 +35,33 @@ def ctx(tmp_path, monkeypatch):
         )
 
 
+def search(ctx, **filters):
+    """POST search with synthetic filters. Filters never go in the URL."""
+    return ctx.client.post("/api/voters/search", headers=ctx.auth, json=filters)
+
+
+def make_user(ctx, username: str = "field.user", password: str = "field-pass-123"):
+    """Create a regular user as admin and return Bearer headers for that user."""
+    created = ctx.client.post(
+        "/api/users",
+        headers=ctx.auth,
+        json={"username": username, "password": password, "role": "user"},
+    )
+    assert created.status_code == 201, created.text
+    login = ctx.client.post("/api/auth/login", json={"username": username, "password": password})
+    assert login.status_code == 200, login.text
+    ctx.client.cookies.clear()  # keep tests on Bearer auth; no stray session cookie
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+def csrf_from_page(html: str) -> str:
+    import re
+
+    match = re.search(r'name="csrf_token" value="([0-9a-f]+)"', html)
+    assert match, "page has no csrf_token field"
+    return match.group(1)
+
+
 def voter_payload(**overrides) -> dict:
     data = {
         "booth_2024": "12A",

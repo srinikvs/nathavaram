@@ -63,7 +63,19 @@ def load_settings() -> Settings:
     return settings
 
 
+PRODUCTION_ENVS = {"production", "prod"}
+
+
+def is_production(settings: Settings) -> bool:
+    return settings.app_env.strip().casefold() in PRODUCTION_ENVS
+
+
 def _validate(settings: Settings) -> None:
+    if is_production(settings) and not settings.cookie_secure:
+        raise RuntimeError(
+            "COOKIE_SECURE must be true when APP_ENV is production. "
+            "Serve the site over HTTPS and set COOKIE_SECURE=true."
+        )
     secret = settings.secret_key.strip()
     if len(secret) < 16 or secret.casefold() in _PLACEHOLDER_SECRETS:
         raise RuntimeError(

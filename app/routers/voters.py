@@ -1,4 +1,11 @@
-"""Voter CRUD, search, CSV import, and CSV/Excel export."""
+"""Voter CRUD, search, CSV import, and CSV/Excel export.
+
+Roles: any signed-in user may search, create, view, and edit single records.
+Bulk operations (export, import, delete) need an admin.
+
+Search filters can carry personal data (mobile, VoterId, caste, free text), so they are
+accepted only in a POST body. GET /api/voters takes pagination only.
+"""
 
 from __future__ import annotations
 
@@ -7,9 +14,9 @@ from fastapi.responses import Response
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.constants import IMPORT_BYTE_LIMIT
+from app.constants import IMPORT_BYTE_LIMIT, SEARCH_FILTER_FIELDS
 from app.database import get_db
-from app.deps import require_user, source_for
+from app.deps import require_admin, require_user, source_for
 from app.errors import ServiceError
 from app.models import User
 from app.schemas import VoterPage, VoterPatch, VoterPublic, VoterSearch, VoterWrite
@@ -27,12 +34,29 @@ from app.services.voters import (
 router = APIRouter(prefix="/api/voters", tags=["voters"])
 
 
-def _search(request: Request) -> VoterSearch:
+def _page_only(request: Request) -> VoterSearch:
+    """Build a query from the URL. Filters are refused so they never reach access logs."""
+    refused = sorted(set(request.query_params) & set(SEARCH_FILTER_FIELDS))
+    if refused:
+        raise HTTPException(
+            status_code=422,
+            detail="Search filters are not accepted in the URL. POST them to /api/voters/search.",
+        )
+    allowed = {key: value for key, value in request.query_params.items() if key in {"page", "page_size"}}
     try:
-        return VoterSearch.model_validate(dict(request.query_params))
+        return VoterSearch.model_validate(allowed)
     except ValidationError as exc:
-        first = exc.errors()[0]
-        raise HTTPException(status_code=422, detail=first["msg"]) from exc
+        raise HTTPException(status_code=422, detail=exc.errors()[0]["msg"]) from exc
+
+
+def _page(db: Session, query: VoterSearch) -> VoterPage:
+    rows, total = search_voters(db, query)
+    return VoterPage(
+        items=[voter_to_public(row) for row in rows],
+        total=total,
+        page=query.page,
+        page_size=query.page_size,
+    )
 
 
 @router.get("", response_model=VoterPage)
@@ -41,14 +65,16 @@ def list_voters(
     db: Session = Depends(get_db),
     _: User = Depends(require_user),
 ) -> VoterPage:
-    query = _search(request)
-    rows, total = search_voters(db, query)
-    return VoterPage(
-        items=[voter_to_public(row) for row in rows],
-        total=total,
-        page=query.page,
-        page_size=query.page_size,
-    )
+    return _page(db, _page_only(request))
+
+
+@router.post("/search", response_model=VoterPage)
+def post_search(
+    body: VoterSearch,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_user),
+) -> VoterPage:
+    return _page(db, body)
 
 
 @router.post("", response_model=VoterPublic, status_code=201)
@@ -64,14 +90,13 @@ def post_voter(
     return voter_to_public(voter)
 
 
-@router.get("/export.csv")
+@router.post("/export.csv")
 def export_csv(
-    request: Request,
+    body: VoterSearch | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_user),
+    _: User = Depends(require_admin),
 ) -> Response:
-    query = _search(request)
-    payload = voters_to_csv(export_voters(db, query)).encode("utf-8-sig")
+    payload = voters_to_csv(export_voters(db, body or VoterSearch())).encode("utf-8-sig")
     return Response(
         content=payload,
         media_type="text/csv; charset=utf-8",
@@ -79,14 +104,13 @@ def export_csv(
     )
 
 
-@router.get("/export.xlsx")
+@router.post("/export.xlsx")
 def export_xlsx(
-    request: Request,
+    body: VoterSearch | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_user),
+    _: User = Depends(require_admin),
 ) -> Response:
-    query = _search(request)
-    payload = voters_to_xlsx(export_voters(db, query))
+    payload = voters_to_xlsx(export_voters(db, body or VoterSearch()))
     return Response(
         content=payload,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -98,7 +122,7 @@ def export_xlsx(
 def post_import(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_user),
+    user: User = Depends(require_admin),
 ):
     content = file.file.read(IMPORT_BYTE_LIMIT + 1)
     if len(content) > IMPORT_BYTE_LIMIT:
@@ -138,7 +162,7 @@ def patch_voter(
 def delete_voter(
     voter_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_user),
+    user: User = Depends(require_admin),
 ) -> VoterPublic:
     try:
         return voter_to_public(soft_delete(db, voter_id, source_for(user)))

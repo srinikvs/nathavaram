@@ -58,8 +58,14 @@ To point the same image at PostgreSQL, set `DATABASE_URL` to a `postgresql+psyco
 
 | Role | Can do |
 | --- | --- |
-| `user` | Sign in, add and edit voters, search, import, export, reports, sync |
-| `admin` | Everything a user can do, plus create other users at `/users` or `POST /api/users` |
+| `user` | Sign in, search, add, view, and edit single voters, reports, sync |
+| `admin` | Everything a user can do, plus bulk operations: CSV/Excel export, CSV import, delete, and user management at `/users` or `/api/users` |
+
+A regular user gets 403 for export, import, delete, and user management.
+
+Cookie sessions are protected against CSRF. Browser forms carry a hidden `csrf_token`. A script that signs in with the cookie must send the `csrf_token` from the login response as `X-CSRF-Token` on POST/PUT/PATCH/DELETE. Requests that use `Authorization: Bearer` are exempt.
+
+With `APP_ENV=production` the app refuses to start unless `COOKIE_SECURE=true`.
 
 There is always at least one active admin. An admin cannot demote or deactivate the last admin, and cannot deactivate their own account.
 
@@ -71,7 +77,7 @@ Import and export use these headers, in this order:
 
 `2024 Booth, 2024 B.S.No, 2026 Ward, Ward S No, VoterId, FirstName, SurName, RelativeName, HouseNo, Gender, Age, Caste, Mobile, C_City, Profession, Party`
 
-The file must be UTF-8 (a byte-order mark is accepted). Export writes UTF-8 with a BOM so Excel on Windows keeps Telugu text, and it prefixes a quote when a cell starts with `=`, `+`, `-`, or `@`. Party may be empty. A fake nine-row file is at `sample/voters_sample.csv` and on the Import page after you sign in.
+The file must be UTF-8 (a byte-order mark is accepted). Export writes UTF-8 with a BOM so Excel on Windows keeps Telugu text, and it prefixes a quote when a cell starts with `=`, `+`, `-`, `@`, a tab, or a carriage return (this includes the report export). Import removes one such leading quote, so `+91` mobiles survive a round trip. Party may be empty. A fake nine-row file is at `sample/voters_sample.csv` and on the Import page after you sign in.
 
 Import saves the valid rows and returns a report for the rest. A second import of the same VoterId skips that row because the active VoterId already exists.
 
@@ -87,14 +93,15 @@ All `/api` routes require a signed-in user except `POST /api/auth/login`.
 | GET | `/api/users` | Admin: list users |
 | POST | `/api/users` | Admin: create a user |
 | PATCH | `/api/users/{id}` | Admin: change role, active flag, or password |
-| GET | `/api/voters` | Search. Query params: `q`, `voter_id`, `house_no`, `booth`, `ward`, `caste`, `party`, `mobile`, `gender`, `page`, `page_size` |
+| GET | `/api/voters` | List one page. Query params: `page`, `page_size` only. Search filters in the URL are refused with 422 so personal data stays out of access logs |
+| POST | `/api/voters/search` | Search. JSON body: `q`, `voter_id`, `house_no`, `booth`, `ward`, `caste`, `party`, `mobile`, `gender`, `page`, `page_size` |
 | POST | `/api/voters` | Create. Optional `id` (UUID) so a device can keep the key it generated offline |
 | GET | `/api/voters/{id}` | One active voter |
 | PATCH | `/api/voters/{id}` | Partial update |
-| DELETE | `/api/voters/{id}` | Soft delete |
-| POST | `/api/voters/import.csv` | Multipart CSV import. Body field name is `file` |
-| GET | `/api/voters/export.csv` | CSV of the active rows matching the same filters as the list |
-| GET | `/api/voters/export.xlsx` | Excel workbook of those rows |
+| DELETE | `/api/voters/{id}` | Admin: soft delete. The row is stripped of personal fields |
+| POST | `/api/voters/import.csv` | Admin: multipart CSV import. Body field name is `file` |
+| POST | `/api/voters/export.csv` | Admin: CSV of the active rows matching the filters in the optional JSON body |
+| POST | `/api/voters/export.xlsx` | Admin: Excel workbook of those rows |
 | GET | `/api/reports/summary` | Counts by booth, ward, gender, age band, caste, party, profession |
 | GET | `/api/reports/export.csv` | The same counts as CSV |
 | GET | `/api/sync/pull?since=&limit=` | Changes with `revision` greater than `since`, including soft deletes |

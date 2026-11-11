@@ -8,13 +8,21 @@
   </div>
   <div class="actions">
     <a class="button" href="/voters/new">Add voter</a>
-    <a class="button ghost" href="/api/voters/export.csv{% if export_query %}?{{ export_query }}{% endif %}">Export CSV</a>
-    <a class="button ghost" href="/api/voters/export.xlsx{% if export_query %}?{{ export_query }}{% endif %}">Export Excel</a>
+    {% if user.role == "admin" %}
+    {% for kind, label in (("csv", "Export CSV"), ("xlsx", "Export Excel")) %}
+    <form method="post" action="/voters/export.{{ kind }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% for key, value in filter_values.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+      <button type="submit" class="button ghost">{{ label }}</button>
+    </form>
+    {% endfor %}
+    {% endif %}
   </div>
 </div>
 {% if request.query_params.get('removed') %}<p class="banner ok">Voter removed from the active list. The row is kept for sync.</p>{% endif %}
 {% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
-<form class="filters" method="get" action="/voters">
+<form class="filters" method="post" action="/voters/search">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div>
     <label for="q">Search</label>
     <input id="q" name="q" value="{{ query.q or '' }}" placeholder="Name, VoterId, HouseNo, mobile" maxlength="100">
@@ -108,7 +116,7 @@
         <td data-label="Mobile" translate="no">{{ voter.mobile|display }}</td>
         <td data-label="Actions" class="row-actions">
           <a href="/voters/{{ voter.id }}/edit">Edit</a>
-          <a href="/voters/{{ voter.id }}/delete">Delete</a>
+          {% if user.role == "admin" %}<a href="/voters/{{ voter.id }}/delete">Delete</a>{% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -119,12 +127,17 @@
 {% set end = [query.page * query.page_size, total]|min %}
 <p class="pager">
   <span>Showing {{ start }}–{{ end }} of {{ total }}</span>
-  {% if query.page > 1 %}
-  <a href="/voters?{{ export_query }}{% if export_query %}&{% endif %}page={{ query.page - 1 }}">Previous</a>
+  {% for label, target, show in (("Previous", query.page - 1, query.page > 1), ("Next", query.page + 1, end < total)) %}
+  {% if show %}
+  <form method="post" action="/voters/search" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for key, value in filter_values.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+    <input type="hidden" name="page_size" value="{{ query.page_size }}">
+    <input type="hidden" name="page" value="{{ target }}">
+    <button type="submit" class="linkish">{{ label }}</button>
+  </form>
   {% endif %}
-  {% if end < total %}
-  <a href="/voters?{{ export_query }}{% if export_query %}&{% endif %}page={{ query.page + 1 }}">Next</a>
-  {% endif %}
+  {% endfor %}
 </p>
 {% else %}
 <p class="empty">No voters yet. Add one, or import the sample CSV from the Import page.</p>

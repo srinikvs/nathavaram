@@ -83,6 +83,9 @@ def update_voter(db: Session, voter_id: str, patch: VoterPatch, source_id: str) 
     changes = patch.model_dump(exclude_unset=True)
     if not changes:
         return voter
+    for required in ("voter_id", "first_name", "gender"):
+        if required in changes and changes[required] is None:
+            raise ServiceError(f"{required} cannot be null", 422, required)
     if "voter_id" in changes:
         ensure_unique_voter_id(db, changes["voter_id"], exclude_id=voter.id)
     for key, value in changes.items():
@@ -116,9 +119,24 @@ def replace_voter(db: Session, voter_id: str, data: VoterWrite, source_id: str) 
     return voter
 
 
+def strip_to_tombstone(voter: Voter) -> None:
+    """Erase every personal field. Only id, timestamps, revision and deleted_at remain.
+
+    voter_id, first_name and gender are NOT NULL columns, so they hold inert placeholders:
+    the row id without dashes, an empty string, and 'Unknown'. The unique index ignores
+    soft-deleted rows, so the real VoterId is free to be reused.
+    """
+    for field in DATA_FIELDS:
+        setattr(voter, field, None)
+    voter.voter_id = voter.id.replace("-", "")[:32]
+    voter.first_name = ""
+    voter.gender = "Unknown"
+
+
 def soft_delete(db: Session, voter_id: str, source_id: str) -> Voter:
     voter = get_active(db, voter_id)
     now = _now()
+    strip_to_tombstone(voter)
     voter.deleted_at = now
     voter.updated_at = now
     voter.source_id = source_id

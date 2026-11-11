@@ -15,7 +15,7 @@ from app.constants import CSV_HEADERS, DATA_FIELDS, FIELD_BY_LABEL, IMPORT_ROW_L
 from app.models import Voter
 from app.schemas import ImportErrorItem, ImportReport, VoterWrite
 from app.services.revision import allocate_revision
-from app.validation import csv_safe, dump_dt
+from app.validation import csv_safe, csv_unsafe, dump_dt
 from pydantic import ValidationError
 
 
@@ -72,7 +72,7 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
         if rows_read > IMPORT_ROW_LIMIT:
             raise ImportRejected(f"CSV exceeds {IMPORT_ROW_LIMIT} data rows")
         payload_row = {
-            FIELD_BY_LABEL[key.strip()]: (value or "")
+            FIELD_BY_LABEL[key.strip()]: csv_unsafe(value or "")
             for key, value in raw.items()
             if key is not None
         }

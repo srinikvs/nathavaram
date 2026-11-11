@@ -9,6 +9,8 @@ services:
     environment:
       DATABASE_URL: sqlite:////data/nathavaram.db
       APP_ENV: production
+      # The app refuses to start in production unless cookies are Secure. Put HTTPS in front.
+      COOKIE_SECURE: "true"
     volumes:
       - voter-data:/data
     restart: unless-stopped

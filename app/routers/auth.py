@@ -9,7 +9,7 @@ from app.database import get_db
 from app.deps import require_user
 from app.models import User
 from app.schemas import LoginRequest, TokenResponse, UserPublic
-from app.security import create_access_token
+from app.security import create_access_token, csrf_token_for
 from app.services.users import authenticate
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -31,6 +31,7 @@ def _issue(response: Response, user: User, settings) -> TokenResponse:
         expires_in=settings.jwt_expire_minutes * 60,
         role=user.role,
         username=user.username,
+        csrf_token=csrf_token_for(token, settings),
     )
 
 

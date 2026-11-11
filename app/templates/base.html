@@ -20,9 +20,10 @@
     <nav class="nav" aria-label="Primary">
       <a href="/voters">Voters</a>
       <a href="/reports">Reports</a>
-      <a href="/import">Import</a>
+      {% if user.role == "admin" %}<a href="/import">Import</a>{% endif %}
       {% if user.role == "admin" %}<a href="/users">Users</a>{% endif %}
       <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="linkish">Log out</button>
       </form>
     </nav>

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.constants import AGE_BANDS, GENDERS, PARTIES
 from app.models import Voter
 from app.schemas import CountRow, ReportSummary
-from app.validation import age_band
+from app.validation import age_band, csv_safe
 
 
 def _label(value: str | None) -> str:
@@ -75,5 +75,5 @@ def report_csv(report: ReportSummary) -> str:
     )
     for name, rows in sections:
         for row in rows:
-            writer.writerow([name, row.label, row.count])
+            writer.writerow([csv_safe(name), csv_safe(row.label), row.count])
     return buffer.getvalue()

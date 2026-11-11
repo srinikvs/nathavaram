@@ -15,6 +15,7 @@
 </div>
 {% endif %}
 <form method="post" class="grid" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div>
     <label for="booth_2024">2024 Booth</label>
     <input id="booth_2024" name="booth_2024" maxlength="64" value="{{ values.get('booth_2024', '') }}">
@@ -90,7 +91,7 @@
   </div>
   <div class="full actions">
     <button type="submit">Save voter</button>
-    {% if voter %}<a class="button danger" href="/voters/{{ voter.id }}/delete">Delete</a>{% endif %}
+    {% if voter and user.role == "admin" %}<a class="button danger" href="/voters/{{ voter.id }}/delete">Delete</a>{% endif %}
   </div>
 </form>
 {% if voter %}

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -40,7 +42,26 @@ def decode_access_token(token: str, settings: Settings) -> dict:
     return jwt.decode(token, settings.secret_key, algorithms=["HS256"])
 
 
+def csrf_token_for(session_token: str, settings: Settings) -> str:
+    """Token bound to one session cookie. A cross-site page cannot read or derive it."""
+    digest = hmac.new(
+        settings.secret_key.encode("utf-8"),
+        b"csrf:" + session_token.encode("utf-8"),
+        hashlib.sha256,
+    )
+    return digest.hexdigest()
+
+
+def csrf_matches(session_token: str, supplied: str | None, settings: Settings) -> bool:
+    if not supplied:
+        return False
+    expected = csrf_token_for(session_token, settings).encode("utf-8")
+    return hmac.compare_digest(expected, supplied.encode("utf-8"))
+
+
 __all__ = [
+    "csrf_matches",
+    "csrf_token_for",
     "InvalidTokenError",
     "create_access_token",
     "decode_access_token",

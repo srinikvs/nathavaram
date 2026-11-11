@@ -38,7 +38,7 @@ Returns every voter, including soft-deleted rows, whose `revision` is greater th
 }
 ```
 
-`deleted_at` set means the row was removed. The device should delete or tombstone its local copy, not resurrect it. When `has_more` is true, call again with `since` set to the `revision` of the last change in this page. Stop when `has_more` is false. An empty `changes` list with `server_revision` equal to the device cursor means the device is caught up.
+`deleted_at` set means the row was removed. The device should delete or tombstone its local copy, not resurrect it. A tombstone carries no personal data: every voter field is null, `first_name` is `""`, `gender` is `Unknown`, and `voter_id` is an inert placeholder (the row id without dashes). Only `id`, `revision`, `created_at`, `updated_at`, `deleted_at`, and `source_id` are meaningful. Do not read `voter_id` from a tombstone. When `has_more` is true, call again with `since` set to the `revision` of the last change in this page. Stop when `has_more` is false. An empty `changes` list with `server_revision` equal to the device cursor means the device is caught up.
 
 ## Push
 
@@ -69,7 +69,9 @@ A non-delete is a full snapshot. Omitted optional fields are stored as null. `vo
 }
 ```
 
-`base_revision` is the revision the device last saw for this id. Phase 1 records it for the client but does not use it to accept or reject the write. The comparison is `updated_at`.
+`base_revision` is the revision the device last saw for this id. When it is present and the server row's `revision` is greater, the server has changed since the device last synced, so the change is a `conflict` even if the device `updated_at` is newer. Nothing is written and the server row is returned. A device that omits `base_revision` gets plain last-write-wins by `updated_at`. An exact replay of an already-stored change is still `applied` ("Already stored"), whatever `base_revision` says.
+
+Each change in a batch is applied in its own savepoint. A rejected change (conflict, validation error, or a database unique-key clash) never rolls back or blocks the other changes in the batch.
 
 ```json
 {
@@ -96,8 +98,10 @@ Last-write-wins by `updated_at`, then a new server revision.
 | --- | --- | --- |
 | No row with this `id`, and the change is not a delete | `applied` | Inserts the snapshot. `created_at` is the device value when it is valid, otherwise `updated_at` |
 | No row with this `id`, and the change is a delete | `applied` | No tombstone is written. The message is `No server record; delete ignored`. Send the latest state only; a create that never reached the server does not need a tombstone |
-| Incoming `updated_at` is newer than the stored row | `applied` | Replaces the data columns, sets `source_id` to `device_id`, and assigns the next revision. A newer non-delete clears `deleted_at` (this undeletes). A newer delete sets `deleted_at` and keeps the other columns |
+| Incoming `updated_at` is newer than the stored row (and `base_revision` is absent or current) | `applied` | Replaces the data columns, sets `source_id` to `device_id`, and assigns the next revision. A newer non-delete clears `deleted_at` (this undeletes). A newer delete sets `deleted_at` and strips every personal column (see Pull) |
 | Incoming `updated_at` is older | `conflict` | Keeps the server row and returns it |
+| `base_revision` is lower than the server row's `revision` (and the change is not an exact replay) | `conflict` | Keeps the server row and returns it, for edits and for deletes. The device should show the difference and let the operator re-apply |
+| Two changes reach the database with the same active `voter_id` (for example a concurrent insert) | `voter_id_conflict` | Only that change is rejected; the rest of the batch is stored |
 | Equal `updated_at` and the same content, including the deleted flag | `applied` | Idempotent replay. The revision does not move |
 | Equal `updated_at` and different content | `conflict` | The server row wins, so two devices that stamp the same instant cannot flap |
 | Active different `id` already uses this `voter_id` | `voter_id_conflict` | Nothing is written. `server_record` is the other active row. The device should show that row and not silently merge the two people |

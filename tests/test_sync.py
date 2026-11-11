@@ -71,6 +71,146 @@ def test_pull_push_conflict_and_replay(ctx):
     assert caught_up.json()["has_more"] is False
 
 
+def _new_change(voter_id: str, **overrides) -> dict:
+    change = {
+        "id": str(uuid4()),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "deleted": False,
+        "voter_id": voter_id,
+        "first_name": "Syncperson",
+        "gender": "Male",
+    }
+    change.update(overrides)
+    return change
+
+
+def test_batch_with_one_voter_id_clash_still_applies_the_rest(ctx):
+    created = ctx.client.post("/api/voters", headers=ctx.auth, json=voter_payload()).json()
+    clash = _new_change(created["voter_id"])
+    good_a = _new_change("ZZZ1000003")
+    good_b = _new_change("ZZZ1000004")
+    same_batch_twin = _new_change("ZZZ1000003")
+
+    body = _push(ctx, [good_a, clash, good_b, same_batch_twin])
+
+    statuses = [item["status"] for item in body["results"]]
+    assert statuses == ["applied", "voter_id_conflict", "applied", "voter_id_conflict"]
+    assert body["results"][1]["server_record"]["id"] == created["id"]
+    assert body["results"][3]["server_record"]["id"] == good_a["id"]
+    assert ctx.client.get(f"/api/voters/{good_a['id']}", headers=ctx.auth).status_code == 200
+    assert ctx.client.get(f"/api/voters/{good_b['id']}", headers=ctx.auth).status_code == 200
+    assert ctx.client.get(f"/api/voters/{clash['id']}", headers=ctx.auth).status_code == 404
+    assert ctx.client.get(f"/api/voters/{same_batch_twin['id']}", headers=ctx.auth).status_code == 404
+
+
+def test_database_unique_clash_rejects_only_that_change(ctx, monkeypatch):
+    from app.services import sync as sync_service
+
+    created = ctx.client.post("/api/voters", headers=ctx.auth, json=voter_payload()).json()
+    real_owner = sync_service._active_voter_id_owner
+    calls = {"count": 0}
+
+    def blind_on_first_call(db, voter_id, exclude_id):
+        # Simulates a concurrent insert that the pre-check cannot see.
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return None
+        return real_owner(db, voter_id, exclude_id)
+
+    monkeypatch.setattr(sync_service, "_active_voter_id_owner", blind_on_first_call)
+    clash = _new_change(created["voter_id"])
+    good = _new_change("ZZZ1000005")
+
+    response = ctx.client.post(
+        "/api/sync/push",
+        headers=ctx.auth,
+        json={"device_id": "lab-phone-1", "changes": [clash, good]},
+    )
+
+    assert response.status_code == 200, response.text
+    results = response.json()["results"]
+    assert [item["status"] for item in results] == ["voter_id_conflict", "applied"]
+    assert results[0]["server_record"]["id"] == created["id"]
+    assert ctx.client.get(f"/api/voters/{good['id']}", headers=ctx.auth).status_code == 200
+    assert ctx.client.get(f"/api/voters/{clash['id']}", headers=ctx.auth).status_code == 404
+    assert ctx.client.get(f"/api/voters/{created['id']}", headers=ctx.auth).status_code == 200
+
+
+def test_stale_base_revision_is_a_conflict_not_last_write_wins(ctx):
+    created = ctx.client.post("/api/voters", headers=ctx.auth, json=voter_payload()).json()
+    edited = ctx.client.patch(
+        f"/api/voters/{created['id']}", headers=ctx.auth, json={"first_name": "ServerEdit"}
+    ).json()
+    assert edited["revision"] > created["revision"]
+    newer = (datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat()
+
+    stale = _push(
+        ctx,
+        [_snapshot(edited, updated_at=newer, first_name="DeviceEdit", base_revision=created["revision"])],
+    )
+
+    result = stale["results"][0]
+    assert result["status"] == "conflict"
+    assert result["server_record"]["first_name"] == "ServerEdit"
+    current = ctx.client.get(f"/api/voters/{created['id']}", headers=ctx.auth).json()
+    assert current["first_name"] == "ServerEdit"
+    assert current["revision"] == edited["revision"]
+
+    fresh = _push(
+        ctx,
+        [_snapshot(edited, updated_at=newer, first_name="DeviceEdit", base_revision=edited["revision"])],
+    )
+    assert fresh["results"][0]["status"] == "applied"
+    assert ctx.client.get(f"/api/voters/{created['id']}", headers=ctx.auth).json()["first_name"] == "DeviceEdit"
+
+    replay = _push(
+        ctx,
+        [_snapshot(edited, updated_at=newer, first_name="DeviceEdit", base_revision=created["revision"])],
+    )
+    assert replay["results"][0]["status"] == "applied"
+    assert replay["results"][0]["message"] == "Already stored"
+
+
+def test_stale_base_revision_blocks_a_delete(ctx):
+    created = ctx.client.post("/api/voters", headers=ctx.auth, json=voter_payload()).json()
+    edited = ctx.client.patch(
+        f"/api/voters/{created['id']}", headers=ctx.auth, json={"profession": "Farmer"}
+    ).json()
+    newer = (datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat()
+
+    blocked = _push(
+        ctx,
+        [{"id": created["id"], "updated_at": newer, "deleted": True, "base_revision": created["revision"]}],
+    )
+
+    assert blocked["results"][0]["status"] == "conflict"
+    assert ctx.client.get(f"/api/voters/{created['id']}", headers=ctx.auth).status_code == 200
+    allowed = _push(
+        ctx,
+        [{"id": created["id"], "updated_at": newer, "deleted": True, "base_revision": edited["revision"]}],
+    )
+    assert allowed["results"][0]["status"] == "applied"
+    assert ctx.client.get(f"/api/voters/{created['id']}", headers=ctx.auth).status_code == 404
+
+
+def test_sync_delete_leaves_a_stripped_tombstone(ctx):
+    created = ctx.client.post("/api/voters", headers=ctx.auth, json=voter_payload()).json()
+    newer = (datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat()
+
+    applied = _push(ctx, [{"id": created["id"], "updated_at": newer, "deleted": True}])
+
+    result = applied["results"][0]
+    assert result["status"] == "applied"
+    tomb = result["server_record"]
+    assert tomb["deleted_at"] is not None
+    pulled = ctx.client.get("/api/sync/pull", headers=ctx.auth, params={"since": created["revision"]}).json()
+    match = next(item for item in pulled["changes"] if item["id"] == created["id"])
+    for field in ("mobile", "caste", "party", "surname", "relative_name", "house_no", "profession"):
+        assert match[field] is None, field
+    assert match["first_name"] == ""
+    assert "Testperson" not in str(pulled) and "9000000021" not in str(pulled)
+
+
 def test_voter_id_conflict_delete_tombstone_and_future_clock(ctx):
     created = ctx.client.post("/api/voters", headers=ctx.auth, json=voter_payload()).json()
     other_id = str(uuid4())

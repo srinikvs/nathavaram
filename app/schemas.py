@@ -34,6 +34,8 @@ class TokenResponse(BaseModel):
     expires_in: int
     role: str
     username: str
+    # Send as X-CSRF-Token on cookie-authenticated POST/PUT/PATCH/DELETE. Bearer calls do not need it.
+    csrf_token: str | None = None
 
 
 class UserCreate(BaseModel):
@@ -207,7 +209,7 @@ class VoterPatch(BaseModel):
     @classmethod
     def _first_name(cls, value: object) -> str | None:
         if value is None:
-            return None
+            raise ValueError("FirstName cannot be null")
         text = limit_text(require_text(value, "FirstName"), "first_name")
         assert text is not None
         return text
@@ -216,7 +218,7 @@ class VoterPatch(BaseModel):
     @classmethod
     def _gender(cls, value: object) -> str | None:
         if value is None:
-            return None
+            raise ValueError("Gender cannot be null")
         return canonical_gender(value)
 
     @field_validator("party", mode="before")

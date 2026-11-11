@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import ROOT
 from app.constants import GENDERS, PARTIES
+from app.security import csrf_token_for
 from app.validation import parse_dt
 
 templates = Jinja2Templates(directory=str(ROOT / "app" / "templates"))
@@ -36,7 +37,10 @@ templates.env.filters["display"] = display
 
 
 def render(request: Request, name: str, context: dict, status_code: int = 200):
-    payload = {"request": request, **context}
+    settings = request.app.state.settings
+    session_token = request.cookies.get(settings.cookie_name)
+    csrf_token = csrf_token_for(session_token, settings) if session_token else ""
+    payload = {"request": request, "csrf_token": csrf_token, **context}
     # Starlette 0.41 names the request argument first. Fall back for older builds.
     try:
         return templates.TemplateResponse(request, name, payload, status_code=status_code)
