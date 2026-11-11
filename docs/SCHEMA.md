@@ -1,0 +1,87 @@
+# Nathavaram voter schema
+
+Phase 1 stores the village list in a relational database. SQLite is the default. The same SQLAlchemy models and this Alembic migration run on PostgreSQL when `DATABASE_URL` uses the `postgresql+psycopg://` driver.
+
+Display names below are the exact labels in the web form and the exact CSV/Excel headers. The database and JSON API use the snake_case names.
+
+## Voters
+
+| Display name | Column | Type | Rules |
+| --- | --- | --- | --- |
+| 2024 Booth | `booth_2024` | text, null | Up to 64 characters |
+| 2024 B.S.No | `bs_no_2024` | text, null | Up to 64 characters |
+| 2026 Ward | `ward_2026` | text, null | Up to 64 characters |
+| Ward S No | `ward_s_no` | text, null | Up to 64 characters |
+| VoterId | `voter_id` | text, required | 3–32 letters or digits, stored uppercase. Unique among rows that are not soft-deleted |
+| FirstName | `first_name` | text, required | Up to 128 characters. Telugu and other Unicode letters are stored as UTF-8 |
+| SurName | `surname` | text, null | Up to 128 characters |
+| RelativeName | `relative_name` | text, null | Up to 128 characters |
+| HouseNo | `house_no` | text, null | Up to 64 characters. Not a number, so values like `12-A` stay intact |
+| Gender | `gender` | text, required | `Male`, `Female`, `Other`, `Unknown`. Blank input becomes `Unknown`. Matching is case-insensitive and stored in this canonical form |
+| Age | `age` | integer, null | Whole number from 1 to 130, or null when unknown |
+| Caste | `caste` | text, null | Up to 128 characters |
+| Mobile | `mobile` | text, null | Stored exactly as entered (trimmed), including a leading `0` or `+91`. Validation is loose: after removing spaces, hyphens, and an optional `+91`, `91`, or `0` prefix, the remaining value must be a 10-digit Indian mobile starting with 6–9 |
+| C_City | `c_city` | text, null | Up to 128 characters |
+| Profession | `profession` | text, null | Up to 128 characters |
+| Party | `party` | text, null | Empty means no answer. Otherwise one of: `TDP`, `YSRCP`, `Jana Sena`, `BJP`, `INC`, `CPI`, `Independent`, `Unknown`, `Prefer not to say`. Matching is case-insensitive and stored in this canonical form |
+
+Text columns reject ASCII control characters. Names are not restricted to a single script, so Telugu text round-trips through the API, the form, and CSV.
+
+## Sync columns
+
+These columns are not part of the paper list. They exist so an offline Android client can sync in phase 2 without a schema change.
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `id` | text UUID, primary key | Client-generated or server-generated. Stable across devices |
+| `created_at` | text | UTC timestamp `YYYY-MM-DDTHH:MM:SS.ffffffZ`. Text, not a database datetime, so SQLite and PostgreSQL keep the same precision |
+| `updated_at` | text | Same format. Last-write-wins compares this value. API and web edits stamp the server clock. A winning sync push keeps the device timestamp |
+| `revision` | integer, indexed | Server revision copied from `sync_state` when this row last changed. Pull asks for `revision > since` |
+| `deleted_at` | text, null | Soft delete. Null means the voter is active. Reports, search, and export skip rows where this is set. Sync pull includes them |
+| `source_id` | text, null | Who wrote the row last. Web saves use `web:<username>`. Sync push stores the device id |
+
+`sync_state` is a single row (`id = 1`) holding `current_revision`. Every insert, update, import row, and applied sync change increments it by one and stores that value on the voter. The counter starts at 0.
+
+The unique index `uq_voters_voter_id_active` covers `voter_id` only where `deleted_at IS NULL`. A removed EPIC can be entered again. Two active rows cannot share a VoterId. The check is also enforced in the service so the API returns 409 before the database error.
+
+## Users
+
+Accounts are server-managed in phase 1. They are not part of voter sync.
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `id` | text UUID | Primary key |
+| `username` | text, unique | 3–32 characters: letters, digits, `.`, `_`, `-` |
+| `password_hash` | text | bcrypt hash. The plaintext password is never stored or returned |
+| `role` | text | `admin` or `user` |
+| `is_active` | boolean | Inactive users cannot sign in |
+| `created_at`, `updated_at` | text | UTC timestamps in the same format as voters |
+
+There is no default account in the repository. On startup the app inserts one admin when both `ADMIN_USERNAME` and `ADMIN_PASSWORD` are set and that username does not already exist. Restarting does not reset the password.
+
+## Migration
+
+`alembic/versions/0001_initial.py` creates `users`, `sync_state`, and `voters`, including the partial unique index. The app runs `alembic upgrade head` on startup. You can also run it yourself:
+
+```bash
+DATABASE_URL=sqlite:///./data/nathavaram.db alembic upgrade head
+```
+
+Check constraints in the database repeat the gender, age, and party rules so a raw SQL write cannot bypass them.
+
+## Age bands used by reports
+
+These are derived. They are not stored.
+
+| Band | Ages |
+| --- | --- |
+| Under 18 | 1–17 |
+| 18–25 | 18–25 |
+| 26–35 | 26–35 |
+| 36–45 | 36–45 |
+| 46–55 | 46–55 |
+| 56–65 | 56–65 |
+| 66+ | 66–130 |
+| Unknown | null age |
+
+Blank text groups are labelled `(blank)` in reports. Party always includes the nine dropdown values plus `(blank)`.

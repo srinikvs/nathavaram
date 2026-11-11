@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Reports · Nathavaram{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Reports</h1>
+    <p class="lede">{{ report.total }} active voter{% if report.total != 1 %}s{% endif %}. Counts ignore removed rows.</p>
+  </div>
+  <div class="actions no-print">
+    <button type="button" data-print>Print</button>
+    <a class="button ghost" href="/api/reports/export.csv">Export CSV</a>
+  </div>
+</div>
+{% macro breakdown(title, rows) %}
+<section class="report-block">
+  <h2>{{ title }}</h2>
+  <table>
+    <thead><tr><th>Label</th><th>Count</th><th class="share">Share</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td translate="no">{{ row.label }}</td>
+        <td class="num">{{ row.count }}</td>
+        <td class="share"><meter min="0" max="{{ report.total if report.total else 1 }}" value="{{ row.count }}" aria-label="{{ row.count }} of {{ report.total }}"></meter></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endmacro %}
+<div class="report-grid">
+  {{ breakdown("2024 Booth", report.by_booth) }}
+  {{ breakdown("2026 Ward", report.by_ward) }}
+  {{ breakdown("Gender", report.by_gender) }}
+  {{ breakdown("Age band", report.by_age_band) }}
+  {{ breakdown("Caste", report.by_caste) }}
+  {{ breakdown("Party", report.by_party) }}
+  {{ breakdown("Profession", report.by_profession) }}
+</div>
+{% endblock %}

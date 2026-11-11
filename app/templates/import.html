@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Import · Nathavaram{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Import CSV</h1>
+    <p class="lede">UTF-8 file with the exact column names. Valid rows are saved. Invalid rows are listed and skipped.</p>
+  </div>
+  <a class="button ghost" href="/sample.csv">Download fake sample</a>
+</div>
+<p class="columns" translate="no">2024 Booth, 2024 B.S.No, 2026 Ward, Ward S No, VoterId, FirstName, SurName, RelativeName, HouseNo, Gender, Age, Caste, Mobile, C_City, Profession, Party</p>
+{% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/import" enctype="multipart/form-data" class="stack">
+  <label for="file">CSV file</label>
+  <input id="file" name="file" type="file" accept=".csv,text/csv" required>
+  <button type="submit">Import</button>
+</form>
+{% if report %}
+<section class="report-block">
+  <h2>Validation report</h2>
+  <p>{{ report.imported }} imported, {{ report.skipped }} skipped, {{ report.rows_read }} rows read.</p>
+  {% if report.errors %}
+  <table>
+    <thead><tr><th>Row</th><th>Field</th><th>Message</th></tr></thead>
+    <tbody>
+      {% for item in report.errors %}
+      <tr>
+        <td>{{ item.row }}</td>
+        <td>{{ item.field or "—" }}</td>
+        <td>{{ item.message }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="banner ok">Every row passed validation.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

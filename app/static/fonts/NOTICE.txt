@@ -1,0 +1,5 @@
+Noto Sans (Latin subset) and Noto Sans Telugu (Telugu subset).
+Copyright The Noto Project Authors.
+Licensed under the SIL Open Font License, Version 1.1. See OFL.txt.
+Subsets obtained from the Fontsource CDN, which redistributes the Noto fonts.
+https://github.com/notofonts
