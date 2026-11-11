@@ -102,7 +102,7 @@ def test_sixth_failure_for_a_nonexistent_username_is_429_with_retry_after(ctx, p
     assert statuses == [401] * 5
     assert blocked.status_code == 429
     assert 1 <= int(blocked.headers["retry-after"]) <= 300
-    assert "retry" in blocked.json()["detail"].lower()
+    assert "try again later" in blocked.json()["detail"].lower()
 
 
 def test_sixth_attempt_for_a_real_user_is_429_even_with_the_right_password(ctx, peer):
