@@ -36,6 +36,15 @@ class TokenResponse(BaseModel):
     username: str
     # Send as X-CSRF-Token on cookie-authenticated POST/PUT/PATCH/DELETE. Bearer calls do not need it.
     csrf_token: str | None = None
+    # True: only POST /api/auth/change-password and logout work until the password is changed.
+    must_change_password: bool = False
+
+
+class PasswordChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=10, max_length=200)
 
 
 class UserCreate(BaseModel):
@@ -82,6 +91,8 @@ class UserPublic(BaseModel):
     username: str
     role: str
     is_active: bool
+    must_change_password: bool
+    is_owner: bool
     created_at: str
     updated_at: str
 

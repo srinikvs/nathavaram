@@ -59,9 +59,12 @@ To point the same image at PostgreSQL, set `DATABASE_URL` to a `postgresql+psyco
 | Role | Can do |
 | --- | --- |
 | `user` | Sign in, search, add, view, and edit single voters, reports, sync |
-| `admin` | Everything a user can do, plus bulk operations: CSV/Excel export, CSV import, delete, and user management at `/users` or `/api/users` |
+| `admin` | Everything a user can do, plus bulk operations: CSV/Excel export, CSV import, delete |
+| owner (an `admin` with the `is_owner` flag) | Everything an admin can do, plus user management at `/users` or `/api/users` |
 
-A regular user gets 403 for export, import, delete, and user management.
+A regular user gets 403 for export, import, delete, and user management. An admin who is not the owner gets 403 for user management only. The owner is the admin created from `ADMIN_USERNAME`; later admins are not owners.
+
+Login is throttled (5 failures per 5 minutes per IP and per username, then 429 with `Retry-After`), and new or reset accounts must change their password before doing anything else. Details: [docs/SECURITY.md](docs/SECURITY.md).
 
 Cookie sessions are protected against CSRF. Browser forms carry a hidden `csrf_token`. A script that signs in with the cookie must send the `csrf_token` from the login response as `X-CSRF-Token` on POST/PUT/PATCH/DELETE. Requests that use `Authorization: Bearer` are exempt.
 
@@ -87,12 +90,13 @@ All `/api` routes require a signed-in user except `POST /api/auth/login`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/api/auth/login` | Returns a JWT and sets the cookie |
+| POST | `/api/auth/login` | Returns a JWT and sets the cookie. 401 for any bad credentials (same message), 429 + `Retry-After` when throttled. `must_change_password` in the response says whether a change is pending |
+| POST | `/api/auth/change-password` | JSON `current_password`, `new_password` (10+ characters, different from the current one). Works while a change is pending |
 | POST | `/api/auth/logout` | Clears the cookie |
 | GET | `/api/auth/me` | Current user |
-| GET | `/api/users` | Admin: list users |
-| POST | `/api/users` | Admin: create a user |
-| PATCH | `/api/users/{id}` | Admin: change role, active flag, or password |
+| GET | `/api/users` | Owner: list users |
+| POST | `/api/users` | Owner: create a user |
+| PATCH | `/api/users/{id}` | Owner: change role, active flag, or password (a password reset forces a change at next use) |
 | GET | `/api/voters` | List one page. Query params: `page`, `page_size` only. Search filters in the URL are refused with 422 so personal data stays out of access logs |
 | POST | `/api/voters/search` | Search. JSON body: `q`, `voter_id`, `house_no`, `booth`, `ward`, `caste`, `party`, `mobile`, `gender`, `page`, `page_size` |
 | POST | `/api/voters` | Create. Optional `id` (UUID) so a device can keep the key it generated offline |

@@ -12,11 +12,17 @@ from app.constants import DATA_FIELDS, GENDERS, LABEL_BY_FIELD, PARTIES, SEARCH_
 from app.database import get_db
 from app.deps import resolve_user, source_for
 from app.errors import ServiceError
-from app.schemas import UserCreate, VoterSearch, VoterWrite
+from app.schemas import PasswordChange, UserCreate, VoterSearch, VoterWrite
 from app.security import create_access_token
 from app.services.impex import ImportRejected, import_csv, voters_to_csv, voters_to_xlsx
+from app.services.login import (
+    INVALID_LOGIN_MESSAGE,
+    LoginThrottled,
+    attempt_login,
+    guarded_change_password,
+)
 from app.services.reports import build_report
-from app.services.users import authenticate, create_user, list_users
+from app.services.users import create_user, list_users
 from app.services.voters import (
     create_voter,
     export_voters,
@@ -41,10 +47,21 @@ def safe_next(value: str | None) -> str:
     return value
 
 
-def web_user(request: Request, db: Session = Depends(get_db)):
+class PasswordChangeRequired(Exception):
+    """Raised for a signed-in web user whose password must be changed first."""
+
+
+def web_session_user(request: Request, db: Session = Depends(get_db)):
+    """Signed-in user, even when a password change is pending."""
     user = resolve_user(request, db, None)
     if user is None:
         raise LoginRequired(request.url.path)
+    return user
+
+
+def web_user(user=Depends(web_session_user)):
+    if user.must_change_password:
+        raise PasswordChangeRequired()
     return user
 
 
@@ -103,17 +120,69 @@ async def login_submit(request: Request, db: Session = Depends(get_db)):
     username = str(form.get("username") or "")
     password = str(form.get("password") or "")
     nxt = safe_next(str(form.get("next") or ""))
-    user = authenticate(db, username, password)
+    try:
+        user = attempt_login(db, request, username, password)
+    except LoginThrottled as exc:
+        blocked = render(
+            request,
+            "login.html",
+            {"next": nxt, "error": "Too many failed attempts. Try again later."},
+            status_code=429,
+        )
+        blocked.headers["Retry-After"] = str(exc.retry_after)
+        return blocked
     if user is None:
         return render(
             request,
             "login.html",
-            {"next": nxt, "error": "Invalid username or password"},
+            {"next": nxt, "error": INVALID_LOGIN_MESSAGE},
             status_code=401,
         )
-    response = RedirectResponse(nxt, status_code=303)
+    target = "/change-password" if user.must_change_password else nxt
+    response = RedirectResponse(target, status_code=303)
     _set_cookie(response, request, user)
     return response
+
+
+def _change_password_page(request: Request, user, errors: list[str], status_code: int = 200):
+    return render(
+        request,
+        "change_password.html",
+        {"user": user, "errors": errors, "forced": user.must_change_password},
+        status_code=status_code,
+    )
+
+
+@router.get("/change-password")
+def change_password_form(request: Request, user=Depends(web_session_user)):
+    return _change_password_page(request, user, [])
+
+
+@router.post("/change-password")
+async def change_password_submit(
+    request: Request, db: Session = Depends(get_db), user=Depends(web_session_user)
+):
+    form = await request.form()
+    try:
+        body = PasswordChange.model_validate(
+            {
+                "current_password": str(form.get("current_password") or ""),
+                "new_password": str(form.get("new_password") or ""),
+            }
+        )
+    except ValidationError as exc:
+        return _change_password_page(request, user, _form_errors(exc), 400)
+    try:
+        guarded_change_password(db, request, user, body.current_password, body.new_password)
+    except LoginThrottled as exc:
+        blocked = _change_password_page(
+            request, user, ["Too many failed attempts. Try again later."], 429
+        )
+        blocked.headers["Retry-After"] = str(exc.retry_after)
+        return blocked
+    except ServiceError as exc:
+        return _change_password_page(request, user, [exc.message], exc.status_code)
+    return RedirectResponse("/voters", status_code=303)
 
 
 @router.post("/logout")
@@ -423,7 +492,7 @@ def sample_csv(request: Request, user=Depends(web_user)):
 
 @router.get("/users")
 def users_page(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    if user.role != "admin":
+    if user.role != "admin" or not user.is_owner:
         return render(request, "403.html", {"user": user}, status_code=403)
     return render(
         request,
@@ -434,7 +503,7 @@ def users_page(request: Request, db: Session = Depends(get_db), user=Depends(web
 
 @router.post("/users")
 async def users_submit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    if user.role != "admin":
+    if user.role != "admin" or not user.is_owner:
         return render(request, "403.html", {"user": user}, status_code=403)
     form = await request.form()
     try:

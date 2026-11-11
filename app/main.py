@@ -20,7 +20,8 @@ from app.deps import csrf_guard
 from app.migrate import run_migrations
 from app.routers import auth, reports, sync, users, voters
 from app.services.bootstrap import seed_admin
-from app.web.routes import LoginRequired
+from app.services.throttle import LoginThrottle
+from app.web.routes import LoginRequired, PasswordChangeRequired
 from app.web.routes import router as web_router
 from app.web.templates import render
 
@@ -55,6 +56,8 @@ def create_app() -> FastAPI:
         dependencies=[Depends(csrf_guard)],
     )
     app.state.settings = settings
+    # In-memory, per-process login limiter; see docs/SECURITY.md for the caveats.
+    app.state.login_throttle = LoginThrottle()
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -75,14 +78,21 @@ def create_app() -> FastAPI:
     async def need_login(request: Request, exc: LoginRequired):
         return RedirectResponse(f"/login?next={quote(exc.next_path)}", status_code=303)
 
+    @app.exception_handler(PasswordChangeRequired)
+    async def need_password_change(request: Request, exc: PasswordChangeRequired):
+        return RedirectResponse("/change-password", status_code=303)
+
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException):
+        # A dict detail {"code", "message"} becomes {"detail": message, "code": code}.
+        body: dict = {"detail": exc.detail}
+        if isinstance(exc.detail, dict) and "code" in exc.detail:
+            body = {"detail": exc.detail.get("message", ""), "code": exc.detail["code"]}
         if request.url.path.startswith("/api") or request.url.path == "/healthz":
-            detail = exc.detail if isinstance(exc.detail, str) else exc.detail
-            return JSONResponse({"detail": detail}, status_code=exc.status_code)
+            return JSONResponse(body, status_code=exc.status_code, headers=exc.headers)
         if exc.status_code == 404:
             return render(request, "404.html", {"user": None}, status_code=404)
-        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+        return JSONResponse(body, status_code=exc.status_code, headers=exc.headers)
 
     @app.get("/healthz")
     def healthz(db: Session = Depends(get_db)) -> dict:
