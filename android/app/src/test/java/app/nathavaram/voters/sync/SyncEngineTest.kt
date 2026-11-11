@@ -49,7 +49,7 @@ private class FakeSyncApi : SyncApi {
 }
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], application = android.app.Application::class)
 class SyncEngineTest {
     private lateinit var db: AppDatabase
     private lateinit var api: FakeSyncApi

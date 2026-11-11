@@ -41,7 +41,7 @@ object Fixtures {
         deletedAt: String? = null,
     ) = VoterDto(
         id = id, voterId = voterId, firstName = firstName, surname = surname, gender = "Male",
-        age = 42, party = party, mobile = "9000000001", createdAt = T1, updatedAt = updatedAt,
+        houseNo = "12-A", age = 42, party = party, mobile = "9000000001", createdAt = T1, updatedAt = updatedAt,
         revision = revision, deletedAt = deletedAt, sourceId = "android-test",
     )
 
