@@ -22,6 +22,7 @@ def ctx(tmp_path, monkeypatch):
 
     app = create_app()
     with TestClient(app) as client:
+        set_must_change("admin", False)  # normal session; force-change tests opt back in
         login = client.post(
             "/api/auth/login",
             json={"username": "admin", "password": "admin-pass-123"},
@@ -40,14 +41,38 @@ def search(ctx, **filters):
     return ctx.client.post("/api/voters/search", headers=ctx.auth, json=filters)
 
 
-def make_user(ctx, username: str = "field.user", password: str = "field-pass-123"):
-    """Create a regular user as admin and return Bearer headers for that user."""
+def set_must_change(username: str, value: bool) -> None:
+    """Flip must_change_password directly in the test database."""
+    from app import database
+    from app.models import User
+
+    db = database.SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).one()
+        user.must_change_password = value
+        db.commit()
+    finally:
+        db.close()
+
+
+def make_user(
+    ctx,
+    username: str = "field.user",
+    password: str = "field-pass-123",
+    role: str = "user",
+    must_change: bool = False,
+):
+    """Create a user as the owner and return Bearer headers for that user.
+
+    By default the forced-change flag is cleared so the session is usable.
+    """
     created = ctx.client.post(
         "/api/users",
         headers=ctx.auth,
-        json={"username": username, "password": password, "role": "user"},
+        json={"username": username, "password": password, "role": role},
     )
     assert created.status_code == 201, created.text
+    set_must_change(username, must_change)
     login = ctx.client.post("/api/auth/login", json={"username": username, "password": password})
     assert login.status_code == 200, login.text
     ctx.client.cookies.clear()  # keep tests on Bearer auth; no stray session cookie

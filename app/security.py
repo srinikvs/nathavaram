@@ -26,6 +26,16 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+_dummy_hashes: dict[int, str] = {}
+
+
+def dummy_verify(password: str, rounds: int) -> None:
+    """Spend one bcrypt verify against a throwaway hash (unknown-user timing parity)."""
+    if rounds not in _dummy_hashes:
+        _dummy_hashes[rounds] = hash_password("dummy-password-not-a-real-credential", rounds)
+    verify_password(password, _dummy_hashes[rounds])
+
+
 def create_access_token(user: User, settings: Settings) -> str:
     now = datetime.now(timezone.utc)
     payload = {
@@ -65,6 +75,7 @@ __all__ = [
     "InvalidTokenError",
     "create_access_token",
     "decode_access_token",
+    "dummy_verify",
     "hash_password",
     "verify_password",
 ]

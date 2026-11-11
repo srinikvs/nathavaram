@@ -63,13 +63,15 @@ Accounts are server-managed in phase 1. They are not part of voter sync.
 | `password_hash` | text | bcrypt hash. The plaintext password is never stored or returned |
 | `role` | text | `admin` or `user` |
 | `is_active` | boolean | Inactive users cannot sign in |
+| `must_change_password` | boolean, default true | Set for new users, the seeded admin, and after an admin password reset. Until cleared, every route except change-password and logout returns 403 `password_change_required`. See `docs/SECURITY.md` |
+| `is_owner` | boolean, default false | Only an owner can create or manage users. Set only on the admin from `ADMIN_USERNAME`; never settable through the API |
 | `created_at`, `updated_at` | text | UTC timestamps in the same format as voters |
 
-There is no default account in the repository. On startup the app inserts one admin when both `ADMIN_USERNAME` and `ADMIN_PASSWORD` are set and that username does not already exist. Restarting does not reset the password.
+There is no default account in the repository. On startup the app inserts one admin (`is_owner` and `must_change_password` both true) when both `ADMIN_USERNAME` and `ADMIN_PASSWORD` are set and that username does not already exist. If that username already exists, the app sets `is_owner` on it (for databases created before the flag) and leaves the password alone. Restarting does not reset the password.
 
 ## Migration
 
-`alembic/versions/0001_initial.py` creates `users`, `sync_state`, and `voters`, including the partial unique index. The app runs `alembic upgrade head` on startup. You can also run it yourself:
+`alembic/versions/0001_initial.py` creates `users`, `sync_state`, and `voters`, including the partial unique index. `alembic/versions/0002_user_security_flags.py` adds `users.must_change_password` (existing rows become true) and `users.is_owner` (existing rows false). The app runs `alembic upgrade head` on startup. You can also run it yourself:
 
 ```bash
 DATABASE_URL=sqlite:///./data/nathavaram.db alembic upgrade head

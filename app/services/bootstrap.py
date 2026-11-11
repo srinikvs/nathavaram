@@ -32,6 +32,11 @@ def seed_admin(db: Session, settings: Settings) -> None:
         raise RuntimeError(f"ADMIN_USERNAME is invalid: {exc}") from exc
     existing = db.scalar(select(User).where(User.username == username))
     if existing is not None:
+        if not existing.is_owner:
+            # Databases created before the owner flag: the env-named admin becomes the owner.
+            existing.is_owner = True
+            db.commit()
+            logger.info("Marked env admin %s as owner", username)
         logger.info("Admin user %s already exists; leaving the password unchanged", username)
         return
     now = dump_dt(datetime.now(timezone.utc))
@@ -41,6 +46,8 @@ def seed_admin(db: Session, settings: Settings) -> None:
             password_hash=hash_password(password, settings.bcrypt_rounds),
             role="admin",
             is_active=True,
+            must_change_password=True,
+            is_owner=True,
             created_at=now,
             updated_at=now,
         )

@@ -72,20 +72,43 @@ async def csrf_guard(request: Request) -> None:
         raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
 
 
-def require_user(
+PASSWORD_CHANGE_REQUIRED = "password_change_required"
+
+
+def require_session_user(
     request: Request,
     db: Session = Depends(get_db),
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
 ) -> User:
+    """Authenticated user, even when a password change is still pending."""
     user = resolve_user(request, db, credentials)
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user
 
 
+def require_user(user: User = Depends(require_session_user)) -> User:
+    """Authenticated user whose password is not flagged for a forced change."""
+    if user.must_change_password:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": PASSWORD_CHANGE_REQUIRED,
+                "message": "Password change required. POST /api/auth/change-password first.",
+            },
+        )
+    return user
+
+
 def require_admin(user: User = Depends(require_user)) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin role required")
+    return user
+
+
+def require_owner(user: User = Depends(require_admin)) -> User:
+    if not user.is_owner:
+        raise HTTPException(status_code=403, detail="Owner role required")
     return user
 
 

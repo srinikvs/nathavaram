@@ -1,4 +1,4 @@
-"""Admin-only user management."""
+"""Owner-only user management (see docs/SECURITY.md)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import require_admin
+from app.deps import require_owner
 from app.errors import ServiceError
 from app.models import User
 from app.schemas import UserCreate, UserPublic, UserUpdate
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 @router.get("", response_model=list[UserPublic])
-def get_users(db: Session = Depends(get_db), _: User = Depends(require_admin)) -> list[User]:
+def get_users(db: Session = Depends(get_db), _: User = Depends(require_owner)) -> list[User]:
     return list_users(db)
 
 
@@ -25,7 +25,7 @@ def post_user(
     body: UserCreate,
     request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_owner),
 ) -> User:
     try:
         return create_user(db, body, request.app.state.settings)
@@ -39,7 +39,7 @@ def patch_user(
     body: UserUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_admin),
+    actor: User = Depends(require_owner),
 ) -> User:
     try:
         return update_user(db, user_id, body, request.app.state.settings, actor)

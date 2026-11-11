@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests.conftest import csrf_from_page
+from tests.conftest import csrf_from_page, set_must_change
 
 
 def _form(**overrides) -> dict:
@@ -76,6 +76,7 @@ def test_pages_require_login_and_round_trip_a_voter(ctx):
         json={"username": "field.user", "password": "field-pass-123", "role": "user"},
     )
     assert created.status_code == 201
+    set_must_change("field.user", False)
     ctx.client.post("/logout", data={"csrf_token": token}, follow_redirects=False)
     ctx.client.post(
         "/login",

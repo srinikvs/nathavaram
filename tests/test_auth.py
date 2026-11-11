@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.config import load_settings
-from tests.conftest import voter_payload
+from tests.conftest import set_must_change, voter_payload
 
 
 def test_health_and_voters_require_auth_except_health(ctx):
@@ -48,6 +48,7 @@ def test_user_role_cannot_manage_users_but_can_add_voters(ctx):
     )
     assert created.status_code == 201, created.text
     assert "password" not in created.json()
+    set_must_change("field.user", False)
     login = ctx.client.post(
         "/api/auth/login",
         json={"username": "field.user", "password": "field-pass-123"},
