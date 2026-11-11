@@ -18,7 +18,11 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             val summary = container.newSyncEngine().run()
             container.settings.clockSkew = summary.clockSkew
             container.settings.lastSyncAt = Timestamps.now()
+            container.settings.passwordChangeRequired = false
             Result.success()
+        } catch (e: ApiException.PasswordChangeRequired) {
+            container.settings.passwordChangeRequired = true
+            Result.failure()
         } catch (e: ApiException.Unauthorized) {
             container.tokens.clear()
             Result.failure()

@@ -21,6 +21,7 @@ sealed class ApiException(message: String, val retryable: Boolean) : Exception(m
     class NotConfigured : ApiException("Server address is not set", retryable = false)
     class Unauthorized : ApiException("Sign in again", retryable = false)
     class InvalidCredentials : ApiException("Invalid username or password", retryable = false)
+    class PasswordChangeRequired : ApiException(app.nathavaram.voters.net.PasswordChangeRequired.USER_MESSAGE, retryable = false)
     class Http(val code: Int) : ApiException("Server returned HTTP $code", retryable = code >= 500)
     class Malformed : ApiException("Unexpected response from server", retryable = false)
 }
@@ -91,6 +92,8 @@ class HttpApi(
                     }
                     response.code == 401 ->
                         throw if (sentBearer) ApiException.Unauthorized() else ApiException.InvalidCredentials()
+                    response.code == 403 && PasswordChangeRequired.matches(403, response.body?.string()) ->
+                        throw ApiException.PasswordChangeRequired()
                     else -> throw ApiException.Http(response.code)
                 }
             }

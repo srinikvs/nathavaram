@@ -52,6 +52,7 @@ Sync behavior:
 - Pull runs until `has_more` is false. Tombstones are stored stripped (`voter_id` is the inert placeholder, never read as an EPIC) and hidden from search. A dirty local row newer than the pulled one is not overwritten; its revision moves up to the one just seen so its next push is not rejected as stale.
 - The cursor is stored only after a page is applied.
 - If the phone clock differs from `server_time` by more than 5 minutes, the search screen shows a warning.
+- HTTP 403 with code `password_change_required` (at `detail.code` or top-level `code`) is a forced password change, not a generic error. Login or sync stops (no retry), sign-in and the search screen show a message to change the password on the web change-password page and sign in again, and the flag clears on the next successful sync or sign-in. There is no in-app change-password screen. Any other 403 stays a plain HTTP error. Parsing is in `net/PasswordChangeRequired.kt`, text in `ui/ErrorMessages.kt`.
 
 ## Privacy
 

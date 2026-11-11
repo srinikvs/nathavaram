@@ -33,6 +33,7 @@ fun SearchScreen(vm: AppViewModel) {
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Voters", style = MaterialTheme.typography.headlineSmall)
+        vm.passwordChangeNotice?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (vm.clockSkew) {
             Text(
                 "This phone's clock differs from the server by more than 5 minutes. Fix the date and time before editing.",

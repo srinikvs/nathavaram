@@ -62,6 +62,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val baseUrl: String get() = settings.baseUrl.orEmpty()
     val clockSkew: Boolean get() = settings.clockSkew
 
+    /** Non-null while the server is demanding a password change (done on the web). */
+    val passwordChangeNotice: String?
+        get() = if (settings.passwordChangeRequired) ErrorMessages.PASSWORD_CHANGE_NOTICE else null
+
     private fun initialScreen(): Screen = when {
         settings.baseUrl == null -> Screen.Settings
         container.tokens.token() == null -> Screen.Login
@@ -93,19 +97,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             _login.value = try {
                 val response = container.api.login(username.trim(), password)
                 container.tokens.save(response.accessToken, response.username.ifEmpty { username.trim() })
+                settings.passwordChangeRequired = false
                 SyncScheduler.requestSync(getApplication())
                 _screen.value = Screen.Search
                 LoginUi()
+            } catch (e: ApiException.PasswordChangeRequired) {
+                settings.passwordChangeRequired = true
+                LoginUi(error = ErrorMessages.forSignIn(e))
             } catch (e: ApiException) {
-                LoginUi(error = e.message)
+                LoginUi(error = ErrorMessages.forSignIn(e))
             } catch (e: IOException) {
-                LoginUi(error = "Cannot reach the server")
+                LoginUi(error = ErrorMessages.forSignIn(e))
             }
         }
     }
 
     fun signOut() {
         container.tokens.clear()
+        settings.passwordChangeRequired = false
         _screen.value = Screen.Login
     }
 
