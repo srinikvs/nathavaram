@@ -9,7 +9,13 @@ from app.database import get_db
 from app.deps import require_session_user, require_user
 from app.errors import ServiceError
 from app.models import User
-from app.schemas import LoginRequest, PasswordChange, TokenResponse, UserPublic
+from app.schemas import (
+    LoginRequest,
+    PasswordChange,
+    PasswordChangeResult,
+    TokenResponse,
+    UserPublic,
+)
 from app.security import create_access_token, csrf_token_for
 from app.services.login import (
     INVALID_LOGIN_MESSAGE,
@@ -29,8 +35,7 @@ def _throttled(exc: LoginThrottled) -> HTTPException:
     )
 
 
-def _issue(response: Response, user: User, settings) -> TokenResponse:
-    token = create_access_token(user, settings)
+def set_session_cookie(response: Response, token: str, settings) -> None:
     response.set_cookie(
         settings.cookie_name,
         token,
@@ -40,6 +45,11 @@ def _issue(response: Response, user: User, settings) -> TokenResponse:
         max_age=settings.jwt_expire_minutes * 60,
         path="/",
     )
+
+
+def _issue(response: Response, user: User, settings) -> TokenResponse:
+    token = create_access_token(user, settings)
+    set_session_cookie(response, token, settings)
     return TokenResponse(
         access_token=token,
         expires_in=settings.jwt_expire_minutes * 60,
@@ -66,15 +76,29 @@ def login(
     return _issue(response, user, request.app.state.settings)
 
 
-@router.post("/change-password", response_model=UserPublic)
+@router.post("/change-password", response_model=PasswordChangeResult)
 def change_password_endpoint(
     body: PasswordChange,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(require_session_user),
-) -> User:
+) -> PasswordChangeResult:
+    settings = request.app.state.settings
     try:
-        return guarded_change_password(db, request, user, body.current_password, body.new_password)
+        updated = guarded_change_password(
+            db, request, user, body.current_password, body.new_password
+        )
+        # The change revoked every earlier token, including this request's. Re-issue.
+        token = create_access_token(updated, settings)
+        if request.cookies.get(settings.cookie_name):
+            set_session_cookie(response, token, settings)
+        return PasswordChangeResult(
+            **UserPublic.model_validate(updated).model_dump(),
+            access_token=token,
+            expires_in=settings.jwt_expire_minutes * 60,
+            csrf_token=csrf_token_for(token, settings),
+        )
     except LoginThrottled as exc:
         raise _throttled(exc) from exc
     except ServiceError as exc:

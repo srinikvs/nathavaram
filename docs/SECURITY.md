@@ -41,7 +41,34 @@ While it is true:
 - API and sync routes return `403` with `{"detail": "<message>", "code": "password_change_required"}`. Only `POST /api/auth/change-password` and `POST /api/auth/logout` work. `GET /healthz` stays public.
 - Web pages redirect (303) to `/change-password`.
 
-`POST /api/auth/change-password` takes `{"current_password", "new_password"}`. The new password must be 10 to 200 characters and different from the current one. A wrong current password or an identical new password returns 400; a short one returns 422. On success the flag is cleared and the existing token keeps working. Clients should check `code == "password_change_required"` and send the user to a change-password screen.
+`POST /api/auth/change-password` takes `{"current_password", "new_password"}`. The new password must be 10 to 200 characters and different from the current one. A wrong current password or an identical new password returns 400; a short one returns 422. On success the flag is cleared, every earlier token for that user is revoked (see Session revocation), and the response carries a fresh `access_token`, `expires_in` and `csrf_token`. When the request used the session cookie, the cookie is re-issued too, so the browser stays signed in. Clients should check `code == "password_change_required"` and send the user to a change-password screen.
+
+Created users: `POST /api/users` and the web form `POST /users` always store `must_change_password=true`; a client-supplied value is rejected (422), not honored. The 10-character minimum is enforced by the `UserCreate` schema and again in `create_user`. Web pages that would otherwise skip the gate (`GET /`, `GET /login` when already signed in, `next=` targets) redirect to `/change-password` while the flag is set. Allowed while flagged: login, logout, `GET/POST /change-password`, `POST /api/auth/change-password`, `/static`, `/healthz`.
+
+Every signed-in user (any role) has a "Change password" link in the web nav and may change their password at any time, not only on first login.
+
+## Owner user management
+
+Owner only (non-owner admins and users get 403). Cookie-authenticated mutations need the CSRF token; Bearer requests are exempt.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/users` | List users (soft-deleted ones are hidden) |
+| `POST /api/users` | Create (`must_change_password=true`) |
+| `PATCH /api/users/{id}` | Change role / active flag / password |
+| `POST /api/users/{id}/reset-password` | Body `{"new_password"}` (10+ chars). Sets a temporary password, `must_change_password=true`, bumps `token_version`, clears the username's login throttle |
+| `DELETE /api/users/{id}` | Soft delete (below) |
+| `GET/POST /users`, `POST /users/{id}/reset-password`, `POST /users/{id}/delete` | Web equivalents. Delete asks for confirmation in the browser and requires `confirm=yes` |
+
+Choices:
+
+- An owner cannot reset their own password through these endpoints (including `PATCH`); they use Change password, which requires the current password.
+- Delete is a soft delete. Voters carry no user foreign keys, but the row is kept for auditability and so the unique username stays reserved (creating the same name again returns 409). Delete sets `is_active=false`, stamps `deleted_at`, and bumps `token_version`. Deleted users cannot log in and are hidden from the management list. An owner cannot delete themself or another owner.
+- Audit: reset, delete and password changes write a structured `nathavaram.audit` log line (`action`, actor id/username, target id/username). No passwords are logged. There is no audit table.
+
+## Session revocation
+
+`users.token_version` (integer, migration `0003_token_version`) is embedded in each JWT as the `tv` claim and checked on every request, cookie or Bearer. A missing claim, a mismatch, or an inactive user gives 401, like a bad token. The version is incremented on owner reset, owner delete or deactivation, and the user's own successful password change. Tokens issued before migration 0003 have no claim and stop working once; users sign in again.
 
 ## Owner
 

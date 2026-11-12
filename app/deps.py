@@ -32,6 +32,10 @@ def resolve_user(
     user = db.get(User, str(payload.get("sub", "")))
     if user is None or not user.is_active:
         return None
+    claim = payload.get("tv")
+    # bool is an int subclass; reject it so `true` cannot match version 1.
+    if not isinstance(claim, int) or isinstance(claim, bool) or claim != user.token_version:
+        return None
     return user
 
 

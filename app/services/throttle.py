@@ -80,6 +80,11 @@ class LoginThrottle:
             self._by_user[user_key].append(now)
             return now, 0
 
+    def clear_user(self, username: str) -> None:
+        """Forget all failures recorded for a username (owner password reset)."""
+        with self._lock:
+            self._by_user.pop(normalize_username(username), None)
+
     def succeed(self, ip: str, username: str, ticket: float) -> None:
         """Successful login: drop the username's failures and this attempt's IP count."""
         user_key = normalize_username(username)

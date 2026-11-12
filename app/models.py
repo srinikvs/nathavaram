@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import CheckConstraint, Integer, String, false, true
+from sqlalchemy import CheckConstraint, Integer, String, false, text, true
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -27,6 +27,10 @@ class User(Base):
         nullable=False, default=True, server_default=true()
     )
     is_owner: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
+    token_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    deleted_at: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
 

@@ -67,12 +67,20 @@ class UserCreate(BaseModel):
         return value
 
 
+class ResetPassword(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    new_password: str = Field(min_length=10, max_length=200)
+
+
 class UserUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    password: str | None = Field(default=None, min_length=10, max_length=200)
+    password: str | None = Field(default=None, max_length=200)
     role: str | None = None
     is_active: bool | None = None
+
+    # Minimum password length is enforced in the service layer (400 with a field name).
 
     @field_validator("role")
     @classmethod
@@ -93,8 +101,17 @@ class UserPublic(BaseModel):
     is_active: bool
     must_change_password: bool
     is_owner: bool
+    deleted_at: str | None = None
     created_at: str
     updated_at: str
+
+
+class PasswordChangeResult(UserPublic):
+    """Change-password response; carries a fresh token because old ones are revoked."""
+
+    access_token: str
+    expires_in: int
+    csrf_token: str
 
 
 class VoterWrite(BaseModel):

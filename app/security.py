@@ -42,6 +42,7 @@ def create_access_token(user: User, settings: Settings) -> str:
         "sub": user.id,
         "username": user.username,
         "role": user.role,
+        "tv": user.token_version,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=settings.jwt_expire_minutes)).timestamp()),
     }

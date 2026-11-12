@@ -4,10 +4,10 @@
 <div class="page-head">
   <div>
     <h1>Users</h1>
-    <p class="lede">Admins can add field users. Passwords are stored as hashes.</p>
+    <p class="lede">Admins can add field users. Passwords are stored as hashes. New and reset users must change their password at first sign-in.</p>
   </div>
 </div>
-{% if saved %}<p class="banner ok">User created.</p>{% endif %}
+{% if saved_message %}<p class="banner ok" role="status">{{ saved_message }}</p>{% endif %}
 {% if errors %}
 <div class="banner bad" role="alert">
   {% for line in errors %}<p>{{ line }}</p>{% endfor %}
@@ -17,29 +17,48 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div>
     <label for="username">Username</label>
-    <input id="username" name="username" required maxlength="32" autocomplete="off">
+    <input id="username" name="username" required maxlength="32" autocomplete="off" aria-describedby="username-hint" value="{{ values.username or '' }}">
+    <p class="hint" id="username-hint">3–32 characters: letters, digits, . _ -</p>
   </div>
   <div>
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" required minlength="10" autocomplete="new-password">
+    <label for="password">Temporary password</label>
+    <input id="password" name="password" type="password" required minlength="10" maxlength="200" autocomplete="new-password" aria-describedby="password-hint">
+    <p class="hint" id="password-hint">At least 10 characters. The user must change it at first sign-in.</p>
   </div>
   <div>
     <label for="role">Role</label>
     <select id="role" name="role">
-      <option value="user">user</option>
-      <option value="admin">admin</option>
+      <option value="user" {% if values.role != "admin" %}selected{% endif %}>user</option>
+      <option value="admin" {% if values.role == "admin" %}selected{% endif %}>admin</option>
     </select>
   </div>
   <div class="full"><button type="submit">Create user</button></div>
 </form>
 <table>
-  <thead><tr><th>Username</th><th>Role</th><th>Active</th></tr></thead>
+  <thead><tr><th>Username</th><th>Role</th><th>Active</th><th>Actions</th></tr></thead>
   <tbody>
     {% for account in users %}
     <tr>
-      <td>{{ account.username }}</td>
+      <td>{{ account.username }}{% if account.is_owner %} (owner){% endif %}</td>
       <td>{{ account.role }}</td>
       <td>{{ "yes" if account.is_active else "no" }}</td>
+      <td>
+        {% if account.id != user.id %}
+        <form method="post" action="/users/{{ account.id }}/reset-password" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label class="sr-only" for="reset-{{ account.id }}">New temporary password for {{ account.username }}</label>
+          <input id="reset-{{ account.id }}" name="new_password" type="password" required minlength="10" maxlength="200" autocomplete="new-password" placeholder="New password (10+ chars)">
+          <button type="submit">Reset password</button>
+        </form>
+        {% endif %}
+        {% if account.id != user.id and not account.is_owner %}
+        <form method="post" action="/users/{{ account.id }}/delete" class="inline" data-confirm="Delete user {{ account.username }}? They will no longer be able to sign in.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="confirm" value="yes">
+          <button type="submit">Delete</button>
+        </form>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>

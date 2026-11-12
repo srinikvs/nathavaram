@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from tests.conftest import csrf_from_page, set_must_change
 
 
@@ -85,3 +88,40 @@ def test_pages_require_login_and_round_trip_a_voter(ctx):
     )
     forbidden = ctx.client.get("/users")
     assert forbidden.status_code == 403
+
+
+def test_search_results_use_the_same_card_markup_as_the_list(ctx):
+    # Arrange
+    imported = ctx.client.post(
+        "/api/voters/import.csv",
+        headers=ctx.auth,
+        files={"file": ("voters_sample.csv", Path("sample/voters_sample.csv").read_bytes(), "text/csv")},
+    )
+    assert imported.status_code == 200
+    token = csrf_from_page(ctx.client.get("/voters").text)
+
+    # Act
+    found = ctx.client.post("/voters/search", data={"csrf_token": token, "party": "TDP"})
+
+    # Assert
+    assert found.status_code == 200
+    assert 'table class="register"' in found.text
+    assert 'class="table-wrap"' in found.text
+    assert 'data-label="VoterId"' in found.text
+    assert "ZZZ0000002" in found.text
+    assert "ZZZ0000009" in found.text
+    assert "ZZZ0000001" not in found.text
+
+
+def test_narrow_screen_css_collapses_the_register_table():
+    # Arrange
+    css = Path("app/static/styles.css").read_text(encoding="utf-8")
+    narrow = css.split("@media (max-width: 760px)", 1)[1].split("@media print", 1)[0]
+
+    # Assert
+    assert ".register { min-width: 0; }" in narrow
+    assert ".register thead { display: none; }" in narrow
+    assert "overflow-x: hidden" in narrow
+    assert "max-width: 100%" in narrow
+    assert "td::before" in narrow
+    assert re.search(r"\.table-wrap\s*\{[^}]*max-width:\s*100%", css)

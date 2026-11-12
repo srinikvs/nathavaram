@@ -281,8 +281,13 @@ def test_reports_cover_the_required_breakdowns(ctx):
     booths = {row["label"]: row["count"] for row in body["by_booth"]}
     assert booths["1"] == 2
     parties = {row["label"]: row["count"] for row in body["by_party"]}
-    assert parties["(blank)"] == 9
-    assert parties["TDP"] == 0
+    assert parties["(blank)"] == 2
+    assert parties["TDP"] == 2
+    assert parties["YSRCP"] == 1
+    assert parties["Jana Sena"] == 1
+    assert parties["BJP"] == 1
+    assert parties["INC"] == 1
+    assert parties["Independent"] == 1
     bands = {row["label"]: row["count"] for row in body["by_age_band"]}
     assert bands["Unknown"] == 1
     assert bands["66+"] == 2
