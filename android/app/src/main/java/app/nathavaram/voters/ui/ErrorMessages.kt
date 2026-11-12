@@ -6,6 +6,7 @@ import java.io.IOException
 
 /** User-facing text for sign-in failures. Pure, so it is unit-testable without Android. */
 object ErrorMessages {
+    const val SIGN_IN_AGAIN = "Sign in again"
     const val CANNOT_REACH = "Cannot reach the server"
 
     /** Text shown on the search screen while a forced password change is pending. */

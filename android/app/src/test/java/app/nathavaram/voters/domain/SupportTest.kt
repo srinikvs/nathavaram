@@ -46,6 +46,12 @@ class BaseUrlTest {
     }
 
     @Test
+    fun `built-in default is the https duckdns address without a trailing slash`() {
+        assertEquals("https://nathavaram.duckdns.org", BaseUrl.DEFAULT)
+        assertEquals(BaseUrl.DEFAULT, ok(BaseUrl.DEFAULT, cleartext = false))
+    }
+
+    @Test
     fun `a path prefix is kept`() {
         assertEquals("https://voters.example/app", ok("https://voters.example/app/", cleartext = false))
     }

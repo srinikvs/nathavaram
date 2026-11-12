@@ -66,6 +66,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val passwordChangeNotice: String?
         get() = if (settings.passwordChangeRequired) ErrorMessages.PASSWORD_CHANGE_NOTICE else null
 
+    init {
+        viewModelScope.launch {
+            container.session.expired.collect {
+                _login.value = LoginUi(error = ErrorMessages.SIGN_IN_AGAIN)
+                _screen.value = Screen.Login
+            }
+        }
+    }
+
     private fun initialScreen(): Screen = when {
         settings.baseUrl == null -> Screen.Settings
         container.tokens.token() == null -> Screen.Login

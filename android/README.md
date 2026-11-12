@@ -28,7 +28,7 @@ Robolectric downloads its Android jar on the first test run, so that run needs n
 
 ## Server address
 
-There is no built-in address. The first run opens the **Server address** screen. Release builds accept `https://` only and the network security config disables cleartext. The debug build alone allows `http://` (`src/debug/res/xml/network_security_config.xml`) so a developer can reach a local server, for example `http://10.0.2.2:8000` from the emulator.
+A fresh install uses the built-in default `https://nathavaram.duckdns.org` (no trailing slash), so first run goes straight to sign-in. The address can still be changed on the **Server address** screen. A 401 from a revoked or expired token clears the stored token and returns to sign-in with "Sign in again". Release builds accept `https://` only and the network security config disables cleartext. The debug build alone allows `http://` (`src/debug/res/xml/network_security_config.xml`) so a developer can reach a local server, for example `http://10.0.2.2:8000` from the emulator.
 
 ## How it works
 

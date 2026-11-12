@@ -24,7 +24,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             container.settings.passwordChangeRequired = true
             Result.failure()
         } catch (e: ApiException.Unauthorized) {
-            container.tokens.clear()
+            container.session.onUnauthorized()
             Result.failure()
         } catch (e: ApiException) {
             if (e.retryable) Result.retry() else Result.failure()

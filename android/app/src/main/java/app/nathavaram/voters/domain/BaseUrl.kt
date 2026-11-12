@@ -2,8 +2,10 @@ package app.nathavaram.voters.domain
 
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-/** Validates the operator-entered server address. There is no built-in default. */
+/** Validates the operator-entered server address. A fresh install uses [DEFAULT]. */
 object BaseUrl {
+    const val DEFAULT = "https://nathavaram.duckdns.org"
+
     sealed interface Result {
         data class Ok(val url: String) : Result
         data class Invalid(val reason: String) : Result

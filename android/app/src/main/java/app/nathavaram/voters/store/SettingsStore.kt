@@ -2,6 +2,7 @@ package app.nathavaram.voters.store
 
 import android.content.Context
 import android.content.SharedPreferences
+import app.nathavaram.voters.domain.BaseUrl
 import java.util.UUID
 
 /** Non-secret settings: server address, device id, last sync state. The token lives in TokenStore. */

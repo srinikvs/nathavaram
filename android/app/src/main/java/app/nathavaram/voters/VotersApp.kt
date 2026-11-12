@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.room.Room
 import app.nathavaram.voters.net.HttpApi
 import app.nathavaram.voters.security.EncryptedTokenStore
+import app.nathavaram.voters.security.SessionGuard
 import app.nathavaram.voters.security.TokenStore
 import app.nathavaram.voters.store.AppDatabase
 import app.nathavaram.voters.store.SettingsStore
@@ -25,6 +26,8 @@ class AppContainer(private val app: Application) {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    val session: SessionGuard by lazy { SessionGuard(tokens) }
 
     val api: HttpApi by lazy { HttpApi(http, { settings.baseUrl }, { tokens.token() }) }
 
