@@ -89,7 +89,7 @@ def test_csv_and_excel_round_trip_telugu(ctx):
 
     workbook = load_workbook(io.BytesIO(ctx.client.post("/api/voters/export.xlsx", headers=ctx.auth).content))
     sheet = workbook["Voters"]
-    assert sheet["A1"].value == "2024 Booth"
+    assert sheet["A1"].value == "Booth"
     assert sheet["E1"].value == "VoterId"
 
 
@@ -293,5 +293,7 @@ def test_reports_cover_the_required_breakdowns(ctx):
     assert bands["66+"] == 2
     exported = ctx.client.get("/api/reports/export.csv", headers=ctx.auth)
     assert exported.status_code == 200
-    assert "2024 Booth" in exported.content.decode("utf-8-sig")
+    exported_text = exported.content.decode("utf-8-sig")
+    assert exported_text.splitlines()[0].startswith("Booth,2024 B.S.No,Ward,")
+    assert "2024 Booth" not in exported_text
     assert "Age band" in exported.content.decode("utf-8-sig")

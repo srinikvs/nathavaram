@@ -28,7 +28,7 @@ object SyncMerge {
         createdAt = e.createdAt,
         deleted = false,
         baseRevision = e.revision.takeIf { it > 0 },
-        booth2024 = e.booth2024, bsNo2024 = e.bsNo2024, ward2026 = e.ward2026, wardSNo = e.wardSNo,
+        booth = e.booth, bsNo2024 = e.bsNo2024, ward = e.ward, wardSNo = e.wardSNo,
         voterId = e.voterId, firstName = e.firstName, surname = e.surname,
         relativeName = e.relativeName, houseNo = e.houseNo, gender = e.gender, age = e.age,
         caste = e.caste, mobile = e.mobile, cCity = e.cCity, profession = e.profession,
@@ -37,7 +37,7 @@ object SyncMerge {
 
     fun toDto(e: VoterEntity): VoterDto = VoterDto(
         id = e.id,
-        booth2024 = e.booth2024, bsNo2024 = e.bsNo2024, ward2026 = e.ward2026, wardSNo = e.wardSNo,
+        booth = e.booth, bsNo2024 = e.bsNo2024, ward = e.ward, wardSNo = e.wardSNo,
         voterId = e.voterId, firstName = e.firstName, surname = e.surname,
         relativeName = e.relativeName, houseNo = e.houseNo, gender = e.gender, age = e.age,
         caste = e.caste, mobile = e.mobile, cCity = e.cCity, profession = e.profession,
@@ -49,7 +49,7 @@ object SyncMerge {
     fun fromDto(dto: VoterDto): VoterEntity =
         if (dto.deletedAt != null) tombstone(dto) else VoterEntity(
             id = dto.id,
-            booth2024 = dto.booth2024, bsNo2024 = dto.bsNo2024, ward2026 = dto.ward2026,
+            booth = dto.booth, bsNo2024 = dto.bsNo2024, ward = dto.ward,
             wardSNo = dto.wardSNo, voterId = dto.voterId, firstName = dto.firstName,
             surname = dto.surname, relativeName = dto.relativeName, houseNo = dto.houseNo,
             gender = dto.gender, age = dto.age, caste = dto.caste, mobile = dto.mobile,

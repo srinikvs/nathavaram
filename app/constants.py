@@ -8,9 +8,9 @@ from __future__ import annotations
 
 # (internal name, exact display name) in the order clerks see on paper.
 VOTER_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("booth_2024", "2024 Booth"),
+    ("booth", "Booth"),
     ("bs_no_2024", "2024 B.S.No"),
-    ("ward_2026", "2026 Ward"),
+    ("ward", "Ward"),
     ("ward_s_no", "Ward S No"),
     ("voter_id", "VoterId"),
     ("first_name", "FirstName"),
@@ -30,6 +30,15 @@ CSV_HEADERS: tuple[str, ...] = tuple(label for _, label in VOTER_COLUMNS)
 FIELD_BY_LABEL: dict[str, str] = {label: name for name, label in VOTER_COLUMNS}
 LABEL_BY_FIELD: dict[str, str] = {name: label for name, label in VOTER_COLUMNS}
 DATA_FIELDS: tuple[str, ...] = tuple(name for name, _ in VOTER_COLUMNS)
+
+# Extra CSV import headers: the pre-rename labels and the pre-rename column names.
+LEGACY_HEADER_ALIASES: dict[str, str] = {
+    "2024 Booth": "booth",
+    "2026 Ward": "ward",
+    "booth_2024": "booth",
+    "ward_2026": "ward",
+}
+IMPORT_HEADER_FIELDS: dict[str, str] = {**FIELD_BY_LABEL, **LEGACY_HEADER_ALIASES}
 
 GENDERS: tuple[str, ...] = ("Male", "Female", "Other", "Unknown")
 
@@ -60,9 +69,9 @@ AGE_BANDS: tuple[str, ...] = (
 ROLES: tuple[str, ...] = ("admin", "user")
 
 TEXT_LIMITS: dict[str, int] = {
-    "booth_2024": 64,
+    "booth": 64,
     "bs_no_2024": 64,
-    "ward_2026": 64,
+    "ward": 64,
     "ward_s_no": 64,
     "voter_id": 32,
     "first_name": 128,

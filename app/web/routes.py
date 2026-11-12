@@ -31,6 +31,7 @@ from app.services.voters import (
     search_voters,
     soft_delete,
 )
+from app.services.voters import VOTER_ID_LOCKED_MESSAGE
 from app.web.templates import render
 
 router = APIRouter()
@@ -395,6 +396,22 @@ async def edit_voter_submit(
         voter = get_active(db, voter_id)
     except ServiceError:
         return render(request, "404.html", {"user": user}, status_code=404)
+    # The form shows VoterId as plain text and never posts it. A crafted post that
+    # carries a different value is refused rather than ignored.
+    posted_voter_id = form.get("voter_id")
+    if posted_voter_id is not None and str(posted_voter_id).strip() != voter.voter_id:
+        return render(
+            request,
+            "voters/form.html",
+            {
+                "user": user,
+                "voter": voter,
+                "errors": [f"VoterId: {VOTER_ID_LOCKED_MESSAGE}"],
+                "values": {**raw, "voter_id": voter.voter_id},
+            },
+            status_code=400,
+        )
+    raw["voter_id"] = voter.voter_id
     try:
         data = VoterWrite.model_validate(raw)
     except ValidationError as exc:

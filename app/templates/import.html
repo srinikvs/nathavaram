@@ -8,7 +8,7 @@
   </div>
   <a class="button ghost" href="/sample.csv">Download fake sample</a>
 </div>
-<p class="columns" translate="no">2024 Booth, 2024 B.S.No, 2026 Ward, Ward S No, VoterId, FirstName, SurName, RelativeName, HouseNo, Gender, Age, Caste, Mobile, C_City, Profession, Party</p>
+<p class="columns" translate="no">Booth, 2024 B.S.No, Ward, Ward S No, VoterId, FirstName, SurName, RelativeName, HouseNo, Gender, Age, Caste, Mobile, C_City, Profession, Party</p>
 {% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
 <form method="post" action="/import" enctype="multipart/form-data" class="stack">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

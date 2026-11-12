@@ -89,9 +89,9 @@ def csrf_from_page(html: str) -> str:
 
 def voter_payload(**overrides) -> dict:
     data = {
-        "booth_2024": "12A",
+        "booth": "12A",
         "bs_no_2024": "101",
-        "ward_2026": "3",
+        "ward": "3",
         "ward_s_no": "15",
         "voter_id": "ZZZ1000001",
         "first_name": "Testperson",

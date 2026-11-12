@@ -149,7 +149,7 @@ def test_multipart_import_form_is_checked(ctx):
     ctx.client.cookies.clear()
     ctx.client.post("/login", data=ADMIN, follow_redirects=False)
     token = csrf_from_page(ctx.client.get("/import").text)
-    header = "2024 Booth,2024 B.S.No,2026 Ward,Ward S No,VoterId,FirstName,SurName,RelativeName,HouseNo,Gender,Age,Caste,Mobile,C_City,Profession,Party"
+    header = "Booth,2024 B.S.No,Ward,Ward S No,VoterId,FirstName,SurName,RelativeName,HouseNo,Gender,Age,Caste,Mobile,C_City,Profession,Party"
     row = "1,10,1,1,ZZZ0000400,Fake,Row,Rel,H-1,Male,40,SampleGroupA,9000000092,Nathavaram,Farmer,"
     files = {"file": ("fake.csv", f"{header}\n{row}\n".encode("utf-8"), "text/csv")}
 

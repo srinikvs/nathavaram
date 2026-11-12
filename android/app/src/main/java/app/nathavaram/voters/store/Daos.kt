@@ -20,6 +20,10 @@ interface VoterDao {
     @Query("DELETE FROM voters WHERE id = :id")
     suspend fun delete(id: String)
 
+    /** Another active (not soft-deleted) row that already uses [voterId], if any. */
+    @Query("SELECT * FROM voters WHERE voter_id = :voterId AND deleted_at IS NULL AND id != :excludeId LIMIT 1")
+    suspend fun activeWithVoterId(voterId: String, excludeId: String): VoterEntity?
+
     @Query("SELECT * FROM voters WHERE dirty = 1 ORDER BY updated_at")
     suspend fun dirtyRows(): List<VoterEntity>
 

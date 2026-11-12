@@ -23,7 +23,7 @@ from app.constants import DATA_FIELDS, SYNC_BATCH_LIMIT
 from app.models import Voter
 from app.schemas import SyncChange, SyncPullResponse, SyncPushRequest, SyncPushResponse, SyncResult, VoterPublic, VoterWrite
 from app.services.revision import allocate_revision, current_revision
-from app.services.voters import strip_to_tombstone, voter_to_public
+from app.services.voters import VOTER_ID_LOCKED_MESSAGE, strip_to_tombstone, voter_to_public
 from app.validation import canonical_voter_id, check_client_timestamp, dump_dt, parse_dt
 
 
@@ -126,6 +126,17 @@ def _apply_one(db: Session, change: SyncChange, device_id: str) -> SyncResult:
             id=record_id,
             status="validation_error",
             message=f"{field}: {first['msg']}",
+        )
+
+    # VoterId is the unique key: an active record keeps it for life. A tombstone holds only a
+    # placeholder, so re-sending a deleted record may carry its (re)chosen VoterId.
+    if existing is not None and existing.deleted_at is None and snapshot.voter_id != existing.voter_id:
+        return SyncResult(
+            id=record_id,
+            status="validation_error",
+            message=f"voter_id: {VOTER_ID_LOCKED_MESSAGE}",
+            server_revision=existing.revision,
+            server_record=voter_to_public(existing),
         )
 
     clash = _active_voter_id_owner(db, snapshot.voter_id, exclude_id=record_id)

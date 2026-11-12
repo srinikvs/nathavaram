@@ -17,24 +17,31 @@
 <form method="post" class="grid" autocomplete="off">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div>
-    <label for="booth_2024">2024 Booth</label>
-    <input id="booth_2024" name="booth_2024" maxlength="64" value="{{ values.get('booth_2024', '') }}">
+    <label for="booth">Booth</label>
+    <input id="booth" name="booth" maxlength="64" value="{{ values.get('booth', '') }}">
   </div>
   <div>
     <label for="bs_no_2024">2024 B.S.No</label>
     <input id="bs_no_2024" name="bs_no_2024" maxlength="64" value="{{ values.get('bs_no_2024', '') }}">
   </div>
   <div>
-    <label for="ward_2026">2026 Ward</label>
-    <input id="ward_2026" name="ward_2026" maxlength="64" value="{{ values.get('ward_2026', '') }}">
+    <label for="ward">Ward</label>
+    <input id="ward" name="ward" maxlength="64" value="{{ values.get('ward', '') }}">
   </div>
   <div>
     <label for="ward_s_no">Ward S No</label>
     <input id="ward_s_no" name="ward_s_no" maxlength="64" value="{{ values.get('ward_s_no', '') }}">
   </div>
   <div>
+    {% if voter %}
+    <span class="label" id="voter_id_label">VoterId</span>
+    <p id="voter_id_readonly" class="readonly-value" aria-labelledby="voter_id_label" translate="no">{{ voter.voter_id }}</p>
+    <small class="hint">VoterId is the unique key and cannot be changed.</small>
+    {% else %}
     <label for="voter_id">VoterId <abbr title="required">*</abbr></label>
     <input id="voter_id" name="voter_id" required maxlength="32" value="{{ values.get('voter_id', '') }}" translate="no">
+    <small class="hint">Must be unique. It cannot be changed after the voter is saved.</small>
+    {% endif %}
   </div>
   <div>
     <label for="first_name">FirstName <abbr title="required">*</abbr></label>

@@ -17,6 +17,13 @@ from app.services.revision import allocate_revision
 from app.validation import dump_dt
 
 
+DUPLICATE_VOTER_ID_MESSAGE = (
+    "A voter with VoterId {voter_id} already exists. Each VoterId must be unique; "
+    "search for the existing voter or use a different VoterId."
+)
+VOTER_ID_LOCKED_MESSAGE = "VoterId cannot be changed after the voter is created"
+
+
 def _now() -> str:
     return dump_dt(datetime.now(timezone.utc))
 
@@ -40,7 +47,13 @@ def ensure_unique_voter_id(db: Session, voter_id: str, exclude_id: str | None) -
         stmt = stmt.where(Voter.id != exclude_id)
     other = db.scalar(stmt)
     if other is not None:
-        raise ServiceError("VoterId already exists", 409, "voter_id")
+        raise ServiceError(DUPLICATE_VOTER_ID_MESSAGE.format(voter_id=voter_id), 409, "voter_id")
+
+
+def ensure_voter_id_unchanged(voter: Voter, requested: str) -> None:
+    """VoterId is the unique key: it is fixed once the voter exists."""
+    if requested != voter.voter_id:
+        raise ServiceError(VOTER_ID_LOCKED_MESSAGE, 422, "voter_id")
 
 
 def voter_to_public(voter: Voter) -> VoterPublic:
@@ -87,7 +100,9 @@ def update_voter(db: Session, voter_id: str, patch: VoterPatch, source_id: str) 
         if required in changes and changes[required] is None:
             raise ServiceError(f"{required} cannot be null", 422, required)
     if "voter_id" in changes:
-        ensure_unique_voter_id(db, changes["voter_id"], exclude_id=voter.id)
+        ensure_voter_id_unchanged(voter, changes.pop("voter_id"))
+    if not changes:
+        return voter
     for key, value in changes.items():
         setattr(voter, key, value)
     voter.updated_at = _now()
@@ -105,7 +120,7 @@ def update_voter(db: Session, voter_id: str, patch: VoterPatch, source_id: str) 
 def replace_voter(db: Session, voter_id: str, data: VoterWrite, source_id: str) -> Voter:
     """Replace every data column. Used by the web form, which always posts the full row."""
     voter = get_active(db, voter_id)
-    ensure_unique_voter_id(db, data.voter_id, exclude_id=voter.id)
+    ensure_voter_id_unchanged(voter, data.voter_id)
     apply_write(voter, data)
     voter.updated_at = _now()
     voter.source_id = source_id
@@ -176,8 +191,8 @@ def _apply_filters(stmt, query: VoterSearch):
                 _contains(Voter.house_no, query.q),
                 _contains(Voter.mobile, query.q),
                 _contains(Voter.caste, query.q),
-                _contains(Voter.booth_2024, query.q),
-                _contains(Voter.ward_2026, query.q),
+                _contains(Voter.booth, query.q),
+                _contains(Voter.ward, query.q),
                 _contains(Voter.party, query.q),
                 cast(full_name, String).ilike(like, escape="\\"),
             )
@@ -187,9 +202,9 @@ def _apply_filters(stmt, query: VoterSearch):
     if query.house_no:
         stmt = stmt.where(_contains(Voter.house_no, query.house_no))
     if query.booth:
-        stmt = stmt.where(_contains(Voter.booth_2024, query.booth))
+        stmt = stmt.where(_contains(Voter.booth, query.booth))
     if query.ward:
-        stmt = stmt.where(_contains(Voter.ward_2026, query.ward))
+        stmt = stmt.where(_contains(Voter.ward, query.ward))
     if query.caste:
         stmt = stmt.where(_contains(Voter.caste, query.caste))
     if query.party:

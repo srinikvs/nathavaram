@@ -78,7 +78,7 @@ Both roles can see caste, party, and mobile. Treat every account as access to pe
 
 Import and export use these headers, in this order:
 
-`2024 Booth, 2024 B.S.No, 2026 Ward, Ward S No, VoterId, FirstName, SurName, RelativeName, HouseNo, Gender, Age, Caste, Mobile, C_City, Profession, Party`
+`Booth, 2024 B.S.No, Ward, Ward S No, VoterId, FirstName, SurName, RelativeName, HouseNo, Gender, Age, Caste, Mobile, C_City, Profession, Party`
 
 The file must be UTF-8 (a byte-order mark is accepted). Export writes UTF-8 with a BOM so Excel on Windows keeps Telugu text, and it prefixes a quote when a cell starts with `=`, `+`, `-`, `@`, a tab, or a carriage return (this includes the report export). Import removes one such leading quote, so `+91` mobiles survive a round trip. Party may be empty. A fake nine-row file is at `sample/voters_sample.csv` and on the Import page after you sign in.
 

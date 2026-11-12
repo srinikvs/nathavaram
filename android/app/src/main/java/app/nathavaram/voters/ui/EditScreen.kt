@@ -44,9 +44,9 @@ private val BEFORE_GENDER = listOf(
     TextField(FieldKey.SURNAME, "SurName"),
     TextField(FieldKey.RELATIVE_NAME, "RelativeName"),
     TextField(FieldKey.HOUSE_NO, "HouseNo"),
-    TextField(FieldKey.BOOTH_2024, "2024 Booth"),
+    TextField(FieldKey.BOOTH, "Booth"),
     TextField(FieldKey.BS_NO_2024, "2024 B.S.No"),
-    TextField(FieldKey.WARD_2026, "2026 Ward"),
+    TextField(FieldKey.WARD, "Ward"),
     TextField(FieldKey.WARD_S_NO, "Ward S No"),
 )
 private val AFTER_GENDER = listOf(
@@ -87,7 +87,10 @@ fun EditScreen(vm: AppViewModel, id: String?) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(if (id == null) "Add voter" else "Edit voter", style = MaterialTheme.typography.headlineSmall)
-        BEFORE_GENDER.forEach { f -> Field(f, current, errors) { form = it } }
+        // VoterId is the unique key: typed once when adding, read-only text when editing.
+        BEFORE_GENDER.forEach { f ->
+            Field(f, current, errors, readOnly = id != null && f.key == FieldKey.VOTER_ID) { form = it }
+        }
         Dropdown(
             label = "Gender",
             value = current.gender,
@@ -117,14 +120,22 @@ fun EditScreen(vm: AppViewModel, id: String?) {
 }
 
 @Composable
-private fun Field(spec: TextField, form: VoterForm, errors: Map<String, String>, onChange: (VoterForm) -> Unit) {
+private fun Field(
+    spec: TextField,
+    form: VoterForm,
+    errors: Map<String, String>,
+    readOnly: Boolean = false,
+    onChange: (VoterForm) -> Unit,
+) {
     OutlinedTextField(
         value = form.get(spec.key),
-        onValueChange = { onChange(form.with(spec.key, it)) },
+        onValueChange = { if (!readOnly) onChange(form.with(spec.key, it)) },
+        readOnly = readOnly,
         label = { Text(spec.label) },
         singleLine = true,
         isError = spec.key in errors,
-        supportingText = errors[spec.key]?.let { { Text(it) } },
+        supportingText = (errors[spec.key] ?: if (readOnly) "VoterId cannot be changed" else null)
+            ?.let { { Text(it) } },
         keyboardOptions = KeyboardOptions(keyboardType = spec.keyboard),
         modifier = Modifier.fillMaxWidth(),
     )

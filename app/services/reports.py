@@ -46,8 +46,8 @@ def build_report(db: Session) -> ReportSummary:
         band_counts[age_band(age)] += 1
     return ReportSummary(
         total=total,
-        by_booth=_grouped(db, Voter.booth_2024),
-        by_ward=_grouped(db, Voter.ward_2026),
+        by_booth=_grouped(db, Voter.booth),
+        by_ward=_grouped(db, Voter.ward),
         by_gender=_ordered(_grouped(db, Voter.gender), GENDERS, include_blank=False),
         by_age_band=[CountRow(label=band, count=band_counts[band]) for band in AGE_BANDS],
         by_caste=_grouped(db, Voter.caste),
@@ -65,8 +65,8 @@ def report_csv(report: ReportSummary) -> str:
     writer.writerow(["Section", "Label", "Count"])
     writer.writerow(["Total", "(all)", report.total])
     sections = (
-        ("2024 Booth", report.by_booth),
-        ("2026 Ward", report.by_ward),
+        ("Booth", report.by_booth),
+        ("Ward", report.by_ward),
         ("Gender", report.by_gender),
         ("Age band", report.by_age_band),
         ("Caste", report.by_caste),

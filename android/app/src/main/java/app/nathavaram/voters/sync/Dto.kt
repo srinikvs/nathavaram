@@ -23,9 +23,9 @@ object ResultStatus {
 @Serializable
 data class VoterDto(
     val id: String,
-    @SerialName("booth_2024") val booth2024: String? = null,
+    @SerialName("booth") val booth: String? = null,
     @SerialName("bs_no_2024") val bsNo2024: String? = null,
-    @SerialName("ward_2026") val ward2026: String? = null,
+    @SerialName("ward") val ward: String? = null,
     @SerialName("ward_s_no") val wardSNo: String? = null,
     @SerialName("voter_id") val voterId: String = "",
     @SerialName("first_name") val firstName: String = "",
@@ -54,9 +54,9 @@ data class PushChange(
     @SerialName("created_at") val createdAt: String,
     val deleted: Boolean = false,
     @SerialName("base_revision") val baseRevision: Long? = null,
-    @SerialName("booth_2024") val booth2024: String? = null,
+    @SerialName("booth") val booth: String? = null,
     @SerialName("bs_no_2024") val bsNo2024: String? = null,
-    @SerialName("ward_2026") val ward2026: String? = null,
+    @SerialName("ward") val ward: String? = null,
     @SerialName("ward_s_no") val wardSNo: String? = null,
     @SerialName("voter_id") val voterId: String,
     @SerialName("first_name") val firstName: String,

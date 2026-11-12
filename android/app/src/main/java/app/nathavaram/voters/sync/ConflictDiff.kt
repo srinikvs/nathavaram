@@ -5,9 +5,9 @@ data class FieldDiff(val label: String, val local: String?, val server: String?)
 /** Lists the editable fields whose values differ between the local edit and the server row. */
 object ConflictDiff {
     private val FIELDS: List<Pair<String, (VoterDto) -> String?>> = listOf(
-        "2024 Booth" to { it.booth2024 },
+        "Booth" to { it.booth },
         "2024 B.S.No" to { it.bsNo2024 },
-        "2026 Ward" to { it.ward2026 },
+        "Ward" to { it.ward },
         "Ward S No" to { it.wardSNo },
         "VoterId" to { it.voterId },
         "FirstName" to { it.firstName },

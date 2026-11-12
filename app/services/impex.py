@@ -11,7 +11,14 @@ from openpyxl import Workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.constants import CSV_HEADERS, DATA_FIELDS, FIELD_BY_LABEL, IMPORT_ROW_LIMIT, LABEL_BY_FIELD
+from app.constants import (
+    CSV_HEADERS,
+    DATA_FIELDS,
+    IMPORT_HEADER_FIELDS,
+    IMPORT_ROW_LIMIT,
+    LABEL_BY_FIELD,
+    VOTER_COLUMNS,
+)
 from app.models import Voter
 from app.schemas import ImportErrorItem, ImportReport, VoterWrite
 from app.services.revision import allocate_revision
@@ -53,8 +60,12 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
         raise ImportRejected("CSV header contains an empty column name")
     if len(set(headers)) != len(headers):
         raise ImportRejected("CSV header contains duplicate column names")
-    missing = [name for name in CSV_HEADERS if name not in headers]
-    extra = [name for name in headers if name not in FIELD_BY_LABEL]
+    # Old headers ("2024 Booth", "2026 Ward") are accepted alongside "Booth" and "Ward".
+    extra = [name for name in headers if name not in IMPORT_HEADER_FIELDS]
+    fields = [IMPORT_HEADER_FIELDS[name] for name in headers if name in IMPORT_HEADER_FIELDS]
+    if len(set(fields)) != len(fields):
+        raise ImportRejected("CSV header contains the same column twice (old and new names mixed)")
+    missing = [label for field, label in VOTER_COLUMNS if field not in fields]
     if missing or extra:
         parts = []
         if missing:
@@ -72,7 +83,7 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
         if rows_read > IMPORT_ROW_LIMIT:
             raise ImportRejected(f"CSV exceeds {IMPORT_ROW_LIMIT} data rows")
         payload_row = {
-            FIELD_BY_LABEL[key.strip()]: csv_unsafe(value or "")
+            IMPORT_HEADER_FIELDS[key.strip()]: csv_unsafe(value or "")
             for key, value in raw.items()
             if key is not None
         }

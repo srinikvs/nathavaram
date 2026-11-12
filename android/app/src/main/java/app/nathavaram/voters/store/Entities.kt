@@ -12,9 +12,11 @@ import androidx.room.PrimaryKey
 )
 data class VoterEntity(
     @PrimaryKey val id: String,
-    @ColumnInfo(name = "booth_2024") val booth2024: String? = null,
+    // Local column names keep the old year suffix: renaming them would need a Room migration and
+    // the names are not user-visible. The Kotlin property and the sync JSON key are `booth`/`ward`.
+    @ColumnInfo(name = "booth_2024") val booth: String? = null,
     @ColumnInfo(name = "bs_no_2024") val bsNo2024: String? = null,
-    @ColumnInfo(name = "ward_2026") val ward2026: String? = null,
+    @ColumnInfo(name = "ward_2026") val ward: String? = null,
     @ColumnInfo(name = "ward_s_no") val wardSNo: String? = null,
     @ColumnInfo(name = "voter_id") val voterId: String,
     @ColumnInfo(name = "first_name") val firstName: String,

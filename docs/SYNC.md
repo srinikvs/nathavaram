@@ -9,7 +9,8 @@ All timestamps are UTC in the form `YYYY-MM-DDTHH:MM:SS.ffffffZ`. A value withou
 ## Identifiers
 
 - The voter primary key is a UUID created on the device for offline inserts. The server accepts that id on create and on sync push.
-- `VoterId` (the EPIC-style number) is a separate unique field among active rows.
+- `VoterId` (the EPIC-style number) is a separate unique field among active rows. It is fixed once a record exists: a push that changes the `voter_id` of an existing active record is rejected (see the conflict table), so a client must never send an edited VoterId.
+- The booth and ward fields are named `booth` and `ward` on the wire (they were `booth_2024` and `ward_2026`). Push still accepts the old keys; pull and `server_record` return only the new ones.
 - `revision` is assigned only by the server. Clients treat it as opaque and store the newest value they have seen.
 - `source_id` on an applied push is the `device_id` from the batch.
 
@@ -105,6 +106,7 @@ Last-write-wins by `updated_at`, then a new server revision.
 | Equal `updated_at` and the same content, including the deleted flag | `applied` | Idempotent replay. The revision does not move |
 | Equal `updated_at` and different content | `conflict` | The server row wins, so two devices that stamp the same instant cannot flap |
 | Active different `id` already uses this `voter_id` | `voter_id_conflict` | Nothing is written. `server_record` is the other active row. The device should show that row and not silently merge the two people |
+| Existing active row with this `id`, and the change carries a different `voter_id` | `validation_error` | Nothing is written. The message is `voter_id: VoterId cannot be changed after the voter is created` and `server_record` is the current server row. A tombstoned row is exempt, because it only holds a placeholder |
 | `updated_at` before 2000-01-01 UTC, more than 5 minutes ahead of the server, or otherwise invalid | `validation_error` | Nothing is written for that item |
 
 `voter_id` uniqueness ignores soft-deleted rows. After a delete is synced, another row may use that EPIC.

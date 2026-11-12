@@ -16,7 +16,7 @@ object VoterValidator {
     private val MOBILE = Regex("^(?:\\+91|91|0)?[6-9]\\d{9}$")
 
     private val SHORT_FIELDS = listOf(
-        FieldKey.BOOTH_2024, FieldKey.BS_NO_2024, FieldKey.WARD_2026,
+        FieldKey.BOOTH, FieldKey.BS_NO_2024, FieldKey.WARD,
         FieldKey.WARD_S_NO, FieldKey.HOUSE_NO,
     )
     private val LONG_FIELDS = listOf(
@@ -81,7 +81,7 @@ object VoterValidator {
     private fun isControl(c: Char): Boolean = c.code < 32 || c.code == 127
 
     private val ALL_KEYS = listOf(
-        FieldKey.BOOTH_2024, FieldKey.BS_NO_2024, FieldKey.WARD_2026, FieldKey.WARD_S_NO,
+        FieldKey.BOOTH, FieldKey.BS_NO_2024, FieldKey.WARD, FieldKey.WARD_S_NO,
         FieldKey.VOTER_ID, FieldKey.FIRST_NAME, FieldKey.SURNAME, FieldKey.RELATIVE_NAME,
         FieldKey.HOUSE_NO, FieldKey.GENDER, FieldKey.AGE, FieldKey.CASTE, FieldKey.MOBILE,
         FieldKey.C_CITY, FieldKey.PROFESSION, FieldKey.PARTY,

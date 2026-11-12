@@ -28,11 +28,11 @@
     <input id="q" name="q" value="{{ query.q or '' }}" placeholder="Name, VoterId, HouseNo, mobile" maxlength="100">
   </div>
   <div>
-    <label for="booth">2024 Booth</label>
+    <label for="booth">Booth</label>
     <input id="booth" name="booth" value="{{ query.booth or '' }}" maxlength="64">
   </div>
   <div>
-    <label for="ward">2026 Ward</label>
+    <label for="ward">Ward</label>
     <input id="ward" name="ward" value="{{ query.ward or '' }}" maxlength="64">
   </div>
   <div>
@@ -89,8 +89,8 @@
         <th>SurName</th>
         <th>RelativeName</th>
         <th>HouseNo</th>
-        <th>2024 Booth</th>
-        <th>2026 Ward</th>
+        <th>Booth</th>
+        <th>Ward</th>
         <th>Gender</th>
         <th>Age</th>
         <th>Caste</th>
@@ -107,8 +107,8 @@
         <td data-label="SurName" translate="no">{{ voter.surname|display }}</td>
         <td data-label="RelativeName" translate="no">{{ voter.relative_name|display }}</td>
         <td data-label="HouseNo" translate="no">{{ voter.house_no|display }}</td>
-        <td data-label="2024 Booth" translate="no">{{ voter.booth_2024|display }}</td>
-        <td data-label="2026 Ward" translate="no">{{ voter.ward_2026|display }}</td>
+        <td data-label="Booth" translate="no">{{ voter.booth|display }}</td>
+        <td data-label="Ward" translate="no">{{ voter.ward|display }}</td>
         <td data-label="Gender">{{ voter.gender }}</td>
         <td data-label="Age">{{ voter.age|display }}</td>
         <td data-label="Caste" translate="no">{{ voter.caste|display }}</td>

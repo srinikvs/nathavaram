@@ -4,9 +4,9 @@ import app.nathavaram.voters.store.VoterEntity
 
 /** Snake_case keys used for form fields and validation errors. */
 object FieldKey {
-    const val BOOTH_2024 = "booth_2024"
+    const val BOOTH = "booth"
     const val BS_NO_2024 = "bs_no_2024"
-    const val WARD_2026 = "ward_2026"
+    const val WARD = "ward"
     const val WARD_S_NO = "ward_s_no"
     const val VOTER_ID = "voter_id"
     const val FIRST_NAME = "first_name"
@@ -24,9 +24,9 @@ object FieldKey {
 
 /** Editable voter fields as the operator typed them. Immutable; every change returns a copy. */
 data class VoterForm(
-    val booth2024: String = "",
+    val booth: String = "",
     val bsNo2024: String = "",
-    val ward2026: String = "",
+    val ward: String = "",
     val wardSNo: String = "",
     val voterId: String = "",
     val firstName: String = "",
@@ -42,9 +42,9 @@ data class VoterForm(
     val party: String = "",
 ) {
     fun get(key: String): String = when (key) {
-        FieldKey.BOOTH_2024 -> booth2024
+        FieldKey.BOOTH -> booth
         FieldKey.BS_NO_2024 -> bsNo2024
-        FieldKey.WARD_2026 -> ward2026
+        FieldKey.WARD -> ward
         FieldKey.WARD_S_NO -> wardSNo
         FieldKey.VOTER_ID -> voterId
         FieldKey.FIRST_NAME -> firstName
@@ -62,9 +62,9 @@ data class VoterForm(
     }
 
     fun with(key: String, value: String): VoterForm = when (key) {
-        FieldKey.BOOTH_2024 -> copy(booth2024 = value)
+        FieldKey.BOOTH -> copy(booth = value)
         FieldKey.BS_NO_2024 -> copy(bsNo2024 = value)
-        FieldKey.WARD_2026 -> copy(ward2026 = value)
+        FieldKey.WARD -> copy(ward = value)
         FieldKey.WARD_S_NO -> copy(wardSNo = value)
         FieldKey.VOTER_ID -> copy(voterId = value)
         FieldKey.FIRST_NAME -> copy(firstName = value)
@@ -83,7 +83,7 @@ data class VoterForm(
 
     /** Flat list of every field in declaration order, for instance-state saving (rotation). */
     fun toSavedList(): List<String> = listOf(
-        booth2024, bsNo2024, ward2026, wardSNo, voterId, firstName, surname, relativeName,
+        booth, bsNo2024, ward, wardSNo, voterId, firstName, surname, relativeName,
         houseNo, gender, age, caste, mobile, cCity, profession, party,
     )
 
@@ -93,7 +93,7 @@ data class VoterForm(
             if (list.size != FIELD_COUNT || list.any { it !is String }) return null
             val s = list.map { it as String }
             return VoterForm(
-                booth2024 = s[0], bsNo2024 = s[1], ward2026 = s[2], wardSNo = s[3],
+                booth = s[0], bsNo2024 = s[1], ward = s[2], wardSNo = s[3],
                 voterId = s[4], firstName = s[5], surname = s[6], relativeName = s[7],
                 houseNo = s[8], gender = s[9], age = s[10], caste = s[11],
                 mobile = s[12], cCity = s[13], profession = s[14], party = s[15],
@@ -103,9 +103,9 @@ data class VoterForm(
         private const val FIELD_COUNT = 16
 
         fun from(e: VoterEntity): VoterForm = VoterForm(
-            booth2024 = e.booth2024.orEmpty(),
+            booth = e.booth.orEmpty(),
             bsNo2024 = e.bsNo2024.orEmpty(),
-            ward2026 = e.ward2026.orEmpty(),
+            ward = e.ward.orEmpty(),
             wardSNo = e.wardSNo.orEmpty(),
             voterId = e.voterId,
             firstName = e.firstName,

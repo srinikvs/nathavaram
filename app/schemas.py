@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.constants import SYNC_BATCH_LIMIT
 from app.validation import (
@@ -120,9 +120,9 @@ class VoterWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: UUID | None = None
-    booth_2024: str | None = None
+    booth: str | None = Field(default=None, validation_alias=AliasChoices("booth", "booth_2024"))
     bs_no_2024: str | None = None
-    ward_2026: str | None = None
+    ward: str | None = Field(default=None, validation_alias=AliasChoices("ward", "ward_2026"))
     ward_s_no: str | None = None
     voter_id: str
     first_name: str
@@ -138,9 +138,9 @@ class VoterWrite(BaseModel):
     party: str | None = None
 
     @field_validator(
-        "booth_2024",
+        "booth",
         "bs_no_2024",
-        "ward_2026",
+        "ward",
         "ward_s_no",
         "surname",
         "relative_name",
@@ -190,9 +190,9 @@ class VoterWrite(BaseModel):
 class VoterPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    booth_2024: str | None = None
+    booth: str | None = Field(default=None, validation_alias=AliasChoices("booth", "booth_2024"))
     bs_no_2024: str | None = None
-    ward_2026: str | None = None
+    ward: str | None = Field(default=None, validation_alias=AliasChoices("ward", "ward_2026"))
     ward_s_no: str | None = None
     voter_id: str | None = None
     first_name: str | None = None
@@ -208,9 +208,9 @@ class VoterPatch(BaseModel):
     party: str | None = None
 
     @field_validator(
-        "booth_2024",
+        "booth",
         "bs_no_2024",
-        "ward_2026",
+        "ward",
         "ward_s_no",
         "surname",
         "relative_name",
@@ -269,9 +269,9 @@ class VoterPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    booth_2024: str | None
+    booth: str | None
     bs_no_2024: str | None
-    ward_2026: str | None
+    ward: str | None
     ward_s_no: str | None
     voter_id: str
     first_name: str
@@ -406,9 +406,9 @@ class SyncChange(BaseModel):
     deleted: bool = False
     base_revision: int | None = None
     created_at: datetime | None = None
-    booth_2024: str | None = None
+    booth: str | None = Field(default=None, validation_alias=AliasChoices("booth", "booth_2024"))
     bs_no_2024: str | None = None
-    ward_2026: str | None = None
+    ward: str | None = Field(default=None, validation_alias=AliasChoices("ward", "ward_2026"))
     ward_s_no: str | None = None
     voter_id: str | None = None
     first_name: str | None = None

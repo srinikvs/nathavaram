@@ -8,11 +8,11 @@ Display names below are the exact labels in the web form and the exact CSV/Excel
 
 | Display name | Column | Type | Rules |
 | --- | --- | --- | --- |
-| 2024 Booth | `booth_2024` | text, null | Up to 64 characters |
+| Booth | `booth` | text, null | Up to 64 characters. Formerly "2024 Booth" / `booth_2024` |
 | 2024 B.S.No | `bs_no_2024` | text, null | Up to 64 characters |
-| 2026 Ward | `ward_2026` | text, null | Up to 64 characters |
+| Ward | `ward` | text, null | Up to 64 characters. Formerly "2026 Ward" / `ward_2026` |
 | Ward S No | `ward_s_no` | text, null | Up to 64 characters |
-| VoterId | `voter_id` | text, required | 3–32 letters or digits, stored uppercase. Unique among rows that are not soft-deleted |
+| VoterId | `voter_id` | text, required | 3–32 letters or digits, stored uppercase. Unique among rows that are not soft-deleted. Entered when the voter is created and **read-only afterwards**: edit, PATCH and sync push reject a different value (see below) |
 | FirstName | `first_name` | text, required | Up to 128 characters. Telugu and other Unicode letters are stored as UTF-8 |
 | SurName | `surname` | text, null | Up to 128 characters |
 | RelativeName | `relative_name` | text, null | Up to 128 characters |
@@ -50,7 +50,15 @@ Search filters (`q`, `voter_id`, `caste`, `mobile`, and the other filters) are s
 
 `sync_state` is a single row (`id = 1`) holding `current_revision`. Every insert, update, import row, and applied sync change increments it by one and stores that value on the voter. The counter starts at 0.
 
-The unique index `uq_voters_voter_id_active` covers `voter_id` only where `deleted_at IS NULL`. A removed EPIC can be entered again. Two active rows cannot share a VoterId. The check is also enforced in the service so the API returns 409 before the database error.
+The unique index `uq_voters_voter_id_active` covers `voter_id` only where `deleted_at IS NULL`. A removed EPIC can be entered again. Two active rows cannot share a VoterId. The check is also enforced in the service so the API returns 409 before the database error. The message is meant for the operator: `A voter with VoterId <id> already exists. Each VoterId must be unique; search for the existing voter or use a different VoterId.`
+
+### VoterId is fixed after create
+
+VoterId is the unique key, so it cannot be edited once a voter exists. The web edit page shows it as plain text and does not post it. A web edit post, `PATCH /api/voters/{id}`, or a sync push that carries a different `voter_id` for an existing active record is refused and nothing is written: the web form answers 400, `PATCH` answers 422, and sync reports `validation_error` for that change. Sending the same value is accepted. A soft-deleted row only holds a placeholder `voter_id`, so re-sending a deleted record may carry a VoterId. Every other column stays editable.
+
+### Booth and Ward rename
+
+`booth_2024` became `booth` and `ward_2026` became `ward`. The JSON API, sync and CSV export use the new names. Writes (create, PATCH, sync push) still accept the old JSON keys `booth_2024` and `ward_2026`, and CSV import accepts the old headers `2024 Booth` and `2026 Ward` as well as the old column names `booth_2024` and `ward_2026`. Using an old and a new name for the same column in one file is rejected. `2024 B.S.No` / `bs_no_2024` is unchanged.
 
 ## Users
 
@@ -71,7 +79,7 @@ There is no default account in the repository. On startup the app inserts one ad
 
 ## Migration
 
-`alembic/versions/0001_initial.py` creates `users`, `sync_state`, and `voters`, including the partial unique index. `alembic/versions/0002_user_security_flags.py` adds `users.must_change_password` (existing rows become true) and `users.is_owner` (existing rows false). The app runs `alembic upgrade head` on startup. You can also run it yourself:
+`alembic/versions/0001_initial.py` creates `users`, `sync_state`, and `voters`, including the partial unique index. `alembic/versions/0002_user_security_flags.py` adds `users.must_change_password` (existing rows become true) and `users.is_owner` (existing rows false). `0003_token_version.py` adds `users.token_version` and `users.deleted_at`. `0004_rename_booth_ward.py` renames `voters.booth_2024` to `booth` and `voters.ward_2026` to `ward` with `ALTER TABLE ... RENAME COLUMN`, so every stored value is kept, and recreates their indexes as `ix_voters_booth` and `ix_voters_ward`. Its downgrade renames them back. The app runs `alembic upgrade head` on startup. You can also run it yourself:
 
 ```bash
 DATABASE_URL=sqlite:///./data/nathavaram.db alembic upgrade head

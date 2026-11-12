@@ -137,9 +137,9 @@ def test_patch_null_required_fields_is_422_not_409_and_row_is_unchanged(ctx):
 
     current = ctx.client.get(f"/api/voters/{first['id']}", headers=ctx.auth).json()
     assert current == first
-    # A real clash still reports 409.
+    # Changing VoterId is refused outright (422), even to a value another voter already uses.
     clash = ctx.client.patch(f"/api/voters/{first['id']}", headers=ctx.auth, json={"voter_id": "ZZZ1000002"})
-    assert clash.status_code == 409
+    assert clash.status_code == 422
 
 
 def test_sensitive_filters_are_refused_in_get_query_and_work_in_post(ctx):
