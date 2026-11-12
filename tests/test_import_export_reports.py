@@ -294,6 +294,9 @@ def test_reports_cover_the_required_breakdowns(ctx):
     exported = ctx.client.get("/api/reports/export.csv", headers=ctx.auth)
     assert exported.status_code == 200
     exported_text = exported.content.decode("utf-8-sig")
-    assert exported_text.splitlines()[0].startswith("Booth,2024 B.S.No,Ward,")
+    lines = exported_text.splitlines()
+    assert lines[0] == "Section,Label,Count"
+    assert "Total,(all),9" in lines
+    assert "Booth,1,2" in lines
     assert "2024 Booth" not in exported_text
-    assert "Age band" in exported.content.decode("utf-8-sig")
+    assert "Age band" in exported_text
