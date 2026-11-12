@@ -119,9 +119,21 @@ def test_narrow_screen_css_collapses_the_register_table():
     narrow = css.split("@media (max-width: 760px)", 1)[1].split("@media print", 1)[0]
 
     # Assert
-    assert ".register { min-width: 0; }" in narrow
-    assert ".register thead { display: none; }" in narrow
-    assert "overflow-x: hidden" in narrow
-    assert "max-width: 100%" in narrow
+    block = re.search(
+        r"\.register,\s*\.register tbody,\s*\.register thead\s*\{([^}]*)\}", narrow
+    )
+    assert block, "register/tbody must be one block rule in the narrow query"
+    body = block.group(1)
+    assert re.search(r"display:\s*block", body)
+    assert re.search(r"(?<!-)width:\s*100%", body)
+    assert re.search(r"max-width:\s*100%", body)
+    assert re.search(r"min-width:\s*0", body)
+    assert not re.search(r"display:\s*table", narrow)
+    assert re.search(r"\.register thead\s*\{\s*display:\s*none;\s*\}", narrow)
+    assert re.search(r"\.register tr\s*\{[^}]*display:\s*block", narrow)
+    assert "minmax(0, 1fr)" in narrow
     assert "td::before" in narrow
+    # Desktop keeps the table layout and its wide minimum.
+    assert re.search(r"^\.register\s*\{\s*min-width:\s*980px;\s*\}", css, re.M)
+    assert "min-width: 980px" not in narrow
     assert re.search(r"\.table-wrap\s*\{[^}]*max-width:\s*100%", css)
