@@ -122,3 +122,7 @@ The server clock wins for edits made through the website and the REST CRUD API: 
 7. Use SQLite/Room with the same snake_case columns, UUID primary key, `updated_at`, `revision`, `deleted_at`, and `source_id`.
 
 Phase 2 still has to build the Room database, the background sync worker, the offline UI, and the APK. The HTTP contract above is the part this server already accepts.
+
+## Android client
+
+The client lives in [`android/`](../android/README.md). One detail goes beyond the steps above: when a pulled change is skipped because a dirty local row is newer, the client still raises that row's stored `revision` to the pulled one, so its next push carries a current `base_revision` and wins by `updated_at` instead of being rejected as a stale `conflict`.
