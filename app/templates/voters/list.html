@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Voters · Nathavaram{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Voters</h1>
+    <p class="lede">{{ total }} record{% if total != 1 %}s{% endif %}{% if query.q or query.booth or query.ward or query.party or query.gender or query.caste or query.mobile or query.house_no or query.voter_id %} match the filters{% endif %}.</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="/voters/new">Add voter</a>
+    {% if user.role == "admin" %}
+    {% for kind, label in (("csv", "Export CSV"), ("xlsx", "Export Excel")) %}
+    <form method="post" action="/voters/export.{{ kind }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% for key, value in filter_values.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+      <button type="submit" class="button ghost">{{ label }}</button>
+    </form>
+    {% endfor %}
+    {% endif %}
+  </div>
+</div>
+{% if request.query_params.get('removed') %}<p class="banner ok">Voter removed from the active list. The row is kept for sync.</p>{% endif %}
+{% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
+<form class="filters" method="post" action="/voters/search">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div>
+    <label for="q">Search</label>
+    <input id="q" name="q" value="{{ query.q or '' }}" placeholder="Name, VoterId, HouseNo, mobile" maxlength="100">
+  </div>
+  <div>
+    <label for="booth">2024 Booth</label>
+    <input id="booth" name="booth" value="{{ query.booth or '' }}" maxlength="64">
+  </div>
+  <div>
+    <label for="ward">2026 Ward</label>
+    <input id="ward" name="ward" value="{{ query.ward or '' }}" maxlength="64">
+  </div>
+  <div>
+    <label for="party">Party</label>
+    <select id="party" name="party">
+      <option value="">Any</option>
+      {% for party in parties %}
+      <option value="{{ party }}" {% if query.party == party %}selected{% endif %}>{{ party }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <details {% if query.gender or query.caste or query.mobile or query.house_no or query.voter_id %}open{% endif %}>
+    <summary>More filters</summary>
+    <div class="more">
+      <div>
+        <label for="voter_id">VoterId</label>
+        <input id="voter_id" name="voter_id" value="{{ query.voter_id or '' }}" maxlength="32">
+      </div>
+      <div>
+        <label for="house_no">HouseNo</label>
+        <input id="house_no" name="house_no" value="{{ query.house_no or '' }}" maxlength="64">
+      </div>
+      <div>
+        <label for="caste">Caste</label>
+        <input id="caste" name="caste" value="{{ query.caste or '' }}" maxlength="128">
+      </div>
+      <div>
+        <label for="mobile">Mobile</label>
+        <input id="mobile" name="mobile" value="{{ query.mobile or '' }}" maxlength="20" inputmode="tel">
+      </div>
+      <div>
+        <label for="gender">Gender</label>
+        <select id="gender" name="gender">
+          <option value="">Any</option>
+          {% for gender in genders %}
+          <option value="{{ gender }}" {% if query.gender == gender %}selected{% endif %}>{{ gender }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </details>
+  <div class="actions">
+    <button type="submit">Apply</button>
+    <a class="button ghost" href="/voters">Clear</a>
+  </div>
+</form>
+{% if voters %}
+<div class="table-wrap">
+  <table class="register">
+    <thead>
+      <tr>
+        <th>VoterId</th>
+        <th>FirstName</th>
+        <th>SurName</th>
+        <th>RelativeName</th>
+        <th>HouseNo</th>
+        <th>2024 Booth</th>
+        <th>2026 Ward</th>
+        <th>Gender</th>
+        <th>Age</th>
+        <th>Caste</th>
+        <th>Party</th>
+        <th>Mobile</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for voter in voters %}
+      <tr>
+        <td data-label="VoterId" translate="no">{{ voter.voter_id }}</td>
+        <td data-label="FirstName" translate="no">{{ voter.first_name }}</td>
+        <td data-label="SurName" translate="no">{{ voter.surname|display }}</td>
+        <td data-label="RelativeName" translate="no">{{ voter.relative_name|display }}</td>
+        <td data-label="HouseNo" translate="no">{{ voter.house_no|display }}</td>
+        <td data-label="2024 Booth" translate="no">{{ voter.booth_2024|display }}</td>
+        <td data-label="2026 Ward" translate="no">{{ voter.ward_2026|display }}</td>
+        <td data-label="Gender">{{ voter.gender }}</td>
+        <td data-label="Age">{{ voter.age|display }}</td>
+        <td data-label="Caste" translate="no">{{ voter.caste|display }}</td>
+        <td data-label="Party">{{ voter.party|display }}</td>
+        <td data-label="Mobile" translate="no">{{ voter.mobile|display }}</td>
+        <td data-label="Actions" class="row-actions">
+          <a href="/voters/{{ voter.id }}/edit">Edit</a>
+          {% if user.role == "admin" %}<a href="/voters/{{ voter.id }}/delete">Delete</a>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% set start = (query.page - 1) * query.page_size + 1 %}
+{% set end = [query.page * query.page_size, total]|min %}
+<p class="pager">
+  <span>Showing {{ start }}–{{ end }} of {{ total }}</span>
+  {% for label, target, show in (("Previous", query.page - 1, query.page > 1), ("Next", query.page + 1, end < total)) %}
+  {% if show %}
+  <form method="post" action="/voters/search" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for key, value in filter_values.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+    <input type="hidden" name="page_size" value="{{ query.page_size }}">
+    <input type="hidden" name="page" value="{{ target }}">
+    <button type="submit" class="linkish">{{ label }}</button>
+  </form>
+  {% endif %}
+  {% endfor %}
+</p>
+{% else %}
+<p class="empty">No voters yet. Add one, or import the sample CSV from the Import page.</p>
+{% endif %}
+{% endblock %}

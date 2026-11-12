@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Users · Nathavaram{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Users</h1>
+    <p class="lede">Admins can add field users. Passwords are stored as hashes.</p>
+  </div>
+</div>
+{% if saved %}<p class="banner ok">User created.</p>{% endif %}
+{% if errors %}
+<div class="banner bad" role="alert">
+  {% for line in errors %}<p>{{ line }}</p>{% endfor %}
+</div>
+{% endif %}
+<form method="post" action="/users" class="grid">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div>
+    <label for="username">Username</label>
+    <input id="username" name="username" required maxlength="32" autocomplete="off">
+  </div>
+  <div>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required minlength="10" autocomplete="new-password">
+  </div>
+  <div>
+    <label for="role">Role</label>
+    <select id="role" name="role">
+      <option value="user">user</option>
+      <option value="admin">admin</option>
+    </select>
+  </div>
+  <div class="full"><button type="submit">Create user</button></div>
+</form>
+<table>
+  <thead><tr><th>Username</th><th>Role</th><th>Active</th></tr></thead>
+  <tbody>
+    {% for account in users %}
+    <tr>
+      <td>{{ account.username }}</td>
+      <td>{{ account.role }}</td>
+      <td>{{ "yes" if account.is_active else "no" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
