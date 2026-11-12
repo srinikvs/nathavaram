@@ -80,7 +80,8 @@ fun SearchScreen(vm: AppViewModel) {
                 ) {
                     val name = listOfNotNull(voter.firstName, voter.surname).joinToString(" ")
                     Text(name, style = MaterialTheme.typography.titleMedium)
-                    Text("${voter.voterId} · house ${voter.houseNo ?: "-"}" + if (voter.dirty) " · not synced" else "")
+                    val place = listOfNotNull(voter.village, voter.address).joinToString(", ").ifEmpty { "-" }
+                    Text("${voter.voterId} · $place" + if (voter.dirty) " · not synced" else "")
                 }
                 HorizontalDivider()
             }

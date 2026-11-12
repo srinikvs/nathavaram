@@ -11,12 +11,14 @@ from app.constants import SYNC_BATCH_LIMIT
 from app.validation import (
     canonical_age,
     canonical_gender,
+    canonical_local,
     canonical_mobile,
     canonical_party,
     canonical_username,
     canonical_voter_id,
     clean_text,
     limit_text,
+    local_label,
     require_text,
 )
 
@@ -128,7 +130,10 @@ class VoterWrite(BaseModel):
     first_name: str
     surname: str | None = None
     relative_name: str | None = None
-    house_no: str | None = None
+    address: str | None = None
+    village: str | None = None
+    permanent_address: str | None = None
+    is_local: bool = False
     gender: str = "Unknown"
     age: int | None = None
     caste: str | None = None
@@ -144,7 +149,9 @@ class VoterWrite(BaseModel):
         "ward_s_no",
         "surname",
         "relative_name",
-        "house_no",
+        "address",
+        "village",
+        "permanent_address",
         "caste",
         "c_city",
         "profession",
@@ -153,6 +160,11 @@ class VoterWrite(BaseModel):
     @classmethod
     def _texts(cls, value: object, info) -> str | None:  # noqa: ANN001
         return limit_text(clean_text(value), info.field_name)
+
+    @field_validator("is_local", mode="before")
+    @classmethod
+    def _local(cls, value: object) -> bool:
+        return canonical_local(value)
 
     @field_validator("voter_id", mode="before")
     @classmethod
@@ -198,7 +210,10 @@ class VoterPatch(BaseModel):
     first_name: str | None = None
     surname: str | None = None
     relative_name: str | None = None
-    house_no: str | None = None
+    address: str | None = None
+    village: str | None = None
+    permanent_address: str | None = None
+    is_local: bool | None = None
     gender: str | None = None
     age: int | None = None
     caste: str | None = None
@@ -214,7 +229,9 @@ class VoterPatch(BaseModel):
         "ward_s_no",
         "surname",
         "relative_name",
-        "house_no",
+        "address",
+        "village",
+        "permanent_address",
         "caste",
         "c_city",
         "profession",
@@ -225,6 +242,13 @@ class VoterPatch(BaseModel):
         if value is None:
             return None
         return limit_text(clean_text(value), info.field_name)
+
+    @field_validator("is_local", mode="before")
+    @classmethod
+    def _local(cls, value: object) -> bool:
+        if value is None:
+            raise ValueError("Local cannot be null")
+        return canonical_local(value)
 
     @field_validator("voter_id", mode="before")
     @classmethod
@@ -277,7 +301,10 @@ class VoterPublic(BaseModel):
     first_name: str
     surname: str | None
     relative_name: str | None
-    house_no: str | None
+    address: str | None
+    village: str | None
+    permanent_address: str | None
+    is_local: bool
     gender: str
     age: int | None
     caste: str | None
@@ -304,7 +331,9 @@ class VoterSearch(BaseModel):
 
     q: str | None = Field(default=None, max_length=100)
     voter_id: str | None = Field(default=None, max_length=32)
-    house_no: str | None = Field(default=None, max_length=64)
+    village: str | None = Field(default=None, max_length=128)
+    # Yes / No narrows the list; blank (or "Any") applies no Local filter.
+    is_local: str | None = Field(default=None, max_length=8)
     booth: str | None = Field(default=None, max_length=64)
     ward: str | None = Field(default=None, max_length=64)
     caste: str | None = Field(default=None, max_length=128)
@@ -317,7 +346,8 @@ class VoterSearch(BaseModel):
     @field_validator(
         "q",
         "voter_id",
-        "house_no",
+        "village",
+        "is_local",
         "booth",
         "ward",
         "caste",
@@ -330,10 +360,20 @@ class VoterSearch(BaseModel):
     def _blank(cls, value: object) -> str | None:
         if value is None:
             return None
+        if isinstance(value, bool):
+            return "Yes" if value else "No"
         if not isinstance(value, str):
             raise ValueError("Expected text")
         text = value.strip()
         return text or None
+
+    @field_validator("is_local")
+    @classmethod
+    def _local_filter(cls, value: str | None) -> str | None:
+        """Normalise to 'Yes' / 'No'; 'Any' means no filter."""
+        if value is None or value.casefold() == "any":
+            return None
+        return local_label(canonical_local(value))
 
     @field_validator("page")
     @classmethod
@@ -389,6 +429,8 @@ class ReportSummary(BaseModel):
     total: int
     by_booth: list[CountRow]
     by_ward: list[CountRow]
+    by_village: list[CountRow]
+    by_local: list[CountRow]
     by_gender: list[CountRow]
     by_age_band: list[CountRow]
     by_caste: list[CountRow]
@@ -414,7 +456,10 @@ class SyncChange(BaseModel):
     first_name: str | None = None
     surname: str | None = None
     relative_name: str | None = None
-    house_no: str | None = None
+    address: str | None = None
+    village: str | None = None
+    permanent_address: str | None = None
+    is_local: bool | str | None = None
     gender: str | None = None
     age: int | None = None
     caste: str | None = None

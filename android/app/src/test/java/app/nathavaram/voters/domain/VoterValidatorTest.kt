@@ -81,7 +81,26 @@ class VoterValidatorTest {
     fun `control characters and over-long text are rejected`() {
         assertTrue(FieldKey.SURNAME in errors(valid().copy(surname = "bad\u0007name")))
         assertTrue(FieldKey.SURNAME in errors(valid().copy(surname = "x".repeat(129))))
-        assertTrue(FieldKey.HOUSE_NO in errors(valid().copy(houseNo = "x".repeat(65))))
+        assertTrue(FieldKey.ADDRESS in errors(valid().copy(address = "x".repeat(1001))))
+        assertTrue(FieldKey.PERMANENT_ADDRESS in errors(valid().copy(permanentAddress = "x".repeat(1001))))
+        assertTrue(FieldKey.VILLAGE in errors(valid().copy(village = "x".repeat(129))))
+    }
+
+    @Test
+    fun `local accepts yes and no in any case and defaults to no`() {
+        assertEquals("Yes", ok(valid().copy(isLocal = " yes ")).isLocal)
+        assertEquals("No", ok(valid().copy(isLocal = "NO")).isLocal)
+        assertEquals("No", ok(valid().copy(isLocal = "")).isLocal)
+        assertEquals("No", ok(valid()).isLocal)
+        assertTrue(FieldKey.IS_LOCAL in errors(valid().copy(isLocal = "maybe")))
+    }
+
+    @Test
+    fun `village and permanent address are trimmed`() {
+        val form = ok(valid().copy(village = "  Samplevillage ", permanentAddress = " Sample Lane 5 "))
+
+        assertEquals("Samplevillage", form.village)
+        assertEquals("Sample Lane 5", form.permanentAddress)
     }
 
     @Test

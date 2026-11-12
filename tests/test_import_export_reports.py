@@ -50,9 +50,9 @@ def test_import_reports_row_errors_and_keeps_valid_rows(ctx):
     body = "\n".join(
         [
             header,
-            "1,10,1,1,ZZZ0000100,Good,Row,Rel,H-1,Male,40,SampleGroupA,9000000099,Nathavaram,Farmer,",
-            "1,10,1,1,BAD ID,Nope,Row,Rel,H-1,Male,40,SampleGroupA,9000000098,Nathavaram,Farmer,",
-            "1,10,1,1,ZZZ0000101,Also,Bad,Rel,H-1,Male,nope,SampleGroupA,123,Nathavaram,Farmer,NotAParty",
+            "1,10,1,1,ZZZ0000100,Good,Row,Rel,Main St,Samplevillage,,Yes,Male,40,SampleGroupA,9000000099,Nathavaram,Farmer,",
+            "1,10,1,1,BAD ID,Nope,Row,Rel,Main St,Samplevillage,,No,Male,40,SampleGroupA,9000000098,Nathavaram,Farmer,",
+            "1,10,1,1,ZZZ0000101,Also,Bad,Rel,Main St,Samplevillage,,No,Male,nope,SampleGroupA,123,Nathavaram,Farmer,NotAParty",
         ]
     )
     imported = ctx.client.post(
@@ -162,7 +162,7 @@ def test_report_csv_labels_are_formula_safe(ctx):
 def test_plain_leading_quote_text_is_not_altered_on_import(ctx):
     header = ",".join(CSV_HEADERS)
     body = "\n".join(
-        [header, "1,10,1,1,ZZZ0000300,'Quoted,Row,Rel,H-1,Male,40,SampleGroupA,9000000091,Nathavaram,Farmer,"]
+        [header, "1,10,1,1,ZZZ0000300,'Quoted,Row,Rel,Main St,Samplevillage,,No,Male,40,SampleGroupA,9000000091,Nathavaram,Farmer,"]
     )
     ctx.client.post(
         "/api/voters/import.csv",
@@ -200,9 +200,9 @@ def test_regular_user_cannot_export_import_or_delete_but_can_search_and_edit(ctx
     assert found.status_code == 200
     assert found.json()["total"] == 1
     assert ctx.client.get(f"/api/voters/{created['id']}", headers=user).status_code == 200
-    edited = ctx.client.patch(f"/api/voters/{created['id']}", headers=user, json={"profession": "Farmer"})
+    edited = ctx.client.patch(f"/api/voters/{created['id']}", headers=user, json={"caste": "SampleGroupZ"})
     assert edited.status_code == 200
-    assert edited.json()["profession"] == "Farmer"
+    assert edited.json()["caste"] == "SampleGroupZ"
     # Nothing the user attempted removed or imported rows.
     assert search(ctx).json()["total"] == 1
 

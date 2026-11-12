@@ -17,6 +17,9 @@ object ResultStatus {
     const val CONFLICT = "conflict"
     const val VOTER_ID_CONFLICT = "voter_id_conflict"
     const val VALIDATION_ERROR = "validation_error"
+
+    /** The user role tried to change a field only an owner/admin may change (or to delete). Nothing was applied. */
+    const val FORBIDDEN = "forbidden"
 }
 
 /** A voter as the server returns it (pull changes and `server_record`). */
@@ -31,7 +34,10 @@ data class VoterDto(
     @SerialName("first_name") val firstName: String = "",
     val surname: String? = null,
     @SerialName("relative_name") val relativeName: String? = null,
-    @SerialName("house_no") val houseNo: String? = null,
+    val address: String? = null,
+    val village: String? = null,
+    @SerialName("permanent_address") val permanentAddress: String? = null,
+    @SerialName("is_local") val isLocal: Boolean = false,
     val gender: String = "Unknown",
     val age: Int? = null,
     val caste: String? = null,
@@ -62,7 +68,10 @@ data class PushChange(
     @SerialName("first_name") val firstName: String,
     val surname: String? = null,
     @SerialName("relative_name") val relativeName: String? = null,
-    @SerialName("house_no") val houseNo: String? = null,
+    val address: String? = null,
+    val village: String? = null,
+    @SerialName("permanent_address") val permanentAddress: String? = null,
+    @SerialName("is_local") val isLocal: Boolean = false,
     val gender: String,
     val age: Int? = null,
     val caste: String? = null,

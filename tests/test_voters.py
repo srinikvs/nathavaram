@@ -24,8 +24,10 @@ def test_create_search_update_and_soft_delete(ctx):
     assert listed.status_code == 200
     assert listed.json()["total"] == 1
 
-    by_house = search(ctx, house_no="12")
-    assert by_house.json()["total"] == 1
+    by_address = search(ctx, q="12-A Sample")
+    assert by_address.json()["total"] == 1
+    by_village = search(ctx, village="sampleville")
+    assert by_village.json()["total"] == 1
     by_booth = search(ctx, booth="12")
     assert by_booth.json()["total"] == 1
     by_party = search(ctx, party="jana sena")
@@ -203,9 +205,10 @@ def test_soft_delete_strips_personal_fields_from_row_and_sync_pull(ctx):
         assert row is not None
         assert row.deleted_at is not None
         for field in DATA_FIELDS:
-            if field in {"voter_id", "first_name", "gender"}:
+            if field in {"voter_id", "first_name", "gender", "is_local"}:
                 continue
             assert getattr(row, field) is None, field
+        assert row.is_local is False
         assert row.first_name == ""
         assert row.gender == "Unknown"
         assert row.voter_id != "ZZZ1000001"
@@ -216,7 +219,7 @@ def test_soft_delete_strips_personal_fields_from_row_and_sync_pull(ctx):
     tomb = next(item for item in pulled["changes"] if item["id"] == created["id"])
     assert tomb["deleted_at"] is not None
     assert tomb["revision"] == body["revision"]
-    for field in ("mobile", "caste", "party", "surname", "relative_name", "house_no", "profession", "age"):
+    for field in ("mobile", "caste", "party", "surname", "relative_name", "address", "village", "permanent_address", "profession", "age"):
         assert tomb[field] is None, field
     assert tomb["first_name"] == ""
     raw = str(pulled)

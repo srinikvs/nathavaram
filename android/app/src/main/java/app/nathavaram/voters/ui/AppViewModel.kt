@@ -69,6 +69,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val baseUrl: String get() = settings.baseUrl
     val clockSkew: Boolean get() = settings.clockSkew
 
+    /** Owner/admin: every field but VoterId is editable. Otherwise only Party, Caste, Mobile and Address. */
+    val canEditAllFields: Boolean get() = settings.canEditAllFields
+
     /** Non-null while the server is demanding a password change (done on the web). */
     val passwordChangeNotice: String?
         get() = if (settings.passwordChangeRequired) ErrorMessages.PASSWORD_CHANGE_NOTICE else null
@@ -111,6 +114,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val response = container.api.login(username.trim(), password)
                 container.tokens.save(response.accessToken, response.username.ifEmpty { username.trim() })
                 settings.passwordChangeRequired = false
+                settings.role = response.role
                 SyncScheduler.requestSync(getApplication())
                 _screen.value = Screen.Search
                 LoginUi()
@@ -128,6 +132,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun signOut() {
         container.tokens.clear()
         settings.passwordChangeRequired = false
+        settings.role = ""
         _screen.value = Screen.Login
     }
 

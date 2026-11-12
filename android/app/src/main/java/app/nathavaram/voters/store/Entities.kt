@@ -22,7 +22,12 @@ data class VoterEntity(
     @ColumnInfo(name = "first_name") val firstName: String,
     val surname: String? = null,
     @ColumnInfo(name = "relative_name") val relativeName: String? = null,
-    @ColumnInfo(name = "house_no") val houseNo: String? = null,
+    // The old house_no column was folded into `address` ("H.No 12, ...") by MIGRATION_1_2.
+    val address: String? = null,
+    val village: String? = null,
+    @ColumnInfo(name = "permanent_address") val permanentAddress: String? = null,
+    /** "Local" Yes/No. Defaults to No, also for rows that existed before the column was added. */
+    @ColumnInfo(name = "is_local", defaultValue = "0") val isLocal: Boolean = false,
     val gender: String = "Unknown",
     val age: Int? = null,
     val caste: String? = null,

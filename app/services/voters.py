@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.constants import DATA_FIELDS, EXPORT_ROW_LIMIT
+from app.constants import DATA_FIELDS, EXPORT_ROW_LIMIT, LABEL_BY_FIELD, USER_EDITABLE_FIELDS
 from app.errors import ServiceError
-from app.models import Voter
+from app.models import User, Voter
 from app.schemas import VoterPatch, VoterPublic, VoterSearch, VoterWrite
 from app.services.revision import allocate_revision
 from app.validation import dump_dt
@@ -56,6 +57,42 @@ def ensure_voter_id_unchanged(voter: Voter, requested: str) -> None:
         raise ServiceError(VOTER_ID_LOCKED_MESSAGE, 422, "voter_id")
 
 
+def is_privileged(user: User) -> bool:
+    """Owner/admin check used across the app: the owner is always an admin."""
+    return user.role == "admin"
+
+
+def disallowed_changes(voter: Voter, values: dict[str, Any]) -> list[str]:
+    """Fields in `values` that a regular user may not change and that differ from `voter`.
+
+    Unchanged values never count, so a client may echo a full row back. voter_id is
+    handled separately because nobody may change it.
+    """
+    return [
+        field
+        for field, value in values.items()
+        if field in DATA_FIELDS
+        and field != "voter_id"
+        and field not in USER_EDITABLE_FIELDS
+        and getattr(voter, field) != value
+    ]
+
+
+def forbidden_fields_message(fields: list[str]) -> str:
+    names = ", ".join(LABEL_BY_FIELD[field] for field in fields)
+    allowed = ", ".join(LABEL_BY_FIELD[field] for field in DATA_FIELDS if field in USER_EDITABLE_FIELDS)
+    return (
+        f"Your role cannot change: {names}. Regular users may edit only {allowed}; "
+        "ask an owner or admin to change other fields."
+    )
+
+
+def ensure_user_may_change(voter: Voter, values: dict[str, Any]) -> None:
+    blocked = disallowed_changes(voter, values)
+    if blocked:
+        raise ServiceError(forbidden_fields_message(blocked), 403, blocked[0])
+
+
 def voter_to_public(voter: Voter) -> VoterPublic:
     return VoterPublic.model_validate(voter)
 
@@ -91,7 +128,10 @@ def create_voter(db: Session, data: VoterWrite, source_id: str) -> Voter:
     return voter
 
 
-def update_voter(db: Session, voter_id: str, patch: VoterPatch, source_id: str) -> Voter:
+def update_voter(
+    db: Session, voter_id: str, patch: VoterPatch, source_id: str, *, privileged: bool
+) -> Voter:
+    """Apply a partial edit. `privileged` is owner/admin; others edit USER_EDITABLE_FIELDS only."""
     voter = get_active(db, voter_id)
     changes = patch.model_dump(exclude_unset=True)
     if not changes:
@@ -101,6 +141,8 @@ def update_voter(db: Session, voter_id: str, patch: VoterPatch, source_id: str) 
             raise ServiceError(f"{required} cannot be null", 422, required)
     if "voter_id" in changes:
         ensure_voter_id_unchanged(voter, changes.pop("voter_id"))
+    if not privileged:
+        ensure_user_may_change(voter, changes)
     if not changes:
         return voter
     for key, value in changes.items():
@@ -117,10 +159,14 @@ def update_voter(db: Session, voter_id: str, patch: VoterPatch, source_id: str) 
     return voter
 
 
-def replace_voter(db: Session, voter_id: str, data: VoterWrite, source_id: str) -> Voter:
+def replace_voter(
+    db: Session, voter_id: str, data: VoterWrite, source_id: str, *, privileged: bool
+) -> Voter:
     """Replace every data column. Used by the web form, which always posts the full row."""
     voter = get_active(db, voter_id)
     ensure_voter_id_unchanged(voter, data.voter_id)
+    if not privileged:
+        ensure_user_may_change(voter, {field: getattr(data, field) for field in DATA_FIELDS})
     apply_write(voter, data)
     voter.updated_at = _now()
     voter.source_id = source_id
@@ -143,6 +189,7 @@ def strip_to_tombstone(voter: Voter) -> None:
     """
     for field in DATA_FIELDS:
         setattr(voter, field, None)
+    voter.is_local = False
     voter.voter_id = voter.id.replace("-", "")[:32]
     voter.first_name = ""
     voter.gender = "Unknown"
@@ -188,7 +235,8 @@ def _apply_filters(stmt, query: VoterSearch):
                 _contains(Voter.surname, query.q),
                 _contains(Voter.relative_name, query.q),
                 _contains(Voter.voter_id, query.q),
-                _contains(Voter.house_no, query.q),
+                _contains(Voter.address, query.q),
+                _contains(Voter.village, query.q),
                 _contains(Voter.mobile, query.q),
                 _contains(Voter.caste, query.q),
                 _contains(Voter.booth, query.q),
@@ -199,8 +247,10 @@ def _apply_filters(stmt, query: VoterSearch):
         )
     if query.voter_id:
         stmt = stmt.where(_contains(Voter.voter_id, query.voter_id))
-    if query.house_no:
-        stmt = stmt.where(_contains(Voter.house_no, query.house_no))
+    if query.village:
+        stmt = stmt.where(_contains(Voter.village, query.village))
+    if query.is_local:
+        stmt = stmt.where(Voter.is_local.is_(query.is_local == "Yes"))
     if query.booth:
         stmt = stmt.where(_contains(Voter.booth, query.booth))
     if query.ward:

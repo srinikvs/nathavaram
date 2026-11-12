@@ -4,7 +4,7 @@ import app.nathavaram.voters.store.ConflictEntity
 import app.nathavaram.voters.store.VoterEntity
 import app.nathavaram.voters.domain.Timestamps
 
-enum class PushKind { APPLIED, CONFLICT, VOTER_ID_CONFLICT, VALIDATION_ERROR, UNKNOWN }
+enum class PushKind { APPLIED, CONFLICT, FORBIDDEN, VOTER_ID_CONFLICT, VALIDATION_ERROR, UNKNOWN }
 
 /** What to write after one push result. Pure data, so the rules can be unit tested. */
 data class PushDecision(
@@ -30,7 +30,8 @@ object SyncMerge {
         baseRevision = e.revision.takeIf { it > 0 },
         booth = e.booth, bsNo2024 = e.bsNo2024, ward = e.ward, wardSNo = e.wardSNo,
         voterId = e.voterId, firstName = e.firstName, surname = e.surname,
-        relativeName = e.relativeName, houseNo = e.houseNo, gender = e.gender, age = e.age,
+        relativeName = e.relativeName, address = e.address, village = e.village,
+        permanentAddress = e.permanentAddress, isLocal = e.isLocal, gender = e.gender, age = e.age,
         caste = e.caste, mobile = e.mobile, cCity = e.cCity, profession = e.profession,
         party = e.party,
     )
@@ -39,7 +40,8 @@ object SyncMerge {
         id = e.id,
         booth = e.booth, bsNo2024 = e.bsNo2024, ward = e.ward, wardSNo = e.wardSNo,
         voterId = e.voterId, firstName = e.firstName, surname = e.surname,
-        relativeName = e.relativeName, houseNo = e.houseNo, gender = e.gender, age = e.age,
+        relativeName = e.relativeName, address = e.address, village = e.village,
+        permanentAddress = e.permanentAddress, isLocal = e.isLocal, gender = e.gender, age = e.age,
         caste = e.caste, mobile = e.mobile, cCity = e.cCity, profession = e.profession,
         party = e.party, createdAt = e.createdAt, updatedAt = e.updatedAt, revision = e.revision,
         deletedAt = e.deletedAt, sourceId = e.sourceId,
@@ -51,7 +53,8 @@ object SyncMerge {
             id = dto.id,
             booth = dto.booth, bsNo2024 = dto.bsNo2024, ward = dto.ward,
             wardSNo = dto.wardSNo, voterId = dto.voterId, firstName = dto.firstName,
-            surname = dto.surname, relativeName = dto.relativeName, houseNo = dto.houseNo,
+            surname = dto.surname, relativeName = dto.relativeName, address = dto.address,
+            village = dto.village, permanentAddress = dto.permanentAddress, isLocal = dto.isLocal,
             gender = dto.gender, age = dto.age, caste = dto.caste, mobile = dto.mobile,
             cCity = dto.cCity, profession = dto.profession, party = dto.party,
             createdAt = dto.createdAt, updatedAt = dto.updatedAt, revision = dto.revision,
@@ -100,11 +103,10 @@ object SyncMerge {
         val record = result.serverRecord
         return when (result.status) {
             ResultStatus.APPLIED -> applied(local, pushed, result)
-            ResultStatus.CONFLICT -> {
-                val note = conflictNote(pushed.id, ResultStatus.CONFLICT, result, local ?: pushed, record, now)
-                if (record == null) PushDecision(PushKind.CONFLICT, conflict = note)
-                else PushDecision(PushKind.CONFLICT, store = listOf(fromDto(record)), conflict = note)
-            }
+            ResultStatus.CONFLICT -> serverWins(PushKind.CONFLICT, ResultStatus.CONFLICT, local, pushed, result, now)
+            // The server refused a field the user role may not change. It applied nothing, so the
+            // server row replaces the local edit and the operator sees the reason.
+            ResultStatus.FORBIDDEN -> serverWins(PushKind.FORBIDDEN, ResultStatus.FORBIDDEN, local, pushed, result, now)
             ResultStatus.VOTER_ID_CONFLICT -> voterIdConflict(local, pushed, result, now)
             ResultStatus.VALIDATION_ERROR -> PushDecision(
                 PushKind.VALIDATION_ERROR,
@@ -112,6 +114,20 @@ object SyncMerge {
             )
             else -> PushDecision(PushKind.UNKNOWN)
         }
+    }
+
+    private fun serverWins(
+        kind: PushKind,
+        status: String,
+        local: VoterEntity?,
+        pushed: VoterEntity,
+        result: PushResult,
+        now: String,
+    ): PushDecision {
+        val record = result.serverRecord
+        val note = conflictNote(pushed.id, status, result, local ?: pushed, record, now)
+        return if (record == null) PushDecision(kind, conflict = note)
+        else PushDecision(kind, store = listOf(fromDto(record)), conflict = note)
     }
 
     private fun applied(local: VoterEntity?, pushed: VoterEntity, result: PushResult): PushDecision {

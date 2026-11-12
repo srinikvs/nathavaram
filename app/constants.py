@@ -16,7 +16,10 @@ VOTER_COLUMNS: tuple[tuple[str, str], ...] = (
     ("first_name", "FirstName"),
     ("surname", "SurName"),
     ("relative_name", "RelativeName"),
-    ("house_no", "HouseNo"),
+    ("address", "Address"),
+    ("village", "Village"),
+    ("permanent_address", "Permanent address"),
+    ("is_local", "Local"),
     ("gender", "Gender"),
     ("age", "Age"),
     ("caste", "Caste"),
@@ -37,8 +40,22 @@ LEGACY_HEADER_ALIASES: dict[str, str] = {
     "2026 Ward": "ward",
     "booth_2024": "booth",
     "ward_2026": "ward",
+    # house_no is no longer stored: an imported value is folded into Address.
+    "HouseNo": "house_no",
+    "House No": "house_no",
+    "House no": "house_no",
+    "house_no": "house_no",
 }
 IMPORT_HEADER_FIELDS: dict[str, str] = {**FIELD_BY_LABEL, **LEGACY_HEADER_ALIASES}
+# Columns an older CSV may lack. Every other column in VOTER_COLUMNS is required.
+OPTIONAL_IMPORT_FIELDS: frozenset[str] = frozenset(
+    {"address", "village", "permanent_address", "is_local", "house_no"}
+)
+
+# The only fields the regular "user" role may change on an existing voter.
+# Owner/admin may change every field except voter_id, which nobody can change.
+USER_EDITABLE_FIELDS: frozenset[str] = frozenset({"party", "caste", "mobile", "address"})
+HOUSE_NO_PREFIX = "H.No "
 
 GENDERS: tuple[str, ...] = ("Male", "Female", "Other", "Unknown")
 
@@ -77,7 +94,9 @@ TEXT_LIMITS: dict[str, int] = {
     "first_name": 128,
     "surname": 128,
     "relative_name": 128,
-    "house_no": 64,
+    "address": 1000,
+    "village": 128,
+    "permanent_address": 1000,
     "caste": 128,
     "mobile": 20,
     "c_city": 128,
@@ -90,7 +109,8 @@ TEXT_LIMITS: dict[str, int] = {
 SEARCH_FILTER_FIELDS: tuple[str, ...] = (
     "q",
     "voter_id",
-    "house_no",
+    "village",
+    "is_local",
     "booth",
     "ward",
     "caste",

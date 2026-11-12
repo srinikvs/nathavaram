@@ -78,7 +78,9 @@ Both roles can see caste, party, and mobile. Treat every account as access to pe
 
 Import and export use these headers, in this order:
 
-`Booth, 2024 B.S.No, Ward, Ward S No, VoterId, FirstName, SurName, RelativeName, HouseNo, Gender, Age, Caste, Mobile, C_City, Profession, Party`
+`Booth, 2024 B.S.No, Ward, Ward S No, VoterId, FirstName, SurName, RelativeName, Address, Village, Permanent address, Local, Gender, Age, Caste, Mobile, C_City, Profession, Party`
+
+Older files still import: `2024 Booth` / `2026 Ward` headers work, a `HouseNo` column is folded into the start of Address as `H.No <n>, <address>`, and Address, Village, Permanent address and Local may be left out. Local is Yes or No (blank means No).
 
 The file must be UTF-8 (a byte-order mark is accepted). Export writes UTF-8 with a BOM so Excel on Windows keeps Telugu text, and it prefixes a quote when a cell starts with `=`, `+`, `-`, `@`, a tab, or a carriage return (this includes the report export). Import removes one such leading quote, so `+91` mobiles survive a round trip. Party may be empty. A fake nine-row file is at `sample/voters_sample.csv` and on the Import page after you sign in.
 
@@ -98,7 +100,7 @@ All `/api` routes require a signed-in user except `POST /api/auth/login`.
 | POST | `/api/users` | Owner: create a user |
 | PATCH | `/api/users/{id}` | Owner: change role, active flag, or password (a password reset forces a change at next use) |
 | GET | `/api/voters` | List one page. Query params: `page`, `page_size` only. Search filters in the URL are refused with 422 so personal data stays out of access logs |
-| POST | `/api/voters/search` | Search. JSON body: `q`, `voter_id`, `house_no`, `booth`, `ward`, `caste`, `party`, `mobile`, `gender`, `page`, `page_size` |
+| POST | `/api/voters/search` | Search. JSON body: `q`, `voter_id`, `village`, `is_local` (`Yes` / `No` / `Any`), `booth`, `ward`, `caste`, `party`, `mobile`, `gender`, `page`, `page_size` |
 | POST | `/api/voters` | Create. Optional `id` (UUID) so a device can keep the key it generated offline |
 | GET | `/api/voters/{id}` | One active voter |
 | PATCH | `/api/voters/{id}` | Partial update |
@@ -111,7 +113,9 @@ All `/api` routes require a signed-in user except `POST /api/auth/login`.
 | GET | `/api/sync/pull?since=&limit=` | Changes with `revision` greater than `since`, including soft deletes |
 | POST | `/api/sync/push` | Batch of device snapshots. See [docs/SYNC.md](docs/SYNC.md) |
 
-Search is partial and case-insensitive for the text fields, including Telugu. `q` matches name, VoterId, HouseNo, mobile, caste, booth, ward, and party.
+Search is partial and case-insensitive for the text fields, including Telugu. `q` matches name, VoterId, address, village, mobile, caste, booth, ward, and party.
+
+Editing: any signed-in user can add a voter. On an existing voter the `user` role may change only Party, Caste, Mobile and Address; owner and admin may change every field except VoterId, which nobody can change after create. See `docs/SCHEMA.md`.
 
 `GET /healthz` does not require a login. It returns no voter data.
 

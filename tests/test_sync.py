@@ -205,7 +205,7 @@ def test_sync_delete_leaves_a_stripped_tombstone(ctx):
     assert tomb["deleted_at"] is not None
     pulled = ctx.client.get("/api/sync/pull", headers=ctx.auth, params={"since": created["revision"]}).json()
     match = next(item for item in pulled["changes"] if item["id"] == created["id"])
-    for field in ("mobile", "caste", "party", "surname", "relative_name", "house_no", "profession"):
+    for field in ("mobile", "caste", "party", "surname", "relative_name", "address", "village", "permanent_address", "profession"):
         assert match[field] is None, field
     assert match["first_name"] == ""
     assert "Testperson" not in str(pulled) and "9000000021" not in str(pulled)

@@ -17,12 +17,13 @@ from app.constants import (
     IMPORT_HEADER_FIELDS,
     IMPORT_ROW_LIMIT,
     LABEL_BY_FIELD,
+    OPTIONAL_IMPORT_FIELDS,
     VOTER_COLUMNS,
 )
 from app.models import Voter
 from app.schemas import ImportErrorItem, ImportReport, VoterWrite
 from app.services.revision import allocate_revision
-from app.validation import csv_safe, csv_unsafe, dump_dt
+from app.validation import csv_safe, csv_unsafe, dump_dt, fold_house_no, local_label
 from pydantic import ValidationError
 
 
@@ -60,12 +61,17 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
         raise ImportRejected("CSV header contains an empty column name")
     if len(set(headers)) != len(headers):
         raise ImportRejected("CSV header contains duplicate column names")
-    # Old headers ("2024 Booth", "2026 Ward") are accepted alongside "Booth" and "Ward".
+    # Old headers ("2024 Booth", "2026 Ward", "HouseNo") are accepted alongside the new ones.
+    # Older files lack Address/Village/Permanent address/Local; those columns are optional.
     extra = [name for name in headers if name not in IMPORT_HEADER_FIELDS]
     fields = [IMPORT_HEADER_FIELDS[name] for name in headers if name in IMPORT_HEADER_FIELDS]
     if len(set(fields)) != len(fields):
         raise ImportRejected("CSV header contains the same column twice (old and new names mixed)")
-    missing = [label for field, label in VOTER_COLUMNS if field not in fields]
+    missing = [
+        label
+        for field, label in VOTER_COLUMNS
+        if field not in fields and field not in OPTIONAL_IMPORT_FIELDS
+    ]
     if missing or extra:
         parts = []
         if missing:
@@ -87,6 +93,10 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
             for key, value in raw.items()
             if key is not None
         }
+        # The old HouseNo column is not stored any more: fold it into Address.
+        house_no = payload_row.pop("house_no", None)
+        if house_no and house_no.strip():
+            payload_row["address"] = fold_house_no(house_no, payload_row.get("address"))
         try:
             parsed = VoterWrite.model_validate(payload_row)
         except ValidationError as exc:
@@ -163,7 +173,7 @@ def voters_to_csv(voters: list[Voter]) -> str:
     writer = csv.writer(buffer)
     writer.writerow(list(CSV_HEADERS))
     for voter in voters:
-        writer.writerow([csv_safe(getattr(voter, name)) for name, _label in _columns()])
+        writer.writerow([_cell(voter, name) for name, _label in VOTER_COLUMNS])
     return buffer.getvalue()
 
 
@@ -173,7 +183,7 @@ def voters_to_xlsx(voters: list[Voter]) -> bytes:
     sheet.title = "Voters"
     sheet.append(list(CSV_HEADERS))
     for voter in voters:
-        sheet.append([csv_safe(getattr(voter, name)) for name, _label in _columns()])
+        sheet.append([_cell(voter, name) for name, _label in VOTER_COLUMNS])
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
     buffer = io.BytesIO()
@@ -181,7 +191,8 @@ def voters_to_xlsx(voters: list[Voter]) -> bytes:
     return buffer.getvalue()
 
 
-def _columns():
-    from app.constants import VOTER_COLUMNS
-
-    return VOTER_COLUMNS
+def _cell(voter: Voter, name: str) -> str:
+    value = getattr(voter, name)
+    if name == "is_local":
+        return local_label(value)
+    return csv_safe(value)

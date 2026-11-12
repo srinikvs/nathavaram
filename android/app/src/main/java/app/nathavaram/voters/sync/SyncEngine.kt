@@ -79,7 +79,7 @@ class SyncEngine(
         if (decision.rewindCursor) tally.rewind = true
         when (decision.kind) {
             PushKind.APPLIED -> tally.applied++
-            PushKind.CONFLICT -> tally.conflicts++
+            PushKind.CONFLICT, PushKind.FORBIDDEN -> tally.conflicts++
             PushKind.VOTER_ID_CONFLICT -> tally.voterIdConflicts++
             PushKind.VALIDATION_ERROR -> tally.validationErrors++
             PushKind.UNKNOWN -> Unit

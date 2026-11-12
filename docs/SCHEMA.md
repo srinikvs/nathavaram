@@ -16,7 +16,10 @@ Display names below are the exact labels in the web form and the exact CSV/Excel
 | FirstName | `first_name` | text, required | Up to 128 characters. Telugu and other Unicode letters are stored as UTF-8 |
 | SurName | `surname` | text, null | Up to 128 characters |
 | RelativeName | `relative_name` | text, null | Up to 128 characters |
-| HouseNo | `house_no` | text, null | Up to 64 characters. Not a number, so values like `12-A` stay intact |
+| Address | `address` | text, null | Up to 1000 characters. Holds what used to be the separate HouseNo column, as a prefix such as `H.No 12-A, Main St` (see "House No removal") |
+| Village | `village` | text, null | Up to 128 characters |
+| Permanent address | `permanent_address` | text, null | Up to 1000 characters |
+| Local | `is_local` | boolean, required, default `false` | Shown as **Local** with Yes / No in the web form, list, CSV and Android. Import accepts Yes/No (also Y/N, true/false, 1/0); blank means No. Rows that existed before the column was added are **No** |
 | Gender | `gender` | text, required | `Male`, `Female`, `Other`, `Unknown`. Blank input becomes `Unknown`. Matching is case-insensitive and stored in this canonical form |
 | Age | `age` | integer, null | Whole number from 1 to 130, or null when unknown |
 | Caste | `caste` | text, null | Up to 128 characters |
@@ -54,7 +57,33 @@ The unique index `uq_voters_voter_id_active` covers `voter_id` only where `delet
 
 ### VoterId is fixed after create
 
-VoterId is the unique key, so it cannot be edited once a voter exists. The web edit page shows it as plain text and does not post it. A web edit post, `PATCH /api/voters/{id}`, or a sync push that carries a different `voter_id` for an existing active record is refused and nothing is written: the web form answers 400, `PATCH` answers 422, and sync reports `validation_error` for that change. Sending the same value is accepted. A soft-deleted row only holds a placeholder `voter_id`, so re-sending a deleted record may carry a VoterId. Every other column stays editable.
+VoterId is the unique key, so it cannot be edited once a voter exists. The web edit page shows it as plain text and does not post it. A web edit post, `PATCH /api/voters/{id}`, or a sync push that carries a different `voter_id` for an existing active record is refused and nothing is written: the web form answers 400, `PATCH` answers 422, and sync reports `validation_error` for that change. Sending the same value is accepted. A soft-deleted row only holds a placeholder `voter_id`, so re-sending a deleted record may carry a VoterId. This holds for every role, including owner and admin. Who may change the other columns is described next.
+
+### Who may edit which field
+
+The rule applies to an **existing** voter and is enforced on the server in `PATCH /api/voters/{id}`, the web edit form and `POST /api/sync/push`. The Android edit screen mirrors it. "Owner/admin" is the `admin` role (the owner is an admin).
+
+| Role | May change |
+| --- | --- |
+| `user` | **Party, Caste, Mobile, Address** only |
+| `admin` / owner | every column except VoterId |
+| nobody | VoterId |
+
+- A `user` request that changes any other column is refused and nothing is written: `PATCH` answers **403** (`Your role cannot change: <labels>. Regular users may edit only Party, Caste, Mobile, Address; ask an owner or admin to change other fields.`), the web form re-renders with the same message and status 403, and sync answers that change with `status: "forbidden"` (see `docs/SYNC.md`). The check compares against the stored value, so a client that sends the whole row back with the restricted fields unchanged is not refused.
+- The web edit form shows the restricted fields read-only for a `user` (inputs are `readonly`, drop-downs `disabled`). The server does not rely on that: a posted value that differs is refused, and a field that was not posted counts as unchanged.
+- Creating a voter is unchanged: any signed-in user can create one and may set every column, including Village, Permanent address and Local. Deleting stays admin-only on the web and REST API, and a `user` also cannot delete through sync (otherwise delete-then-recreate would sidestep the rule).
+
+### House No removal
+
+The separate `house_no` column is gone. Migration `0006_fold_house_no_into_address.py` moves each value to the start of `address` and then drops the column, so no data is lost:
+
+| `house_no` | `address` before | `address` after |
+| --- | --- | --- |
+| `12` | `Main St` | `H.No 12, Main St` |
+| `12` | empty | `H.No 12` |
+| empty | anything | unchanged |
+
+CSV import still accepts a `HouseNo` / `House No` / `house_no` column and folds it into Address in the same way, so old files keep working. Export, the web pages, search filters, reports and the Android app no longer have House No. `q` (free-text search) now matches Address and Village instead.
 
 ### Booth and Ward rename
 
@@ -79,7 +108,7 @@ There is no default account in the repository. On startup the app inserts one ad
 
 ## Migration
 
-`alembic/versions/0001_initial.py` creates `users`, `sync_state`, and `voters`, including the partial unique index. `alembic/versions/0002_user_security_flags.py` adds `users.must_change_password` (existing rows become true) and `users.is_owner` (existing rows false). `0003_token_version.py` adds `users.token_version` and `users.deleted_at`. `0004_rename_booth_ward.py` renames `voters.booth_2024` to `booth` and `voters.ward_2026` to `ward` with `ALTER TABLE ... RENAME COLUMN`, so every stored value is kept, and recreates their indexes as `ix_voters_booth` and `ix_voters_ward`. Its downgrade renames them back. The app runs `alembic upgrade head` on startup. You can also run it yourself:
+`alembic/versions/0001_initial.py` creates `users`, `sync_state`, and `voters`, including the partial unique index. `alembic/versions/0002_user_security_flags.py` adds `users.must_change_password` (existing rows become true) and `users.is_owner` (existing rows false). `0003_token_version.py` adds `users.token_version` and `users.deleted_at`. `0004_rename_booth_ward.py` renames `voters.booth_2024` to `booth` and `voters.ward_2026` to `ward` with `ALTER TABLE ... RENAME COLUMN`, so every stored value is kept, and recreates their indexes as `ix_voters_booth` and `ix_voters_ward`. Its downgrade renames them back. `0005_add_address_village_local.py` adds `address`, `village` and `permanent_address` (nullable text, so existing rows get null) and `is_local` (`NOT NULL`, server default false, so existing rows become No). `0006_fold_house_no_into_address.py` folds `house_no` into `address` and drops `house_no` (see "House No removal"); its downgrade re-adds an empty `house_no` column and leaves the folded text in `address`. Dropping a column uses `ALTER TABLE ... DROP COLUMN`, which needs SQLite 3.35 or later (PostgreSQL has always had it). The app runs `alembic upgrade head` on startup. You can also run it yourself:
 
 ```bash
 DATABASE_URL=sqlite:///./data/nathavaram.db alembic upgrade head

@@ -89,7 +89,7 @@ Each change in a batch is applied in its own savepoint. A rejected change (confl
 }
 ```
 
-`server_record` is present for `applied`, `conflict`, and `voter_id_conflict` when the server has a row to show. The device should replace its local copy with `server_record` whenever it is present.
+`server_record` is present for `applied`, `conflict`, `forbidden`, and `voter_id_conflict` when the server has a row to show. The device should replace its local copy with `server_record` whenever it is present.
 
 ## Conflict policy
 
@@ -108,8 +108,18 @@ Last-write-wins by `updated_at`, then a new server revision.
 | Active different `id` already uses this `voter_id` | `voter_id_conflict` | Nothing is written. `server_record` is the other active row. The device should show that row and not silently merge the two people |
 | Existing active row with this `id`, and the change carries a different `voter_id` | `validation_error` | Nothing is written. The message is `voter_id: VoterId cannot be changed after the voter is created` and `server_record` is the current server row. A tombstoned row is exempt, because it only holds a placeholder |
 | `updated_at` before 2000-01-01 UTC, more than 5 minutes ahead of the server, or otherwise invalid | `validation_error` | Nothing is written for that item |
+| The signed-in user has the `user` role and the change would alter a field other than Party, Caste, Mobile, Address of an existing active row | `forbidden` | Nothing is written. `message` is `Your role cannot change: <labels>. Regular users may edit only Party, Caste, Mobile, Address; ask an owner or admin to change other fields.` and `server_record` is the current server row |
+| The signed-in user has the `user` role and the change is a delete of an active row | `forbidden` | Nothing is written. Deleting is admin-only on every path, so it cannot be used to delete and re-add a voter |
 
 `voter_id` uniqueness ignores soft-deleted rows. After a delete is synced, another row may use that EPIC.
+
+### Roles and sync
+
+`forbidden` is the sync form of HTTP 403: it is reported per change, with HTTP 200 for the batch, like `validation_error` and `conflict`, so one refused change never blocks the others. The comparison is against the stored values, so a full snapshot whose restricted fields are unchanged is **not** a violation; only a real difference is. Stale and replayed changes are decided first (`conflict`, "Already stored"), so a device that is merely behind is told `conflict`, not `forbidden`. A `user` may still create a new voter (a change for an `id` the server has no active row for) and may set every column on it. `admin` accounts, including the owner, may change every column except `voter_id`, which no role can change (`validation_error`).
+
+### Fields in a snapshot
+
+A snapshot carries `address`, `village`, `permanent_address` and `is_local` (boolean). `house_no` no longer exists: it was folded into `address` (see `docs/SCHEMA.md`) and a push that still sends it is rejected as an unknown field. Omitted `is_local` is stored as false. Tombstones carry `is_local: false` and null text.
 
 The server clock wins for edits made through the website and the REST CRUD API: those set `updated_at` to the current server time and therefore beat an offline edit that was stamped earlier. An offline edit stamped later than the server edit wins on the next push. That is ordinary last-write-wins. It is not a field-level merge. If two people edit different columns of the same voter, the older edit disappears.
 
@@ -127,4 +137,4 @@ Phase 2 still has to build the Room database, the background sync worker, the of
 
 ## Android client
 
-The client lives in [`android/`](../android/README.md). One detail goes beyond the steps above: when a pulled change is skipped because a dirty local row is newer, the client still raises that row's stored `revision` to the pulled one, so its next push carries a current `base_revision` and wins by `updated_at` instead of being rejected as a stale `conflict`.
+The client lives in [`android/`](../android/README.md). It stores the role the server reports at sign-in. For a `user` the edit screen shows every field except Party, Caste, Mobile and Address read-only, and the repository takes the other fields from the stored row on save, so a restricted change is never queued for push. VoterId is read-only for everyone once the voter exists. A `forbidden` result is handled like `conflict`: the server row replaces the local one and the operator sees the reason. The local Room database is version 2: migration 1 → 2 folds `house_no` into `address` (`H.No <n>`) and adds `village`, `permanent_address` and `is_local`. One detail goes beyond the steps above: when a pulled change is skipped because a dirty local row is newer, the client still raises that row's stored `revision` to the pulled one, so its next push carries a current `base_revision` and wins by `updated_at` instead of being rejected as a stale `conflict`.

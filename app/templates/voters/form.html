@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{% if voter %}Edit voter{% else %}Add voter{% endif %} · Nathavaram{% endblock %}
 {% block content %}
+{# On an existing voter a regular user may edit only Party, Caste, Mobile and Address.
+   Everything else is shown read-only. The server enforces this; the markup only mirrors it. #}
+{% set locked = voter is not none and user.role != "admin" %}
+{% set lock_text = "readonly" if locked else "" %}
+{% set lock_select = "disabled" if locked else "" %}
 <div class="page-head">
   <div>
     <h1>{% if voter %}Edit voter{% else %}Add voter{% endif %}</h1>
@@ -14,23 +19,26 @@
   {% for line in errors %}<p>{{ line }}</p>{% endfor %}
 </div>
 {% endif %}
+{% if locked %}
+<p class="banner" id="role-hint">You can edit Party, Caste, Mobile and Address. Other fields are read-only; ask an owner or admin to change them.</p>
+{% endif %}
 <form method="post" class="grid" autocomplete="off">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div>
     <label for="booth">Booth</label>
-    <input id="booth" name="booth" maxlength="64" value="{{ values.get('booth', '') }}">
+    <input id="booth" name="booth" maxlength="64" value="{{ values.get('booth', '') }}" {{ lock_text }}>
   </div>
   <div>
     <label for="bs_no_2024">2024 B.S.No</label>
-    <input id="bs_no_2024" name="bs_no_2024" maxlength="64" value="{{ values.get('bs_no_2024', '') }}">
+    <input id="bs_no_2024" name="bs_no_2024" maxlength="64" value="{{ values.get('bs_no_2024', '') }}" {{ lock_text }}>
   </div>
   <div>
     <label for="ward">Ward</label>
-    <input id="ward" name="ward" maxlength="64" value="{{ values.get('ward', '') }}">
+    <input id="ward" name="ward" maxlength="64" value="{{ values.get('ward', '') }}" {{ lock_text }}>
   </div>
   <div>
     <label for="ward_s_no">Ward S No</label>
-    <input id="ward_s_no" name="ward_s_no" maxlength="64" value="{{ values.get('ward_s_no', '') }}">
+    <input id="ward_s_no" name="ward_s_no" maxlength="64" value="{{ values.get('ward_s_no', '') }}" {{ lock_text }}>
   </div>
   <div>
     {% if voter %}
@@ -45,23 +53,38 @@
   </div>
   <div>
     <label for="first_name">FirstName <abbr title="required">*</abbr></label>
-    <input id="first_name" name="first_name" required maxlength="128" value="{{ values.get('first_name', '') }}" translate="no">
+    <input id="first_name" name="first_name" required maxlength="128" value="{{ values.get('first_name', '') }}" translate="no" {{ lock_text }}>
   </div>
   <div>
     <label for="surname">SurName</label>
-    <input id="surname" name="surname" maxlength="128" value="{{ values.get('surname', '') }}" translate="no">
+    <input id="surname" name="surname" maxlength="128" value="{{ values.get('surname', '') }}" translate="no" {{ lock_text }}>
   </div>
   <div>
     <label for="relative_name">RelativeName</label>
-    <input id="relative_name" name="relative_name" maxlength="128" value="{{ values.get('relative_name', '') }}" translate="no">
+    <input id="relative_name" name="relative_name" maxlength="128" value="{{ values.get('relative_name', '') }}" translate="no" {{ lock_text }}>
+  </div>
+  <div class="full">
+    <label for="address">Address</label>
+    <input id="address" name="address" maxlength="1000" value="{{ values.get('address', '') }}" translate="no">
   </div>
   <div>
-    <label for="house_no">HouseNo</label>
-    <input id="house_no" name="house_no" maxlength="64" value="{{ values.get('house_no', '') }}" translate="no">
+    <label for="village">Village</label>
+    <input id="village" name="village" maxlength="128" value="{{ values.get('village', '') }}" translate="no" {{ lock_text }}>
+  </div>
+  <div class="full">
+    <label for="permanent_address">Permanent address</label>
+    <input id="permanent_address" name="permanent_address" maxlength="1000" value="{{ values.get('permanent_address', '') }}" translate="no" {{ lock_text }}>
+  </div>
+  <div>
+    <label for="is_local">Local</label>
+    <select id="is_local" name="is_local" {{ lock_select }}>
+      <option value="No" {% if values.get('is_local') != 'Yes' %}selected{% endif %}>No</option>
+      <option value="Yes" {% if values.get('is_local') == 'Yes' %}selected{% endif %}>Yes</option>
+    </select>
   </div>
   <div>
     <label for="gender">Gender</label>
-    <select id="gender" name="gender">
+    <select id="gender" name="gender" {{ lock_select }}>
       {% for gender in genders %}
       <option value="{{ gender }}" {% if (values.get('gender') or 'Unknown') == gender %}selected{% endif %}>{{ gender }}</option>
       {% endfor %}
@@ -69,7 +92,7 @@
   </div>
   <div>
     <label for="age">Age</label>
-    <input id="age" name="age" inputmode="numeric" maxlength="3" value="{{ values.get('age', '') }}" placeholder="Blank if unknown">
+    <input id="age" name="age" inputmode="numeric" maxlength="3" value="{{ values.get('age', '') }}" placeholder="Blank if unknown" {{ lock_text }}>
   </div>
   <div>
     <label for="caste">Caste</label>
@@ -81,11 +104,11 @@
   </div>
   <div>
     <label for="c_city">C_City</label>
-    <input id="c_city" name="c_city" maxlength="128" value="{{ values.get('c_city', '') }}" translate="no">
+    <input id="c_city" name="c_city" maxlength="128" value="{{ values.get('c_city', '') }}" translate="no" {{ lock_text }}>
   </div>
   <div>
     <label for="profession">Profession</label>
-    <input id="profession" name="profession" maxlength="128" value="{{ values.get('profession', '') }}" translate="no">
+    <input id="profession" name="profession" maxlength="128" value="{{ values.get('profession', '') }}" translate="no" {{ lock_text }}>
   </div>
   <div>
     <label for="party">Party</label>

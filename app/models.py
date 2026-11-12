@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import CheckConstraint, Integer, String, false, text, true
+from sqlalchemy import CheckConstraint, Integer, String, Text, false, text, true
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -70,7 +70,11 @@ class Voter(Base):
     first_name: Mapped[str] = mapped_column(String(128), nullable=False)
     surname: Mapped[str | None] = mapped_column(String(128))
     relative_name: Mapped[str | None] = mapped_column(String(128))
-    house_no: Mapped[str | None] = mapped_column(String(64))
+    address: Mapped[str | None] = mapped_column(Text)
+    village: Mapped[str | None] = mapped_column(Text)
+    permanent_address: Mapped[str | None] = mapped_column(Text)
+    # Default No: rows that existed before the column was added migrate as not local.
+    is_local: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
     gender: Mapped[str] = mapped_column(String(16), nullable=False, default="Unknown")
     age: Mapped[int | None] = mapped_column(Integer)
     caste: Mapped[str | None] = mapped_column(String(128))

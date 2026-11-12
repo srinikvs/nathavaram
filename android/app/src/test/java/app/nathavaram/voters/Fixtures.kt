@@ -23,10 +23,14 @@ object Fixtures {
         dirty: Boolean = false,
         party: String? = null,
         mobile: String? = "9000000001",
-        houseNo: String? = "12-A",
+        address: String? = "H.No 12-A",
+        village: String? = null,
+        isLocal: Boolean = false,
+        caste: String? = null,
     ) = VoterEntity(
         id = id, voterId = voterId, firstName = firstName, surname = surname,
-        houseNo = houseNo, mobile = mobile, party = party, gender = "Male", age = 42,
+        address = address, village = village, isLocal = isLocal, caste = caste,
+        mobile = mobile, party = party, gender = "Male", age = 42,
         createdAt = T1, updatedAt = updatedAt, revision = revision, dirty = dirty,
     )
 
@@ -41,7 +45,7 @@ object Fixtures {
         deletedAt: String? = null,
     ) = VoterDto(
         id = id, voterId = voterId, firstName = firstName, surname = surname, gender = "Male",
-        houseNo = "12-A", age = 42, party = party, mobile = "9000000001", createdAt = T1, updatedAt = updatedAt,
+        address = "H.No 12-A", age = 42, party = party, mobile = "9000000001", createdAt = T1, updatedAt = updatedAt,
         revision = revision, deletedAt = deletedAt, sourceId = "android-test",
     )
 

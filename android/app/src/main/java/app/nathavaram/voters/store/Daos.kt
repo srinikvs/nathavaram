@@ -37,7 +37,8 @@ interface VoterDao {
         WHERE deleted_at IS NULL AND (
             voter_id LIKE :pattern ESCAPE '\' OR first_name LIKE :pattern ESCAPE '\' OR
             surname LIKE :pattern ESCAPE '\' OR relative_name LIKE :pattern ESCAPE '\' OR
-            mobile LIKE :pattern ESCAPE '\' OR house_no LIKE :pattern ESCAPE '\'
+            mobile LIKE :pattern ESCAPE '\' OR address LIKE :pattern ESCAPE '\' OR
+            village LIKE :pattern ESCAPE '\'
         )
         ORDER BY first_name COLLATE NOCASE, voter_id
         LIMIT :limit

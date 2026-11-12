@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Voters</h1>
-    <p class="lede">{{ total }} record{% if total != 1 %}s{% endif %}{% if query.q or query.booth or query.ward or query.party or query.gender or query.caste or query.mobile or query.house_no or query.voter_id %} match the filters{% endif %}.</p>
+    <p class="lede">{{ total }} record{% if total != 1 %}s{% endif %}{% if query.q or query.booth or query.ward or query.party or query.gender or query.caste or query.mobile or query.village or query.is_local or query.voter_id %} match the filters{% endif %}.</p>
   </div>
   <div class="actions">
     <a class="button" href="/voters/new">Add voter</a>
@@ -25,7 +25,7 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div>
     <label for="q">Search</label>
-    <input id="q" name="q" value="{{ query.q or '' }}" placeholder="Name, VoterId, HouseNo, mobile" maxlength="100">
+    <input id="q" name="q" value="{{ query.q or '' }}" placeholder="Name, VoterId, address, village, mobile" maxlength="100">
   </div>
   <div>
     <label for="booth">Booth</label>
@@ -44,7 +44,7 @@
       {% endfor %}
     </select>
   </div>
-  <details {% if query.gender or query.caste or query.mobile or query.house_no or query.voter_id %}open{% endif %}>
+  <details {% if query.gender or query.caste or query.mobile or query.village or query.is_local or query.voter_id %}open{% endif %}>
     <summary>More filters</summary>
     <div class="more">
       <div>
@@ -52,8 +52,16 @@
         <input id="voter_id" name="voter_id" value="{{ query.voter_id or '' }}" maxlength="32">
       </div>
       <div>
-        <label for="house_no">HouseNo</label>
-        <input id="house_no" name="house_no" value="{{ query.house_no or '' }}" maxlength="64">
+        <label for="village">Village</label>
+        <input id="village" name="village" value="{{ query.village or '' }}" maxlength="128">
+      </div>
+      <div>
+        <label for="is_local">Local</label>
+        <select id="is_local" name="is_local">
+          <option value="">Any</option>
+          <option value="Yes" {% if query.is_local == "Yes" %}selected{% endif %}>Yes</option>
+          <option value="No" {% if query.is_local == "No" %}selected{% endif %}>No</option>
+        </select>
       </div>
       <div>
         <label for="caste">Caste</label>
@@ -88,7 +96,9 @@
         <th>FirstName</th>
         <th>SurName</th>
         <th>RelativeName</th>
-        <th>HouseNo</th>
+        <th>Address</th>
+        <th>Village</th>
+        <th>Local</th>
         <th>Booth</th>
         <th>Ward</th>
         <th>Gender</th>
@@ -106,7 +116,9 @@
         <td data-label="FirstName" translate="no">{{ voter.first_name }}</td>
         <td data-label="SurName" translate="no">{{ voter.surname|display }}</td>
         <td data-label="RelativeName" translate="no">{{ voter.relative_name|display }}</td>
-        <td data-label="HouseNo" translate="no">{{ voter.house_no|display }}</td>
+        <td data-label="Address" translate="no">{{ voter.address|display }}</td>
+        <td data-label="Village" translate="no">{{ voter.village|display }}</td>
+        <td data-label="Local">{{ "Yes" if voter.is_local else "No" }}</td>
         <td data-label="Booth" translate="no">{{ voter.booth|display }}</td>
         <td data-label="Ward" translate="no">{{ voter.ward|display }}</td>
         <td data-label="Gender">{{ voter.gender }}</td>

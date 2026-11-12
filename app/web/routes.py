@@ -8,7 +8,14 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.config import ROOT
-from app.constants import DATA_FIELDS, GENDERS, LABEL_BY_FIELD, PARTIES, SEARCH_FILTER_FIELDS
+from app.constants import (
+    DATA_FIELDS,
+    GENDERS,
+    LABEL_BY_FIELD,
+    PARTIES,
+    SEARCH_FILTER_FIELDS,
+    USER_EDITABLE_FIELDS,
+)
 from app.database import get_db
 from app.deps import resolve_user, source_for
 from app.errors import ServiceError
@@ -27,10 +34,12 @@ from app.services.voters import (
     create_voter,
     export_voters,
     get_active,
+    is_privileged,
     replace_voter,
     search_voters,
     soft_delete,
 )
+from app.validation import local_label
 from app.services.voters import VOTER_ID_LOCKED_MESSAGE
 from app.web.templates import render
 
@@ -84,6 +93,16 @@ def _form_errors(exc: ValidationError) -> list[str]:
 
 def _voter_form(form) -> dict:
     return {field: str(form.get(field) or "") for field in DATA_FIELDS}
+
+
+def _stored_values(voter) -> dict:
+    """The saved row as form strings. Local shows as Yes / No."""
+    values = {
+        field: getattr(voter, field) if getattr(voter, field) is not None else ""
+        for field in DATA_FIELDS
+    }
+    values["is_local"] = local_label(voter.is_local)
+    return values
 
 
 def _set_cookie(response: Response, request: Request, user) -> None:
@@ -369,7 +388,7 @@ def edit_voter_form(
         voter = get_active(db, voter_id)
     except ServiceError:
         return render(request, "404.html", {"user": user}, status_code=404)
-    values = {field: getattr(voter, field) if getattr(voter, field) is not None else "" for field in DATA_FIELDS}
+    values = _stored_values(voter)
     return render(
         request,
         "voters/form.html",
@@ -412,6 +431,14 @@ async def edit_voter_submit(
             status_code=400,
         )
     raw["voter_id"] = voter.voter_id
+    privileged = is_privileged(user)
+    if not privileged:
+        # Locked fields are rendered read-only (selects are disabled and not posted), so a
+        # missing one means "unchanged". A posted value that differs is refused by the service.
+        stored = _stored_values(voter)
+        for field in DATA_FIELDS:
+            if field not in USER_EDITABLE_FIELDS and form.get(field) is None:
+                raw[field] = str(stored[field])
     try:
         data = VoterWrite.model_validate(raw)
     except ValidationError as exc:
@@ -422,7 +449,7 @@ async def edit_voter_submit(
             status_code=400,
         )
     try:
-        replace_voter(db, voter_id, data, source_for(user))
+        replace_voter(db, voter_id, data, source_for(user), privileged=privileged)
     except ServiceError as exc:
         return render(
             request,

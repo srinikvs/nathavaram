@@ -15,14 +15,15 @@ object VoterValidator {
     private val VOTER_ID = Regex("^[A-Z0-9]{3,32}$")
     private val MOBILE = Regex("^(?:\\+91|91|0)?[6-9]\\d{9}$")
 
+    private const val ADDRESS_MAX = 1000
     private val SHORT_FIELDS = listOf(
-        FieldKey.BOOTH, FieldKey.BS_NO_2024, FieldKey.WARD,
-        FieldKey.WARD_S_NO, FieldKey.HOUSE_NO,
+        FieldKey.BOOTH, FieldKey.BS_NO_2024, FieldKey.WARD, FieldKey.WARD_S_NO,
     )
     private val LONG_FIELDS = listOf(
         FieldKey.SURNAME, FieldKey.RELATIVE_NAME, FieldKey.CASTE,
-        FieldKey.C_CITY, FieldKey.PROFESSION,
+        FieldKey.C_CITY, FieldKey.PROFESSION, FieldKey.VILLAGE,
     )
+    private val ADDRESS_FIELDS = listOf(FieldKey.ADDRESS, FieldKey.PERMANENT_ADDRESS)
 
     fun validate(input: VoterForm): Result {
         val errors = linkedMapOf<String, String>()
@@ -34,6 +35,11 @@ object VoterValidator {
         }
         for (key in SHORT_FIELDS) checkLength(form, key, SHORT_MAX, errors)
         for (key in LONG_FIELDS) checkLength(form, key, LONG_MAX, errors)
+        for (key in ADDRESS_FIELDS) checkLength(form, key, ADDRESS_MAX, errors)
+
+        val local = Vocab.canonicalLocal(form.isLocal)
+        if (local == null) errors[FieldKey.IS_LOCAL] = "Choose Yes or No"
+        else form = form.copy(isLocal = local)
 
         form = form.copy(voterId = form.voterId.uppercase())
         if (FieldKey.VOTER_ID !in errors && !VOTER_ID.matches(form.voterId)) {
@@ -83,7 +89,8 @@ object VoterValidator {
     private val ALL_KEYS = listOf(
         FieldKey.BOOTH, FieldKey.BS_NO_2024, FieldKey.WARD, FieldKey.WARD_S_NO,
         FieldKey.VOTER_ID, FieldKey.FIRST_NAME, FieldKey.SURNAME, FieldKey.RELATIVE_NAME,
-        FieldKey.HOUSE_NO, FieldKey.GENDER, FieldKey.AGE, FieldKey.CASTE, FieldKey.MOBILE,
+        FieldKey.ADDRESS, FieldKey.VILLAGE, FieldKey.PERMANENT_ADDRESS, FieldKey.IS_LOCAL,
+        FieldKey.GENDER, FieldKey.AGE, FieldKey.CASTE, FieldKey.MOBILE,
         FieldKey.C_CITY, FieldKey.PROFESSION, FieldKey.PARTY,
     )
 }

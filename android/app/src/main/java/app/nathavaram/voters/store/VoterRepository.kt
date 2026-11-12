@@ -3,6 +3,7 @@ package app.nathavaram.voters.store
 import app.nathavaram.voters.domain.FieldKey
 import app.nathavaram.voters.domain.Timestamps
 import app.nathavaram.voters.domain.VoterForm
+import app.nathavaram.voters.domain.Vocab
 import app.nathavaram.voters.domain.VoterValidator
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
@@ -25,6 +26,11 @@ class VoterRepository(
     private val onChanged: () -> Unit = {},
     private val now: () -> String = { Timestamps.now() },
     private val newId: () -> String = { UUID.randomUUID().toString() },
+    /**
+     * True for an owner/admin, who may edit every field except VoterId. False restricts an existing
+     * voter's edit to Party, Caste, Mobile and Address. The app wires this to the signed-in role.
+     */
+    private val canEditAllFields: () -> Boolean = { true },
 ) {
     private val dao = db.voterDao()
 
@@ -38,7 +44,13 @@ class VoterRepository(
         // VoterId is the unique key and is read-only once the voter exists: whatever the form
         // carries, an existing voter keeps its stored VoterId, so sync can never push a changed one.
         val locked = existing?.takeIf { it.deletedAt == null }
-        val submitted = if (locked != null) form.copy(voterId = locked.voterId) else form
+        var submitted = if (locked != null) form.copy(voterId = locked.voterId) else form
+        // A regular user may change only Party, Caste, Mobile and Address of an existing voter.
+        // Everything else is taken from the stored row, so a restricted change is never saved
+        // and never reaches the sync payload. The server enforces the same rule.
+        if (locked != null && !canEditAllFields()) {
+            submitted = submitted.restrictedTo(VoterForm.from(locked))
+        }
         val valid = when (val r = VoterValidator.validate(submitted)) {
             is VoterValidator.Result.Invalid -> return SaveResult.Invalid(r.errors)
             is VoterValidator.Result.Ok -> r.form
@@ -60,7 +72,10 @@ class VoterRepository(
             firstName = valid.firstName,
             surname = valid.surname.ifEmpty { null },
             relativeName = valid.relativeName.ifEmpty { null },
-            houseNo = valid.houseNo.ifEmpty { null },
+            address = valid.address.ifEmpty { null },
+            village = valid.village.ifEmpty { null },
+            permanentAddress = valid.permanentAddress.ifEmpty { null },
+            isLocal = valid.isLocal == Vocab.YES,
             gender = valid.gender,
             age = valid.age.toIntOrNull(),
             caste = valid.caste.ifEmpty { null },

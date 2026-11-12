@@ -23,7 +23,14 @@ from app.constants import DATA_FIELDS, SYNC_BATCH_LIMIT
 from app.models import Voter
 from app.schemas import SyncChange, SyncPullResponse, SyncPushRequest, SyncPushResponse, SyncResult, VoterPublic, VoterWrite
 from app.services.revision import allocate_revision, current_revision
-from app.services.voters import VOTER_ID_LOCKED_MESSAGE, strip_to_tombstone, voter_to_public
+from app.errors import ServiceError
+from app.services.voters import (
+    VOTER_ID_LOCKED_MESSAGE,
+    disallowed_changes,
+    forbidden_fields_message,
+    strip_to_tombstone,
+    voter_to_public,
+)
 from app.validation import canonical_voter_id, check_client_timestamp, dump_dt, parse_dt
 
 
@@ -57,14 +64,13 @@ def pull_changes(db: Session, since: int, limit: int) -> SyncPullResponse:
     )
 
 
-def push_changes(db: Session, body: SyncPushRequest) -> SyncPushResponse:
+def push_changes(db: Session, body: SyncPushRequest, *, privileged: bool) -> SyncPushResponse:
+    """`privileged` is owner/admin. Regular users may change USER_EDITABLE_FIELDS only."""
     if len(body.changes) > SYNC_BATCH_LIMIT:
-        from app.errors import ServiceError
-
         raise ServiceError(f"A sync batch can contain at most {SYNC_BATCH_LIMIT} changes", 422)
     results: list[SyncResult] = []
     for change in body.changes:
-        results.append(_apply_guarded(db, change, body.device_id))
+        results.append(_apply_guarded(db, change, body.device_id, privileged))
     db.commit()
     return SyncPushResponse(
         server_time=_server_time(),
@@ -73,11 +79,11 @@ def push_changes(db: Session, body: SyncPushRequest) -> SyncPushResponse:
     )
 
 
-def _apply_guarded(db: Session, change: SyncChange, device_id: str) -> SyncResult:
+def _apply_guarded(db: Session, change: SyncChange, device_id: str, privileged: bool) -> SyncResult:
     """Apply one change inside a savepoint; a database clash rejects only this change."""
     try:
         with db.begin_nested():
-            return _apply_one(db, change, device_id)
+            return _apply_one(db, change, device_id, privileged)
     except IntegrityError:
         record_id = str(change.id)
         owner = None
@@ -105,7 +111,18 @@ def _stale_base(existing: Voter, base_revision: int | None) -> bool:
     return base_revision is not None and existing.revision > base_revision
 
 
-def _apply_one(db: Session, change: SyncChange, device_id: str) -> SyncResult:
+def _forbidden(existing: Voter, message: str) -> SyncResult:
+    """Sync analogue of HTTP 403: this change is refused and nothing is written."""
+    return SyncResult(
+        id=existing.id,
+        status="forbidden",
+        message=message,
+        server_revision=existing.revision,
+        server_record=voter_to_public(existing),
+    )
+
+
+def _apply_one(db: Session, change: SyncChange, device_id: str, privileged: bool) -> SyncResult:
     try:
         incoming = check_client_timestamp(change.updated_at)
     except ValueError as exc:
@@ -114,6 +131,10 @@ def _apply_one(db: Session, change: SyncChange, device_id: str) -> SyncResult:
     record_id = str(change.id)
     existing = db.get(Voter, record_id)
     if change.deleted:
+        # HTTP delete is admin-only; allowing it here would let a user delete and re-add a
+        # voter to rewrite fields they may not edit.
+        if not privileged and existing is not None and existing.deleted_at is None:
+            return _forbidden(existing, "Your role cannot delete voters; ask an owner or admin.")
         return _apply_delete(db, change, existing, incoming, device_id)
 
     try:
@@ -175,7 +196,7 @@ def _apply_one(db: Session, change: SyncChange, device_id: str) -> SyncResult:
             server_record=voter_to_public(voter),
         )
 
-    return _merge_existing(db, existing, snapshot, incoming, device_id, change.base_revision)
+    return _merge_existing(db, existing, snapshot, incoming, device_id, change.base_revision, privileged)
 
 
 def _apply_delete(
@@ -231,6 +252,7 @@ def _merge_existing(
     incoming: datetime,
     device_id: str,
     base_revision: int | None,
+    privileged: bool,
 ) -> SyncResult:
     stored = parse_dt(existing.updated_at)
     if incoming < stored:
@@ -247,6 +269,12 @@ def _merge_existing(
         return _conflict(existing, "Server record has the same updated_at and different content")
     if _stale_base(existing, base_revision):
         return _conflict(existing, "Server record changed after base_revision")
+    # Stale and replayed changes were handled above, so only a genuine edit reaches this
+    # check. Values equal to the stored ones are ignored: only real changes are refused.
+    if not privileged and existing.deleted_at is None:
+        blocked = disallowed_changes(existing, {f: getattr(snapshot, f) for f in DATA_FIELDS})
+        if blocked:
+            return _forbidden(existing, forbidden_fields_message(blocked))
     _write_snapshot(existing, snapshot)
     existing.deleted_at = None
     existing.updated_at = dump_dt(incoming)

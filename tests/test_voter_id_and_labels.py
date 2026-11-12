@@ -15,7 +15,10 @@ from tests.conftest import csrf_from_page, voter_payload
 
 NEW_HEADER = ",".join(CSV_HEADERS)
 OLD_HEADER = NEW_HEADER.replace("Booth", "2024 Booth", 1).replace("Ward,", "2026 Ward,", 1)
-ROW = "7,10,2,1,{vid},Csvperson,Row,Rel,H-1,Male,40,SampleGroupA,9000000091,Nathavaram,Farmer,"
+ROW = (
+    "7,10,2,1,{vid},Csvperson,Row,Rel,Main St,Samplevillage,Sample Lane,Yes,"
+    "Male,40,SampleGroupA,9000000091,Nathavaram,Farmer,"
+)
 
 
 def _create(ctx, **overrides) -> dict:

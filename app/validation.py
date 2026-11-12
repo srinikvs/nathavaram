@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta, timezone
 
-from app.constants import GENDERS, PARTIES, TEXT_LIMITS
+from app.constants import GENDERS, HOUSE_NO_PREFIX, PARTIES, TEXT_LIMITS
 
 _MOBILE_SEPARATORS = re.compile(r"[\s\-().]")
 _VOTER_ID = re.compile(r"^[A-Z0-9]{3,32}$")
@@ -31,6 +31,44 @@ def clean_text(value: object) -> str | None:
     if any(ord(ch) < 32 or ord(ch) == 127 for ch in text):
         raise ValueError("Contains invalid control characters")
     return text
+
+
+_YES = frozenset({"yes", "y", "true", "1"})
+_NO = frozenset({"no", "n", "false", "0"})
+
+
+def canonical_local(value: object) -> bool:
+    """Local is Yes/No. Blank means No (the column default)."""
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        key = value.strip().casefold()
+        if key == "" or key in _NO:
+            return False
+        if key in _YES:
+            return True
+    raise ValueError("Local must be Yes or No")
+
+
+def local_label(value: bool | None) -> str:
+    return "Yes" if value else "No"
+
+
+def fold_house_no(house_no: str | None, address: str | None) -> str | None:
+    """Prefix Address with 'H.No <house_no>'. The old HouseNo column is gone.
+
+    '12' + 'Main St' -> 'H.No 12, Main St'; '12' + empty -> 'H.No 12';
+    empty house_no leaves Address as it was.
+    """
+    number = (house_no or "").strip()
+    rest = (address or "").strip()
+    if not number:
+        return address
+    return f"{HOUSE_NO_PREFIX}{number}, {rest}" if rest else f"{HOUSE_NO_PREFIX}{number}"
 
 
 def require_text(value: object, label: str) -> str:

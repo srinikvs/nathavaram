@@ -36,6 +36,19 @@ def _ordered(rows: list[CountRow], order: tuple[str, ...], *, include_blank: boo
     return ordered + extras
 
 
+def _local_counts(db: Session) -> list[CountRow]:
+    """Local Yes / No, always both rows, in that order."""
+    found = {
+        bool(flag): int(count)
+        for flag, count in db.execute(
+            select(Voter.is_local, func.count())
+            .where(Voter.deleted_at.is_(None))
+            .group_by(Voter.is_local)
+        ).all()
+    }
+    return [CountRow(label="Yes", count=found.get(True, 0)), CountRow(label="No", count=found.get(False, 0))]
+
+
 def build_report(db: Session) -> ReportSummary:
     total = int(
         db.scalar(select(func.count()).select_from(Voter).where(Voter.deleted_at.is_(None))) or 0
@@ -48,6 +61,8 @@ def build_report(db: Session) -> ReportSummary:
         total=total,
         by_booth=_grouped(db, Voter.booth),
         by_ward=_grouped(db, Voter.ward),
+        by_village=_grouped(db, Voter.village),
+        by_local=_local_counts(db),
         by_gender=_ordered(_grouped(db, Voter.gender), GENDERS, include_blank=False),
         by_age_band=[CountRow(label=band, count=band_counts[band]) for band in AGE_BANDS],
         by_caste=_grouped(db, Voter.caste),
@@ -67,6 +82,8 @@ def report_csv(report: ReportSummary) -> str:
     sections = (
         ("Booth", report.by_booth),
         ("Ward", report.by_ward),
+        ("Village", report.by_village),
+        ("Local", report.by_local),
         ("Gender", report.by_gender),
         ("Age band", report.by_age_band),
         ("Caste", report.by_caste),
