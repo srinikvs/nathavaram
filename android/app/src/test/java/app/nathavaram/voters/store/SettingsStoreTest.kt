@@ -3,6 +3,7 @@ package app.nathavaram.voters.store
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -15,8 +16,8 @@ class SettingsStoreTest {
     private fun store() = SettingsStore(ApplicationProvider.getApplicationContext<Application>())
 
     @Test
-    fun `fresh install uses the default server address`() {
-        assertEquals("https://nathavaram.duckdns.org", store().baseUrl)
+    fun `fresh install has no server address until one is configured`() {
+        assertNull(store().baseUrl)
     }
 
     @Test
