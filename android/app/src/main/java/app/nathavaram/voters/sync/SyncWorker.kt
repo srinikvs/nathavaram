@@ -13,7 +13,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
 
     override suspend fun doWork(): Result {
         val container = (applicationContext as VotersApp).container
-        if (container.tokens.token() == null || container.settings.baseUrl == null) return Result.success()
+        if (container.tokens.token() == null) return Result.success()
         return try {
             val summary = container.newSyncEngine().run()
             container.settings.clockSkew = summary.clockSkew

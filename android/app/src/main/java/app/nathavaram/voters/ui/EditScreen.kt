@@ -24,6 +24,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -57,13 +59,23 @@ private val AFTER_GENDER = listOf(
 
 private const val NO_ANSWER = "(no answer)"
 
+/** Saves the in-progress form (or "not loaded yet") across configuration changes; never written to disk. */
+private val NullableFormSaver: Saver<VoterForm?, Any> = Saver(
+    save = { it?.toSavedList()?.let(::ArrayList) ?: NOT_LOADED },
+    restore = { saved -> (saved as? List<*>)?.let(VoterForm::fromSavedList) },
+)
+
+private const val NOT_LOADED = "not-loaded"
+
 @Composable
 fun EditScreen(vm: AppViewModel, id: String?) {
-    var form by remember(id) { mutableStateOf<VoterForm?>(null) }
+    var form by rememberSaveable(id, stateSaver = NullableFormSaver) { mutableStateOf<VoterForm?>(null) }
     var errors by remember(id) { mutableStateOf<Map<String, String>>(emptyMap()) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(id) {
+        // After rotation the restored form already holds the operator's typed text; do not overwrite it.
+        if (form != null) return@LaunchedEffect
         val loaded = vm.formFor(id)
         if (loaded == null) vm.go(Screen.Search) else form = loaded
     }

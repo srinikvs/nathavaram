@@ -54,6 +54,17 @@ class BaseUrlTest {
     fun `a path prefix is kept`() {
         assertEquals("https://voters.example/app", ok("https://voters.example/app/", cleartext = false))
     }
+
+    @Test
+    fun `default address is exactly the production host with no trailing slash`() {
+        assertEquals("https://nathavaram.duckdns.org", BaseUrl.DEFAULT)
+        assertFalse(BaseUrl.DEFAULT.endsWith("/"))
+    }
+
+    @Test
+    fun `default address passes its own validation unchanged`() {
+        assertEquals(BaseUrl.DEFAULT, ok(BaseUrl.DEFAULT, cleartext = false))
+    }
 }
 
 class TimestampsTest {

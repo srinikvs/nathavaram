@@ -81,7 +81,27 @@ data class VoterForm(
         else -> this
     }
 
+    /** Flat list of every field in declaration order, for instance-state saving (rotation). */
+    fun toSavedList(): List<String> = listOf(
+        booth2024, bsNo2024, ward2026, wardSNo, voterId, firstName, surname, relativeName,
+        houseNo, gender, age, caste, mobile, cCity, profession, party,
+    )
+
     companion object {
+        /** Inverse of [toSavedList]; returns null if the list is not a form this version wrote. */
+        fun fromSavedList(list: List<*>): VoterForm? {
+            if (list.size != FIELD_COUNT || list.any { it !is String }) return null
+            val s = list.map { it as String }
+            return VoterForm(
+                booth2024 = s[0], bsNo2024 = s[1], ward2026 = s[2], wardSNo = s[3],
+                voterId = s[4], firstName = s[5], surname = s[6], relativeName = s[7],
+                houseNo = s[8], gender = s[9], age = s[10], caste = s[11],
+                mobile = s[12], cCity = s[13], profession = s[14], party = s[15],
+            )
+        }
+
+        private const val FIELD_COUNT = 16
+
         fun from(e: VoterEntity): VoterForm = VoterForm(
             booth2024 = e.booth2024.orEmpty(),
             bsNo2024 = e.bsNo2024.orEmpty(),

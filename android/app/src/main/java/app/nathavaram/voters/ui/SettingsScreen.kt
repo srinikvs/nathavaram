@@ -14,24 +14,25 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import app.nathavaram.voters.domain.BaseUrl
 
 @Composable
 fun SettingsScreen(vm: AppViewModel) {
-    var url by remember { mutableStateOf(vm.baseUrl) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var url by rememberSaveable { mutableStateOf(vm.baseUrl) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
         Text("Server address", style = MaterialTheme.typography.headlineMedium)
-        Text("The address of your Nathavaram server, for example https://your-server.example")
+        Text("The address of your Nathavaram server. The default is ${BaseUrl.DEFAULT}")
         OutlinedTextField(
             value = url,
             onValueChange = { url = it },
@@ -45,8 +46,6 @@ fun SettingsScreen(vm: AppViewModel) {
         Button(onClick = { error = vm.saveBaseUrl(url) }, modifier = Modifier.fillMaxWidth()) {
             Text("Save")
         }
-        if (vm.baseUrl.isNotEmpty()) {
-            TextButton(onClick = { vm.go(Screen.Search) }) { Text("Cancel") }
-        }
+        TextButton(onClick = { vm.cancelSettings() }) { Text("Cancel") }
     }
 }

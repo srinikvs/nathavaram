@@ -24,6 +24,11 @@ class ErrorMessagesTest {
     }
 
     @Test
+    fun `offline sync message tells the user changes will sync later`() {
+        assertEquals("You're offline; changes will sync when you're back online", ErrorMessages.OFFLINE_SYNC)
+    }
+
+    @Test
     fun `other sign-in failures keep their existing messages`() {
         assertEquals("Invalid username or password", ErrorMessages.forSignIn(ApiException.InvalidCredentials()))
         assertEquals("Server returned HTTP 403", ErrorMessages.forSignIn(ApiException.Http(403)))

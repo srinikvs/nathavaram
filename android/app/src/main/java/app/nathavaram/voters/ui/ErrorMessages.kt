@@ -9,6 +9,9 @@ object ErrorMessages {
     const val SIGN_IN_AGAIN = "Sign in again"
     const val CANNOT_REACH = "Cannot reach the server"
 
+    /** Shown when Sync is tapped with no network; the sync is still queued. */
+    const val OFFLINE_SYNC = "You're offline; changes will sync when you're back online"
+
     /** Text shown on the search screen while a forced password change is pending. */
     const val PASSWORD_CHANGE_NOTICE = PasswordChangeRequired.USER_MESSAGE
 

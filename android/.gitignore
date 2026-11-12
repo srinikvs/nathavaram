@@ -8,4 +8,5 @@ captures/
 *.iml
 .cxx/
 .externalNativeBuild/
+.kotlin/
 gradle/wrapper/gradle-wrapper.jar

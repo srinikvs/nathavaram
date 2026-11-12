@@ -9,8 +9,13 @@ import java.util.UUID
 class SettingsStore(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
-    var baseUrl: String?
-        get() = prefs.getString(KEY_BASE_URL, null)
+    /**
+     * The server address in effect: the saved override if any, otherwise [BaseUrl.DEFAULT].
+     * The default is never persisted, so it cannot mask a later change to the built-in value.
+     * Login, sync and Settings all read this one property.
+     */
+    var baseUrl: String
+        get() = prefs.getString(KEY_BASE_URL, null)?.takeIf { it.isNotBlank() } ?: BaseUrl.DEFAULT
         set(value) = prefs.edit().putString(KEY_BASE_URL, value).apply()
 
     var clockSkew: Boolean

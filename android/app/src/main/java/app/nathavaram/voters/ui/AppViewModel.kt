@@ -14,7 +14,10 @@ import app.nathavaram.voters.net.ApiException
 import app.nathavaram.voters.sync.SyncScheduler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +48,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _login = MutableStateFlow(LoginUi())
     val login: StateFlow<LoginUi> = _login.asStateFlow()
 
+    /** One-shot user messages (shown as a snackbar). Buffered so a tap during rotation is not lost. */
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val messages: SharedFlow<String> = _messages.asSharedFlow()
+
     val query = MutableStateFlow("")
 
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
@@ -59,7 +66,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val conflicts: StateFlow<List<ConflictEntity>> = container.database.conflictDao().all()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
-    val baseUrl: String get() = settings.baseUrl.orEmpty()
+    val baseUrl: String get() = settings.baseUrl
     val clockSkew: Boolean get() = settings.clockSkew
 
     /** Non-null while the server is demanding a password change (done on the web). */
@@ -75,11 +82,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun initialScreen(): Screen = when {
-        settings.baseUrl == null -> Screen.Settings
-        container.tokens.token() == null -> Screen.Login
-        else -> Screen.Search
-    }
+    private fun initialScreen(): Screen =
+        if (container.tokens.token() == null) Screen.Login else Screen.Search
 
     fun go(screen: Screen) {
         _screen.value = screen
@@ -127,7 +131,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _screen.value = Screen.Login
     }
 
-    fun syncNow() = SyncScheduler.requestSync(getApplication())
+    fun cancelSettings() {
+        _screen.value = if (container.tokens.token() == null) Screen.Login else Screen.Search
+    }
+
+    /** Always queues the sync; also tells the operator when the phone is offline. */
+    fun syncNow() {
+        SyncScheduler.requestSync(getApplication())
+        if (!Connectivity.isOnline(getApplication())) {
+            _messages.tryEmit(ErrorMessages.OFFLINE_SYNC)
+        }
+    }
 
     suspend fun formFor(id: String?): VoterForm? =
         if (id == null) VoterForm() else repository.get(id)?.let(VoterForm::from)
