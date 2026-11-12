@@ -12,7 +12,7 @@ from app.constants import DATA_FIELDS, GENDERS, LABEL_BY_FIELD, PARTIES, SEARCH_
 from app.database import get_db
 from app.deps import resolve_user, source_for
 from app.errors import ServiceError
-from app.schemas import PasswordChange, UserCreate, VoterSearch, VoterWrite
+from app.schemas import PasswordChange, ResetPassword, UserCreate, VoterSearch, VoterWrite
 from app.security import create_access_token
 from app.services.impex import ImportRejected, import_csv, voters_to_csv, voters_to_xlsx
 from app.services.login import (
@@ -22,7 +22,7 @@ from app.services.login import (
     guarded_change_password,
 )
 from app.services.reports import build_report
-from app.services.users import create_user, list_users
+from app.services.users import create_user, delete_user, list_users, reset_user_password
 from app.services.voters import (
     create_voter,
     export_voters,
@@ -70,8 +70,10 @@ def _form_errors(exc: ValidationError) -> list[str]:
     for err in exc.errors():
         loc = err.get("loc") or ()
         field = str(loc[-1]) if loc else "form"
-        label = LABEL_BY_FIELD.get(field, field.replace("_", " "))
+        label = LABEL_BY_FIELD.get(field, field.replace("_", " ").capitalize())
         message = err["msg"]
+        if err.get("type") == "string_too_short":
+            message = f"must be at least {(err.get('ctx') or {}).get('min_length', 1)} characters"
         prefix = "Value error, "
         if message.startswith(prefix):
             message = message[len(prefix) :]
@@ -100,13 +102,23 @@ def _set_cookie(response: Response, request: Request, user) -> None:
 @router.get("/")
 def home(request: Request, db: Session = Depends(get_db)):
     user = resolve_user(request, db, None)
-    return RedirectResponse("/voters" if user else "/login", status_code=303)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    return RedirectResponse(_landing(user), status_code=303)
+
+
+def _landing(user, nxt: str = "/voters") -> str:
+    """Where a signed-in user may go: the password gate comes before any other page."""
+    return "/change-password" if user.must_change_password else nxt
 
 
 @router.get("/login")
 def login_form(request: Request, db: Session = Depends(get_db)):
-    if resolve_user(request, db, None) is not None:
-        return RedirectResponse(safe_next(request.query_params.get("next")), status_code=303)
+    user = resolve_user(request, db, None)
+    if user is not None:
+        return RedirectResponse(
+            _landing(user, safe_next(request.query_params.get("next"))), status_code=303
+        )
     return render(
         request,
         "login.html",
@@ -138,8 +150,7 @@ async def login_submit(request: Request, db: Session = Depends(get_db)):
             {"next": nxt, "error": INVALID_LOGIN_MESSAGE},
             status_code=401,
         )
-    target = "/change-password" if user.must_change_password else nxt
-    response = RedirectResponse(target, status_code=303)
+    response = RedirectResponse(_landing(user, nxt), status_code=303)
     _set_cookie(response, request, user)
     return response
 
@@ -173,7 +184,9 @@ async def change_password_submit(
     except ValidationError as exc:
         return _change_password_page(request, user, _form_errors(exc), 400)
     try:
-        guarded_change_password(db, request, user, body.current_password, body.new_password)
+        updated = guarded_change_password(
+            db, request, user, body.current_password, body.new_password
+        )
     except LoginThrottled as exc:
         blocked = _change_password_page(
             request, user, ["Too many failed attempts. Try again later."], 429
@@ -182,7 +195,10 @@ async def change_password_submit(
         return blocked
     except ServiceError as exc:
         return _change_password_page(request, user, [exc.message], exc.status_code)
-    return RedirectResponse("/voters", status_code=303)
+    # Every earlier token was revoked by the change; keep this browser signed in.
+    response = RedirectResponse("/voters", status_code=303)
+    _set_cookie(response, request, updated)
+    return response
 
 
 @router.post("/logout")
@@ -490,44 +506,105 @@ def sample_csv(request: Request, user=Depends(web_user)):
     return FileResponse(path, media_type="text/csv; charset=utf-8", filename="voters_sample.csv")
 
 
-@router.get("/users")
-def users_page(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    if user.role != "admin" or not user.is_owner:
-        return render(request, "403.html", {"user": user}, status_code=403)
+SAVED_MESSAGES = {
+    "1": "User created.",
+    "reset": "Temporary password set. The user must change it at next sign-in.",
+    "deleted": "User deleted.",
+}
+
+
+def _is_owner(user) -> bool:
+    return user.role == "admin" and user.is_owner
+
+
+def _users_page(
+    request: Request,
+    db: Session,
+    user,
+    errors: list[str] | None = None,
+    saved: str = "",
+    status_code: int = 200,
+    values: dict | None = None,
+):
     return render(
         request,
         "users.html",
-        {"user": user, "users": list_users(db), "errors": [], "saved": request.query_params.get("saved") == "1"},
+        {
+            "user": user,
+            "users": list_users(db),
+            "errors": errors or [],
+            "saved_message": SAVED_MESSAGES.get(saved, ""),
+            "values": values or {},
+        },
+        status_code=status_code,
     )
+
+
+@router.get("/users")
+def users_page(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
+    if not _is_owner(user):
+        return _forbidden(request, user)
+    return _users_page(request, db, user, saved=request.query_params.get("saved", ""))
 
 
 @router.post("/users")
 async def users_submit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    if user.role != "admin" or not user.is_owner:
-        return render(request, "403.html", {"user": user}, status_code=403)
+    if not _is_owner(user):
+        return _forbidden(request, user)
     form = await request.form()
+    values = {
+        "username": str(form.get("username") or ""),
+        "password": str(form.get("password") or ""),
+        "role": str(form.get("role") or "user"),
+    }
+    shown = {"username": values["username"], "role": values["role"]}  # never echo the password
     try:
-        data = UserCreate.model_validate(
-            {
-                "username": str(form.get("username") or ""),
-                "password": str(form.get("password") or ""),
-                "role": str(form.get("role") or "user"),
-            }
-        )
+        data = UserCreate.model_validate(values)
     except ValidationError as exc:
-        return render(
-            request,
-            "users.html",
-            {"user": user, "users": list_users(db), "errors": _form_errors(exc), "saved": False},
-            status_code=400,
-        )
+        return _users_page(request, db, user, _form_errors(exc), status_code=400, values=shown)
     try:
         create_user(db, data, request.app.state.settings)
     except ServiceError as exc:
-        return render(
-            request,
-            "users.html",
-            {"user": user, "users": list_users(db), "errors": [exc.message], "saved": False},
-            status_code=exc.status_code,
-        )
+        return _users_page(request, db, user, [exc.message], status_code=exc.status_code, values=shown)
     return RedirectResponse("/users?saved=1", status_code=303)
+
+
+@router.post("/users/{user_id}/reset-password")
+async def users_reset_password(
+    user_id: str, request: Request, db: Session = Depends(get_db), user=Depends(web_user)
+):
+    if not _is_owner(user):
+        return _forbidden(request, user)
+    form = await request.form()
+    try:
+        body = ResetPassword.model_validate({"new_password": str(form.get("new_password") or "")})
+    except ValidationError as exc:
+        return _users_page(request, db, user, _form_errors(exc), status_code=400)
+    try:
+        reset_user_password(
+            db,
+            user,
+            user_id,
+            body.new_password,
+            request.app.state.settings,
+            request.app.state.login_throttle,
+        )
+    except ServiceError as exc:
+        return _users_page(request, db, user, [exc.message], status_code=exc.status_code)
+    return RedirectResponse("/users?saved=reset", status_code=303)
+
+
+@router.post("/users/{user_id}/delete")
+async def users_delete(
+    user_id: str, request: Request, db: Session = Depends(get_db), user=Depends(web_user)
+):
+    if not _is_owner(user):
+        return _forbidden(request, user)
+    form = await request.form()
+    if form.get("confirm") != "yes":
+        return _users_page(request, db, user, ["Confirm the deletion first."], status_code=400)
+    try:
+        delete_user(db, user, user_id)
+    except ServiceError as exc:
+        return _users_page(request, db, user, [exc.message], status_code=exc.status_code)
+    return RedirectResponse("/users?saved=deleted", status_code=303)

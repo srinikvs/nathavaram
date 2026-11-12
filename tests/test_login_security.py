@@ -333,7 +333,10 @@ def test_change_password_unlocks_the_session(ctx, peer):
 
     assert changed.status_code == 200
     assert changed.json()["must_change_password"] is False
-    assert ctx.client.get("/api/voters", headers=headers).status_code == 200
+    # The change revokes every earlier token; the response carries a fresh one.
+    assert ctx.client.get("/api/voters", headers=headers).status_code == 401
+    fresh = {"Authorization": f"Bearer {changed.json()['access_token']}"}
+    assert ctx.client.get("/api/voters", headers=fresh).status_code == 200
     assert _api_login(ctx, "rateuser1", GOOD).status_code == 401
     assert _api_login(ctx, "rateuser1", "brand-new-pass-1").status_code == 200
 
