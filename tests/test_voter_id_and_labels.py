@@ -204,6 +204,11 @@ def test_web_pages_say_booth_and_ward_not_the_year_labels(ctx):
         "import": ctx.client.get("/import").text,
     }
 
+    # The import page deliberately documents the legacy headers it still accepts.
+    legacy_note = '"2024 Booth", "2026 Ward" and "HouseNo" headers work'
+    assert legacy_note in pages["import"]
+    pages["import"] = pages["import"].replace(legacy_note, "")
+
     for name, html in pages.items():
         assert "2024 Booth" not in html, name
         assert "2026 Ward" not in html, name

@@ -26,7 +26,7 @@ def test_create_search_update_and_soft_delete(ctx):
 
     by_address = search(ctx, q="12-A Sample")
     assert by_address.json()["total"] == 1
-    by_village = search(ctx, village="sampleville")
+    by_village = search(ctx, village="samplevillage")
     assert by_village.json()["total"] == 1
     by_booth = search(ctx, booth="12")
     assert by_booth.json()["total"] == 1
