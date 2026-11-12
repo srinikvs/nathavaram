@@ -6,8 +6,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+// Use a plain Application so VotersApp.onCreate does not touch an uninitialised WorkManager.
 @RunWith(RobolectricTestRunner::class)
+@Config(application = Application::class)
 class SettingsStoreTest {
     private fun store() = SettingsStore(ApplicationProvider.getApplicationContext<Application>())
 
