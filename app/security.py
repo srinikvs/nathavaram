@@ -10,8 +10,6 @@ import bcrypt
 import jwt
 from jwt import InvalidTokenError
 
-from fastapi import Response
-
 from app.config import Settings
 from app.models import User
 
@@ -79,7 +77,6 @@ __all__ = [
     "create_access_token",
     "decode_access_token",
     "dummy_verify",
-    "set_session_cookie",
     "hash_password",
     "verify_password",
 ]

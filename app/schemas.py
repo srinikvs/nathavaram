@@ -80,10 +80,7 @@ class UserUpdate(BaseModel):
     role: str | None = None
     is_active: bool | None = None
 
-    @field_validator("password")
-    @classmethod
-    def _password(cls, value: str | None) -> str | None:
-        return _check_password_length(value)
+    # Minimum password length is enforced in the service layer (400 with a field name).
 
     @field_validator("role")
     @classmethod
