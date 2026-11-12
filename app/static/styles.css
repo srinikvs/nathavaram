@@ -219,14 +219,23 @@ abbr { text-decoration: none; color: var(--chili); }
   html, body { max-width: 100%; overflow-x: hidden; }
   main, .table-wrap, .filters, .filters > * { min-width: 0; max-width: 100%; }
   .filters input, .filters select { min-width: 0; max-width: 100%; box-sizing: border-box; }
-  .register, .register tbody, .register tr, .register td { max-width: 100%; box-sizing: border-box; }
+  .table-wrap { width: 100%; }
+  /* Leave CSS table layout: a table's intrinsic min-content width ignores
+     min/max-width and would stretch the document past the viewport. */
+  .register, .register tbody, .register thead {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .register tr, .register td { max-width: 100%; box-sizing: border-box; }
   .register td { overflow-wrap: anywhere; }
-  .register { min-width: 0; }
   .register thead { display: none; }
-  .register tr { display: block; border-bottom: 8px solid var(--paper); }
+  .register tr { display: block; width: 100%; border-bottom: 8px solid var(--paper); }
   .register td {
     display: grid;
-    grid-template-columns: 8.2rem 1fr;
+    grid-template-columns: 8.2rem minmax(0, 1fr);
     gap: 8px;
     border-bottom: 1px solid var(--line);
   }
