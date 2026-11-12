@@ -22,6 +22,7 @@
       <a href="/reports">Reports</a>
       {% if user.role == "admin" %}<a href="/import">Import</a>{% endif %}
       {% if user.role == "admin" and user.is_owner %}<a href="/users">Users</a>{% endif %}
+      <a href="/change-password">Change password</a>
       <form method="post" action="/logout">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="linkish">Log out</button>

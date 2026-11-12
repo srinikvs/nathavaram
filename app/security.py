@@ -10,6 +10,8 @@ import bcrypt
 import jwt
 from jwt import InvalidTokenError
 
+from fastapi import Response
+
 from app.config import Settings
 from app.models import User
 
@@ -42,6 +44,7 @@ def create_access_token(user: User, settings: Settings) -> str:
         "sub": user.id,
         "username": user.username,
         "role": user.role,
+        "tv": user.token_version,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=settings.jwt_expire_minutes)).timestamp()),
     }
@@ -76,6 +79,7 @@ __all__ = [
     "create_access_token",
     "decode_access_token",
     "dummy_verify",
+    "set_session_cookie",
     "hash_password",
     "verify_password",
 ]
