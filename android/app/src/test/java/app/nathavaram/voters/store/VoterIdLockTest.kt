@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
 
 /** VoterId is the unique key: typed once on add, never changed afterwards. Synthetic data only. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], application = android.app.Application::class)
 class VoterIdLockTest {
     private lateinit var db: AppDatabase
     private lateinit var repo: VoterRepository

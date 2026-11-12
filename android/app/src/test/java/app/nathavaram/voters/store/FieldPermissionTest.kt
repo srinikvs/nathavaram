@@ -26,7 +26,7 @@ import org.robolectric.annotation.Config
  * Synthetic data only.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], application = android.app.Application::class)
 class FieldPermissionTest {
     private lateinit var db: AppDatabase
     private var clock = 0
