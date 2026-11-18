@@ -91,44 +91,50 @@
   <table class="register">
     <thead>
       <tr>
+        <th>Booth</th>
+        <th>Booth S.No</th>
+        <th>Ward</th>
+        <th>Ward S.No</th>
         <th>VoterId</th>
         <th>FirstName</th>
         <th>LastName</th>
         <th>RelativeName</th>
         <th>HouseNo</th>
+        <th>Age</th>
         <th>Street</th>
+        <th>Mobile</th>
+        <th>Caste</th>
         <th>Village</th>
         <th>Panchayath</th>
         <th>Mandal</th>
+        <th>Current City</th>
         <th>Local/Non-Local</th>
-        <th>Booth</th>
-        <th>Ward</th>
-        <th>Age</th>
-        <th>Caste</th>
         <th>Party</th>
-        <th>Mobile</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
       {% for voter in voters %}
       <tr>
+        <td data-label="Booth" translate="no">{{ voter.booth|display }}</td>
+        <td data-label="Booth S.No" translate="no">{{ voter.booth_s_no|display }}</td>
+        <td data-label="Ward" translate="no">{{ voter.ward|display }}</td>
+        <td data-label="Ward S.No" translate="no">{{ voter.ward_s_no|display }}</td>
         <td data-label="VoterId" translate="no">{{ voter.voter_id }}</td>
         <td data-label="FirstName" translate="no">{{ voter.first_name }}</td>
         <td data-label="LastName" translate="no">{{ voter.last_name|display }}</td>
         <td data-label="RelativeName" translate="no">{{ voter.relative_name|display }}</td>
         <td data-label="HouseNo" translate="no">{{ voter.house_no|display }}</td>
+        <td data-label="Age">{{ voter.age|display }}</td>
         <td data-label="Street" translate="no">{{ voter.street|display }}</td>
+        <td data-label="Mobile" translate="no">{{ voter.mobile|display }}</td>
+        <td data-label="Caste" translate="no">{{ voter.caste|display }}</td>
         <td data-label="Village" translate="no">{{ voter.village|display }}</td>
         <td data-label="Panchayath" translate="no">{{ voter.panchayath|display }}</td>
         <td data-label="Mandal" translate="no">{{ voter.mandal|display }}</td>
+        <td data-label="Current City" translate="no">{{ voter.current_city|display }}</td>
         <td data-label="Local/Non-Local">{{ "Local" if voter.is_local else "Non-Local" }}</td>
-        <td data-label="Booth" translate="no">{{ voter.booth|display }}</td>
-        <td data-label="Ward" translate="no">{{ voter.ward|display }}</td>
-        <td data-label="Age">{{ voter.age|display }}</td>
-        <td data-label="Caste" translate="no">{{ voter.caste|display }}</td>
         <td data-label="Party">{{ voter.party|display }}</td>
-        <td data-label="Mobile" translate="no">{{ voter.mobile|display }}</td>
         <td data-label="Actions" class="row-actions">
           <a href="/voters/{{ voter.voter_id }}/edit">Edit</a>
           {% if user.role == "admin" %}<a href="/voters/{{ voter.voter_id }}/delete">Delete</a>{% endif %}
