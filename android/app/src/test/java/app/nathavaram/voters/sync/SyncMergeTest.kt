@@ -1,8 +1,8 @@
 package app.nathavaram.voters.sync
 
 import app.nathavaram.voters.Fixtures
-import app.nathavaram.voters.Fixtures.ID_1
-import app.nathavaram.voters.Fixtures.ID_2
+import app.nathavaram.voters.Fixtures.VOTER_1
+import app.nathavaram.voters.Fixtures.VOTER_2
 import app.nathavaram.voters.Fixtures.T1
 import app.nathavaram.voters.Fixtures.T2
 import app.nathavaram.voters.Fixtures.T3
@@ -16,19 +16,19 @@ import org.junit.Test
 class SyncMergeTest {
 
     private fun result(status: String, record: VoterDto? = null, revision: Long? = null, message: String? = null) =
-        PushResult(id = ID_1, status = status, message = message, serverRevision = revision, serverRecord = record)
+        PushResult(voterId = VOTER_1, status = status, message = message, serverRevision = revision, serverRecord = record)
 
     // --- push snapshot ---
 
     @Test
-    fun `push change is a full snapshot with explicit gender and no base revision for a new row`() {
+    fun `push change is a full snapshot keyed on voter_id with no base revision for a new row`() {
         val change = SyncMerge.toPushChange(Fixtures.entity(revision = 0, dirty = true))
 
-        assertEquals(ID_1, change.id)
-        assertEquals("Male", change.gender)
+        assertEquals(VOTER_1, change.voterId)
+        assertEquals("12-A", change.houseNo)
+        assertEquals("Main Street", change.street)
         assertNull(change.baseRevision)
         assertFalse(change.deleted)
-        assertEquals("ZZZ0000001", change.voterId)
     }
 
     @Test
@@ -110,36 +110,6 @@ class SyncMergeTest {
         assertEquals(listOf("FirstName"), labels)
     }
 
-    // --- voter_id_conflict ---
-
-    @Test
-    fun `voter_id_conflict on a never-synced row drops it and keeps the other voter`() {
-        val pushed = Fixtures.entity(id = ID_1, revision = 0, dirty = true)
-        val other = Fixtures.dto(id = ID_2, voterId = "ZZZ0000001", firstName = "Otherperson", revision = 4)
-
-        val decision = SyncMerge.applyPushResult(pushed, pushed, result("voter_id_conflict", other), T3)
-
-        assertEquals(PushKind.VOTER_ID_CONFLICT, decision.kind)
-        assertEquals(listOf(ID_1), decision.deleteIds)
-        assertEquals(ID_2, decision.store.single().id)
-        assertFalse(decision.store.single().dirty)
-        assertFalse(decision.rewindCursor)
-        assertEquals("voter_id_conflict", decision.conflict?.kind)
-    }
-
-    @Test
-    fun `voter_id_conflict on a previously synced row keeps it clean and asks for a full pull`() {
-        val pushed = Fixtures.entity(id = ID_1, revision = 3, dirty = true)
-        val other = Fixtures.dto(id = ID_2, revision = 4)
-
-        val decision = SyncMerge.applyPushResult(pushed, pushed, result("voter_id_conflict", other), T3)
-
-        assertTrue(decision.deleteIds.isEmpty())
-        assertTrue(decision.rewindCursor)
-        assertTrue(decision.store.none { it.dirty })
-        assertEquals(setOf(ID_1, ID_2), decision.store.map { it.id }.toSet())
-    }
-
     // --- validation_error ---
 
     @Test
@@ -156,25 +126,37 @@ class SyncMergeTest {
     // --- tombstones ---
 
     @Test
-    fun `tombstone from pull is stored stripped and never read as a real EPIC`() {
-        val hostile = Fixtures.tombstoneDto().copy(voterId = "ZZZ0000009", firstName = "Leaked", mobile = "9000000009")
+    fun `tombstone from pull keeps only the key and drops any personal data the server sent`() {
+        val hostile = Fixtures.tombstoneDto().copy(firstName = "Leaked", mobile = "9000000009", lastName = "Leak", street = "Leak St")
 
         val decision = SyncMerge.applyPulled(Fixtures.entity(), hostile)
 
         val stored = decision.entity
         assertNotNull(stored.deletedAt)
-        assertEquals(ID_1.replace("-", ""), stored.voterId)
+        assertEquals(VOTER_1, stored.voterId)
         assertEquals("", stored.firstName)
-        assertEquals("Unknown", stored.gender)
         assertNull(stored.mobile)
-        assertNull(stored.surname)
+        assertNull(stored.lastName)
+        assertNull(stored.street)
         assertNull(stored.age)
         assertFalse(stored.dirty)
         assertEquals(7L, stored.revision)
     }
 
     @Test
-    fun `tombstone for an unknown id is stored so the row is not resurrected later`() {
+    fun `a newer record for a tombstoned voter id revives it`() {
+        val tombstone = SyncMerge.fromDto(Fixtures.tombstoneDto(revision = 7))
+        val revived = Fixtures.dto(updatedAt = "2026-11-11T13:00:00.000000Z", revision = 8, firstName = "Revived")
+
+        val decision = SyncMerge.applyPulled(tombstone, revived)
+
+        assertEquals("Revived", decision.entity.firstName)
+        assertNull(decision.entity.deletedAt)
+        assertEquals(8L, decision.entity.revision)
+    }
+
+    @Test
+    fun `tombstone for an unknown voter id is stored so the row is not resurrected later`() {
         val decision = SyncMerge.applyPulled(null, Fixtures.tombstoneDto())
 
         assertNotNull(decision.entity.deletedAt)

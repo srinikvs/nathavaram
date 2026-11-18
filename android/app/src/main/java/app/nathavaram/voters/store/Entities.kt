@@ -5,28 +5,34 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-/** One voter row: every docs/SCHEMA.md column, plus the local-only [dirty] flag. */
+/**
+ * One voter row: every docs/SCHEMA.md column, plus the local-only [dirty] flag. [voterId] (the
+ * EPIC number) is the primary key, exactly as on the server: there is no separate row id.
+ */
 @Entity(
     tableName = "voters",
-    indices = [Index("voter_id"), Index("dirty"), Index("deleted_at")],
+    indices = [Index("dirty"), Index("deleted_at")],
 )
 data class VoterEntity(
-    @PrimaryKey val id: String,
-    @ColumnInfo(name = "booth_2024") val booth2024: String? = null,
-    @ColumnInfo(name = "bs_no_2024") val bsNo2024: String? = null,
-    @ColumnInfo(name = "ward_2026") val ward2026: String? = null,
+    @PrimaryKey @ColumnInfo(name = "voter_id") val voterId: String,
+    val booth: String? = null,
+    @ColumnInfo(name = "booth_s_no") val boothSNo: String? = null,
+    val ward: String? = null,
     @ColumnInfo(name = "ward_s_no") val wardSNo: String? = null,
-    @ColumnInfo(name = "voter_id") val voterId: String,
     @ColumnInfo(name = "first_name") val firstName: String,
-    val surname: String? = null,
+    @ColumnInfo(name = "last_name") val lastName: String? = null,
     @ColumnInfo(name = "relative_name") val relativeName: String? = null,
     @ColumnInfo(name = "house_no") val houseNo: String? = null,
-    val gender: String = "Unknown",
     val age: Int? = null,
-    val caste: String? = null,
+    val street: String? = null,
     val mobile: String? = null,
-    @ColumnInfo(name = "c_city") val cCity: String? = null,
-    val profession: String? = null,
+    val caste: String? = null,
+    val village: String? = null,
+    val panchayath: String? = null,
+    val mandal: String? = null,
+    @ColumnInfo(name = "current_city") val currentCity: String? = null,
+    /** Local / Non-Local. Defaults to Non-Local (false). */
+    @ColumnInfo(name = "is_local", defaultValue = "0") val isLocal: Boolean = false,
     val party: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: String,
     @ColumnInfo(name = "updated_at") val updatedAt: String,
@@ -37,10 +43,10 @@ data class VoterEntity(
     val dirty: Boolean = false,
 )
 
-/** A push the server did not apply, kept until the operator has looked at it. */
+/** A push the server did not apply, kept until the operator has looked at it. One per voter. */
 @Entity(tableName = "conflicts")
 data class ConflictEntity(
-    @PrimaryKey @ColumnInfo(name = "voter_uuid") val voterUuid: String,
+    @PrimaryKey @ColumnInfo(name = "voter_id") val voterId: String,
     val kind: String,
     val message: String?,
     @ColumnInfo(name = "detected_at") val detectedAt: String,

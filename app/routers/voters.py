@@ -1,6 +1,8 @@
 """Voter CRUD, search, CSV import, and CSV/Excel export.
 
-Roles: any signed-in user may search, create, view, and edit single records.
+Roles: any signed-in user may search, create, and view records. On an existing voter a
+regular user may edit only Party, Caste, Mobile, HouseNo and Street (403 otherwise); an owner or
+admin may edit every field except VoterId, which nobody can change after create.
 Bulk operations (export, import, delete) need an admin.
 
 Search filters can carry personal data (mobile, VoterId, caste, free text), so they are
@@ -25,6 +27,7 @@ from app.services.voters import (
     create_voter,
     export_voters,
     get_active,
+    is_privileged,
     search_voters,
     soft_delete,
     update_voter,
@@ -153,7 +156,8 @@ def patch_voter(
     user: User = Depends(require_user),
 ) -> VoterPublic:
     try:
-        return voter_to_public(update_voter(db, voter_id, body, source_for(user)))
+        updated = update_voter(db, voter_id, body, source_for(user), privileged=is_privileged(user))
+        return voter_to_public(updated)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

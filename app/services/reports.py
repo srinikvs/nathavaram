@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.constants import AGE_BANDS, GENDERS, PARTIES
+from app.constants import AGE_BANDS, PARTIES
 from app.models import Voter
 from app.schemas import CountRow, ReportSummary
 from app.validation import age_band, csv_safe
@@ -36,6 +36,22 @@ def _ordered(rows: list[CountRow], order: tuple[str, ...], *, include_blank: boo
     return ordered + extras
 
 
+def _local_counts(db: Session) -> list[CountRow]:
+    """Local, Non-Local: always both rows, in that order."""
+    found = {
+        bool(flag): int(count)
+        for flag, count in db.execute(
+            select(Voter.is_local, func.count())
+            .where(Voter.deleted_at.is_(None))
+            .group_by(Voter.is_local)
+        ).all()
+    }
+    return [
+        CountRow(label="Local", count=found.get(True, 0)),
+        CountRow(label="Non-Local", count=found.get(False, 0)),
+    ]
+
+
 def build_report(db: Session) -> ReportSummary:
     total = int(
         db.scalar(select(func.count()).select_from(Voter).where(Voter.deleted_at.is_(None))) or 0
@@ -46,13 +62,15 @@ def build_report(db: Session) -> ReportSummary:
         band_counts[age_band(age)] += 1
     return ReportSummary(
         total=total,
-        by_booth=_grouped(db, Voter.booth_2024),
-        by_ward=_grouped(db, Voter.ward_2026),
-        by_gender=_ordered(_grouped(db, Voter.gender), GENDERS, include_blank=False),
+        by_booth=_grouped(db, Voter.booth),
+        by_ward=_grouped(db, Voter.ward),
+        by_village=_grouped(db, Voter.village),
+        by_panchayath=_grouped(db, Voter.panchayath),
+        by_mandal=_grouped(db, Voter.mandal),
+        by_local=_local_counts(db),
         by_age_band=[CountRow(label=band, count=band_counts[band]) for band in AGE_BANDS],
         by_caste=_grouped(db, Voter.caste),
         by_party=_ordered(_grouped(db, Voter.party), PARTIES, include_blank=True),
-        by_profession=_grouped(db, Voter.profession),
     )
 
 
@@ -65,13 +83,15 @@ def report_csv(report: ReportSummary) -> str:
     writer.writerow(["Section", "Label", "Count"])
     writer.writerow(["Total", "(all)", report.total])
     sections = (
-        ("2024 Booth", report.by_booth),
-        ("2026 Ward", report.by_ward),
-        ("Gender", report.by_gender),
+        ("Booth", report.by_booth),
+        ("Ward", report.by_ward),
+        ("Village", report.by_village),
+        ("Panchayath", report.by_panchayath),
+        ("Mandal", report.by_mandal),
+        ("Local/Non-Local", report.by_local),
         ("Age band", report.by_age_band),
         ("Caste", report.by_caste),
         ("Party", report.by_party),
-        ("Profession", report.by_profession),
     )
     for name, rows in sections:
         for row in rows:

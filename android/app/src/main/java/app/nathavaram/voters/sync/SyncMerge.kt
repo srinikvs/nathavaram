@@ -4,16 +4,13 @@ import app.nathavaram.voters.store.ConflictEntity
 import app.nathavaram.voters.store.VoterEntity
 import app.nathavaram.voters.domain.Timestamps
 
-enum class PushKind { APPLIED, CONFLICT, VOTER_ID_CONFLICT, VALIDATION_ERROR, UNKNOWN }
+enum class PushKind { APPLIED, CONFLICT, FORBIDDEN, VALIDATION_ERROR, UNKNOWN }
 
 /** What to write after one push result. Pure data, so the rules can be unit tested. */
 data class PushDecision(
     val kind: PushKind,
     val store: List<VoterEntity> = emptyList(),
-    val deleteIds: List<String> = emptyList(),
     val conflict: ConflictEntity? = null,
-    /** The local row could not be refreshed from a result, so pull everything again. */
-    val rewindCursor: Boolean = false,
 )
 
 /** What to write for one pulled change. */
@@ -23,50 +20,49 @@ data class PullDecision(val entity: VoterEntity, val keptLocal: Boolean)
 object SyncMerge {
 
     fun toPushChange(e: VoterEntity): PushChange = PushChange(
-        id = e.id,
+        voterId = e.voterId,
         updatedAt = e.updatedAt,
         createdAt = e.createdAt,
         deleted = false,
         baseRevision = e.revision.takeIf { it > 0 },
-        booth2024 = e.booth2024, bsNo2024 = e.bsNo2024, ward2026 = e.ward2026, wardSNo = e.wardSNo,
-        voterId = e.voterId, firstName = e.firstName, surname = e.surname,
-        relativeName = e.relativeName, houseNo = e.houseNo, gender = e.gender, age = e.age,
-        caste = e.caste, mobile = e.mobile, cCity = e.cCity, profession = e.profession,
-        party = e.party,
+        booth = e.booth, boothSNo = e.boothSNo, ward = e.ward, wardSNo = e.wardSNo,
+        firstName = e.firstName, lastName = e.lastName, relativeName = e.relativeName,
+        houseNo = e.houseNo, age = e.age, street = e.street, mobile = e.mobile, caste = e.caste,
+        village = e.village, panchayath = e.panchayath, mandal = e.mandal,
+        currentCity = e.currentCity, isLocal = e.isLocal, party = e.party,
     )
 
     fun toDto(e: VoterEntity): VoterDto = VoterDto(
-        id = e.id,
-        booth2024 = e.booth2024, bsNo2024 = e.bsNo2024, ward2026 = e.ward2026, wardSNo = e.wardSNo,
-        voterId = e.voterId, firstName = e.firstName, surname = e.surname,
-        relativeName = e.relativeName, houseNo = e.houseNo, gender = e.gender, age = e.age,
-        caste = e.caste, mobile = e.mobile, cCity = e.cCity, profession = e.profession,
-        party = e.party, createdAt = e.createdAt, updatedAt = e.updatedAt, revision = e.revision,
+        voterId = e.voterId,
+        booth = e.booth, boothSNo = e.boothSNo, ward = e.ward, wardSNo = e.wardSNo,
+        firstName = e.firstName, lastName = e.lastName, relativeName = e.relativeName,
+        houseNo = e.houseNo, age = e.age, street = e.street, mobile = e.mobile, caste = e.caste,
+        village = e.village, panchayath = e.panchayath, mandal = e.mandal,
+        currentCity = e.currentCity, isLocal = e.isLocal, party = e.party,
+        createdAt = e.createdAt, updatedAt = e.updatedAt, revision = e.revision,
         deletedAt = e.deletedAt, sourceId = e.sourceId,
     )
 
     /** A clean local row from a server record. A deleted record becomes a stripped tombstone. */
     fun fromDto(dto: VoterDto): VoterEntity =
         if (dto.deletedAt != null) tombstone(dto) else VoterEntity(
-            id = dto.id,
-            booth2024 = dto.booth2024, bsNo2024 = dto.bsNo2024, ward2026 = dto.ward2026,
-            wardSNo = dto.wardSNo, voterId = dto.voterId, firstName = dto.firstName,
-            surname = dto.surname, relativeName = dto.relativeName, houseNo = dto.houseNo,
-            gender = dto.gender, age = dto.age, caste = dto.caste, mobile = dto.mobile,
-            cCity = dto.cCity, profession = dto.profession, party = dto.party,
-            createdAt = dto.createdAt, updatedAt = dto.updatedAt, revision = dto.revision,
-            deletedAt = null, sourceId = dto.sourceId, dirty = false,
+            voterId = dto.voterId,
+            booth = dto.booth, boothSNo = dto.boothSNo, ward = dto.ward, wardSNo = dto.wardSNo,
+            firstName = dto.firstName, lastName = dto.lastName, relativeName = dto.relativeName,
+            houseNo = dto.houseNo, age = dto.age, street = dto.street, mobile = dto.mobile,
+            caste = dto.caste, village = dto.village, panchayath = dto.panchayath,
+            mandal = dto.mandal, currentCity = dto.currentCity, isLocal = dto.isLocal,
+            party = dto.party, createdAt = dto.createdAt, updatedAt = dto.updatedAt,
+            revision = dto.revision, deletedAt = null, sourceId = dto.sourceId, dirty = false,
         )
 
     /**
-     * Keeps only id, timestamps, revision and source. Nothing the server sent in the personal
-     * columns is trusted: `voter_id` of a tombstone is an inert placeholder, never an EPIC.
+     * Keeps only the key, timestamps, revision and source. Nothing the server sent in the
+     * personal columns is trusted, so a tombstone never carries personal data locally.
      */
     fun tombstone(dto: VoterDto): VoterEntity = VoterEntity(
-        id = dto.id,
-        voterId = dto.id.replace("-", ""),
+        voterId = dto.voterId,
         firstName = "",
-        gender = "Unknown",
         createdAt = dto.createdAt,
         updatedAt = dto.updatedAt,
         revision = dto.revision,
@@ -89,7 +85,7 @@ object SyncMerge {
 
     /**
      * [local] is the row as stored now (null if it vanished), [pushed] the snapshot that was sent.
-     * Server wins on `conflict` and `voter_id_conflict`; the operator gets a [ConflictEntity].
+     * Server wins on `conflict` and `forbidden`; the operator gets a [ConflictEntity].
      */
     fun applyPushResult(
         local: VoterEntity?,
@@ -97,21 +93,32 @@ object SyncMerge {
         result: PushResult,
         now: String,
     ): PushDecision {
-        val record = result.serverRecord
         return when (result.status) {
             ResultStatus.APPLIED -> applied(local, pushed, result)
-            ResultStatus.CONFLICT -> {
-                val note = conflictNote(pushed.id, ResultStatus.CONFLICT, result, local ?: pushed, record, now)
-                if (record == null) PushDecision(PushKind.CONFLICT, conflict = note)
-                else PushDecision(PushKind.CONFLICT, store = listOf(fromDto(record)), conflict = note)
-            }
-            ResultStatus.VOTER_ID_CONFLICT -> voterIdConflict(local, pushed, result, now)
+            ResultStatus.CONFLICT -> serverWins(PushKind.CONFLICT, ResultStatus.CONFLICT, local, pushed, result, now)
+            // The server refused a field the user role may not change. It applied nothing, so the
+            // server row replaces the local edit and the operator sees the reason.
+            ResultStatus.FORBIDDEN -> serverWins(PushKind.FORBIDDEN, ResultStatus.FORBIDDEN, local, pushed, result, now)
             ResultStatus.VALIDATION_ERROR -> PushDecision(
                 PushKind.VALIDATION_ERROR,
-                conflict = conflictNote(pushed.id, ResultStatus.VALIDATION_ERROR, result, local ?: pushed, null, now),
+                conflict = conflictNote(pushed.voterId, ResultStatus.VALIDATION_ERROR, result, local ?: pushed, null, now),
             )
             else -> PushDecision(PushKind.UNKNOWN)
         }
+    }
+
+    private fun serverWins(
+        kind: PushKind,
+        status: String,
+        local: VoterEntity?,
+        pushed: VoterEntity,
+        result: PushResult,
+        now: String,
+    ): PushDecision {
+        val record = result.serverRecord
+        val note = conflictNote(pushed.voterId, status, result, local ?: pushed, record, now)
+        return if (record == null) PushDecision(kind, conflict = note)
+        else PushDecision(kind, store = listOf(fromDto(record)), conflict = note)
     }
 
     private fun applied(local: VoterEntity?, pushed: VoterEntity, result: PushResult): PushDecision {
@@ -131,43 +138,15 @@ object SyncMerge {
         return PushDecision(PushKind.APPLIED, store = listOf(clean))
     }
 
-    private fun voterIdConflict(
-        local: VoterEntity?,
-        pushed: VoterEntity,
-        result: PushResult,
-        now: String,
-    ): PushDecision {
-        val record = result.serverRecord
-        val note = conflictNote(pushed.id, ResultStatus.VOTER_ID_CONFLICT, result, local ?: pushed, record, now)
-        if (record == null) return PushDecision(PushKind.VOTER_ID_CONFLICT, conflict = note)
-        if (record.id.equals(pushed.id, ignoreCase = true)) {
-            return PushDecision(PushKind.VOTER_ID_CONFLICT, store = listOf(fromDto(record)), conflict = note)
-        }
-        // The record is a different person who already owns this VoterId.
-        val other = fromDto(record)
-        return when {
-            // The server never saw this row, so dropping it locally loses nothing else.
-            local == null || local.revision == 0L ->
-                PushDecision(PushKind.VOTER_ID_CONFLICT, store = listOf(other), deleteIds = listOf(pushed.id), conflict = note)
-            // The server has an older copy of this row that this device cannot see; pull it again.
-            else -> PushDecision(
-                PushKind.VOTER_ID_CONFLICT,
-                store = listOf(other, local.copy(dirty = false)),
-                conflict = note,
-                rewindCursor = true,
-            )
-        }
-    }
-
     private fun conflictNote(
-        id: String,
+        voterId: String,
         kind: String,
         result: PushResult,
         localSnapshot: VoterEntity,
         server: VoterDto?,
         now: String,
     ): ConflictEntity = ConflictEntity(
-        voterUuid = id,
+        voterId = voterId,
         kind = kind,
         message = result.message,
         detectedAt = now,

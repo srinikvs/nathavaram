@@ -8,9 +8,14 @@ class VoterFormSavedStateTest {
     private val typed = VoterForm(
         voterId = "ZZZ0000001",
         firstName = "Testperson",
-        surname = "Fakeuser",
+        lastName = "Fakeuser",
         houseNo = "12-A",
-        gender = "Female",
+        street = "Sample Street",
+        village = "Samplevillage",
+        panchayath = "Samplepanchayath",
+        mandal = "Samplemandal",
+        currentCity = "Samplecity",
+        isLocal = "Local",
         age = "41",
         mobile = "9000000001",
         party = "Independent",
@@ -24,18 +29,18 @@ class VoterFormSavedStateTest {
     }
 
     @Test
-    fun `round trip keeps unsaved gender and party selections`() {
-        val form = VoterForm().with(FieldKey.GENDER, "Other").with(FieldKey.PARTY, "QA000001")
+    fun `round trip keeps unsaved local and party selections`() {
+        val form = VoterForm().with(FieldKey.IS_LOCAL, "Local").with(FieldKey.PARTY, "QA000001")
 
         val restored = VoterForm.fromSavedList(form.toSavedList())
 
-        assertEquals("Other", restored?.gender)
+        assertEquals("Local", restored?.isLocal)
         assertEquals("QA000001", restored?.party)
     }
 
     @Test
     fun `a list of the wrong size or type is rejected`() {
         assertNull(VoterForm.fromSavedList(listOf("a", "b")))
-        assertNull(VoterForm.fromSavedList(List(16) { if (it == 3) 7 else "x" }))
+        assertNull(VoterForm.fromSavedList(List(19) { if (it == 3) 7 else "x" }))
     }
 }

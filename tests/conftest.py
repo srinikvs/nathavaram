@@ -89,21 +89,24 @@ def csrf_from_page(html: str) -> str:
 
 def voter_payload(**overrides) -> dict:
     data = {
-        "booth_2024": "12A",
-        "bs_no_2024": "101",
-        "ward_2026": "3",
+        "booth": "12A",
+        "booth_s_no": "101",
+        "ward": "3",
         "ward_s_no": "15",
         "voter_id": "ZZZ1000001",
         "first_name": "Testperson",
-        "surname": "Alpha",
+        "last_name": "Alpha",
         "relative_name": "Relative Alpha",
         "house_no": "12-A",
-        "gender": "Female",
         "age": 34,
-        "caste": "SampleGroupA",
+        "street": "Sample Street",
         "mobile": "9000000021",
-        "c_city": "Nathavaram",
-        "profession": "Teacher",
+        "caste": "SampleGroupA",
+        "village": "Samplevillage",
+        "panchayath": "Samplepanchayath",
+        "mandal": "Samplemandal",
+        "current_city": "Nathavaram",
+        "is_local": True,
         "party": "TDP",
     }
     data.update(overrides)

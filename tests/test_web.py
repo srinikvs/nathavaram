@@ -10,21 +10,24 @@ from tests.conftest import csrf_from_page, set_must_change
 
 def _form(**overrides) -> dict:
     data = {
-        "booth_2024": "4",
-        "bs_no_2024": "20",
-        "ward_2026": "2",
+        "booth": "4",
+        "booth_s_no": "20",
+        "ward": "2",
         "ward_s_no": "8",
         "voter_id": "ZZZ2000001",
         "first_name": "Webperson",
-        "surname": "Sample",
+        "last_name": "Sample",
         "relative_name": "Relative Web",
         "house_no": "H-20",
-        "gender": "Male",
         "age": "28",
-        "caste": "SampleGroupA",
+        "street": "Web Lane 2",
         "mobile": "9000000033",
-        "c_city": "Nathavaram",
-        "profession": "Clerk",
+        "caste": "SampleGroupA",
+        "village": "Webville",
+        "panchayath": "Webpanchayath",
+        "mandal": "Webmandal",
+        "current_city": "Nathavaram",
+        "is_local": "Local",
         "party": "",
     }
     data.update(overrides)
@@ -69,9 +72,12 @@ def test_pages_require_login_and_round_trip_a_voter(ctx):
 
     reports = ctx.client.get("/reports")
     assert reports.status_code == 200
-    assert "2024 Booth" in reports.text
+    assert "Booth" in reports.text
+    assert "2024 Booth" not in reports.text
     assert "Age band" in reports.text
-    assert "Profession" in reports.text
+    assert "Panchayath" in reports.text
+    assert "Local/Non-Local" in reports.text
+    assert "Profession" not in reports.text
 
     created = ctx.client.post(
         "/api/users",

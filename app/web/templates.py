@@ -8,7 +8,7 @@ from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
 from app.config import ROOT
-from app.constants import GENDERS, PARTIES
+from app.constants import PARTIES
 from app.security import csrf_token_for
 from app.validation import parse_dt
 
@@ -16,7 +16,6 @@ templates = Jinja2Templates(directory=str(ROOT / "app" / "templates"))
 IST = timezone(timedelta(hours=5, minutes=30))
 
 templates.env.globals["parties"] = PARTIES
-templates.env.globals["genders"] = GENDERS
 
 
 def format_ist(value: str | None) -> str:

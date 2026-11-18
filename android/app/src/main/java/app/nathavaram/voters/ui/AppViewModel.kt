@@ -31,7 +31,7 @@ sealed interface Screen {
     data object Login : Screen
     data object Settings : Screen
     data object Search : Screen
-    data class Edit(val id: String?) : Screen
+    data class Edit(val voterId: String?) : Screen
     data object Conflicts : Screen
 }
 
@@ -68,6 +68,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     val baseUrl: String get() = settings.baseUrl
     val clockSkew: Boolean get() = settings.clockSkew
+
+    /** Owner/admin: every field but VoterId is editable. Otherwise only Party, Caste, Mobile, HouseNo and Street. */
+    val canEditAllFields: Boolean get() = settings.canEditAllFields
 
     /** Non-null while the server is demanding a password change (done on the web). */
     val passwordChangeNotice: String?
@@ -111,6 +114,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val response = container.api.login(username.trim(), password)
                 container.tokens.save(response.accessToken, response.username.ifEmpty { username.trim() })
                 settings.passwordChangeRequired = false
+                settings.role = response.role
                 SyncScheduler.requestSync(getApplication())
                 _screen.value = Screen.Search
                 LoginUi()
@@ -128,6 +132,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun signOut() {
         container.tokens.clear()
         settings.passwordChangeRequired = false
+        settings.role = ""
         _screen.value = Screen.Login
     }
 
@@ -146,7 +151,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun formFor(id: String?): VoterForm? =
         if (id == null) VoterForm() else repository.get(id)?.let(VoterForm::from)
 
-    suspend fun save(id: String?, form: VoterForm): SaveResult = repository.save(id, form)
+    suspend fun save(editingVoterId: String?, form: VoterForm): SaveResult = repository.save(editingVoterId, form)
 
     fun dismissConflict(id: String) {
         viewModelScope.launch { container.database.conflictDao().delete(id) }

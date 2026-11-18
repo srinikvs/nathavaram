@@ -468,7 +468,7 @@ def test_regular_admin_keeps_export_import_and_delete(ctx):
         files={"file": ("voters_sample.csv", SAMPLE.read_bytes(), "text/csv")},
     )
     assert imported.status_code == 200
-    assert ctx.client.delete(f"/api/voters/{created.json()['id']}", headers=plain).status_code == 200
+    assert ctx.client.delete(f"/api/voters/{created.json()['voter_id']}", headers=plain).status_code == 200
 
 
 def test_regular_user_cannot_manage_users(ctx):

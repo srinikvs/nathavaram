@@ -53,13 +53,13 @@ def test_cookie_post_with_wrong_token_is_rejected(ctx):
 def test_patch_and_delete_with_cookie_need_the_token(ctx):
     created = ctx.client.post("/api/voters", headers=ctx.auth, json=voter_payload()).json()
     csrf = _cookie_login(ctx)
-    url = f"/api/voters/{created['id']}"
+    url = f"/api/voters/{created['voter_id']}"
 
-    assert ctx.client.patch(url, json={"profession": "Farmer"}).status_code == 403
+    assert ctx.client.patch(url, json={"caste": "SampleGroupB"}).status_code == 403
     assert ctx.client.delete(url).status_code == 403
-    assert ctx.client.get(url).json()["profession"] == "Teacher"
+    assert ctx.client.get(url).json()["caste"] == "SampleGroupA"
 
-    patched = ctx.client.patch(url, json={"profession": "Farmer"}, headers={"X-CSRF-Token": csrf})
+    patched = ctx.client.patch(url, json={"caste": "SampleGroupB"}, headers={"X-CSRF-Token": csrf})
     assert patched.status_code == 200
     assert ctx.client.delete(url, headers={"X-CSRF-Token": csrf}).status_code == 200
 
@@ -122,7 +122,6 @@ def test_html_forms_include_the_token_and_enforce_it(ctx):
     fields = {
         "voter_id": "ZZZ2000010",
         "first_name": "Webperson",
-        "gender": "Male",
         "mobile": "9000000034",
     }
 
@@ -149,7 +148,7 @@ def test_multipart_import_form_is_checked(ctx):
     ctx.client.cookies.clear()
     ctx.client.post("/login", data=ADMIN, follow_redirects=False)
     token = csrf_from_page(ctx.client.get("/import").text)
-    header = "2024 Booth,2024 B.S.No,2026 Ward,Ward S No,VoterId,FirstName,SurName,RelativeName,HouseNo,Gender,Age,Caste,Mobile,C_City,Profession,Party"
+    header = "Booth,2024 B.S.No,Ward,Ward S No,VoterId,FirstName,SurName,RelativeName,HouseNo,Gender,Age,Caste,Mobile,C_City,Profession,Party"
     row = "1,10,1,1,ZZZ0000400,Fake,Row,Rel,H-1,Male,40,SampleGroupA,9000000092,Nathavaram,Farmer,"
     files = {"file": ("fake.csv", f"{header}\n{row}\n".encode("utf-8"), "text/csv")}
 

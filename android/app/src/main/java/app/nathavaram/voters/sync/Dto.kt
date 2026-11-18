@@ -15,29 +15,33 @@ object SyncJson {
 object ResultStatus {
     const val APPLIED = "applied"
     const val CONFLICT = "conflict"
-    const val VOTER_ID_CONFLICT = "voter_id_conflict"
     const val VALIDATION_ERROR = "validation_error"
+
+    /** The user role tried to change a field only an owner/admin may change (or to delete). Nothing was applied. */
+    const val FORBIDDEN = "forbidden"
 }
 
-/** A voter as the server returns it (pull changes and `server_record`). */
+/** A voter as the server returns it (pull changes and `server_record`). `voter_id` is the key. */
 @Serializable
 data class VoterDto(
-    val id: String,
-    @SerialName("booth_2024") val booth2024: String? = null,
-    @SerialName("bs_no_2024") val bsNo2024: String? = null,
-    @SerialName("ward_2026") val ward2026: String? = null,
-    @SerialName("ward_s_no") val wardSNo: String? = null,
     @SerialName("voter_id") val voterId: String = "",
+    val booth: String? = null,
+    @SerialName("booth_s_no") val boothSNo: String? = null,
+    val ward: String? = null,
+    @SerialName("ward_s_no") val wardSNo: String? = null,
     @SerialName("first_name") val firstName: String = "",
-    val surname: String? = null,
+    @SerialName("last_name") val lastName: String? = null,
     @SerialName("relative_name") val relativeName: String? = null,
     @SerialName("house_no") val houseNo: String? = null,
-    val gender: String = "Unknown",
     val age: Int? = null,
-    val caste: String? = null,
+    val street: String? = null,
     val mobile: String? = null,
-    @SerialName("c_city") val cCity: String? = null,
-    val profession: String? = null,
+    val caste: String? = null,
+    val village: String? = null,
+    val panchayath: String? = null,
+    val mandal: String? = null,
+    @SerialName("current_city") val currentCity: String? = null,
+    @SerialName("is_local") val isLocal: Boolean = false,
     val party: String? = null,
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("updated_at") val updatedAt: String = "",
@@ -46,29 +50,31 @@ data class VoterDto(
     @SerialName("source_id") val sourceId: String? = null,
 )
 
-/** One full-snapshot item in `POST /api/sync/push`. */
+/** One full-snapshot item in `POST /api/sync/push`, keyed by `voter_id`. */
 @Serializable
 data class PushChange(
-    val id: String,
+    @SerialName("voter_id") val voterId: String,
     @SerialName("updated_at") val updatedAt: String,
     @SerialName("created_at") val createdAt: String,
     val deleted: Boolean = false,
     @SerialName("base_revision") val baseRevision: Long? = null,
-    @SerialName("booth_2024") val booth2024: String? = null,
-    @SerialName("bs_no_2024") val bsNo2024: String? = null,
-    @SerialName("ward_2026") val ward2026: String? = null,
+    val booth: String? = null,
+    @SerialName("booth_s_no") val boothSNo: String? = null,
+    val ward: String? = null,
     @SerialName("ward_s_no") val wardSNo: String? = null,
-    @SerialName("voter_id") val voterId: String,
     @SerialName("first_name") val firstName: String,
-    val surname: String? = null,
+    @SerialName("last_name") val lastName: String? = null,
     @SerialName("relative_name") val relativeName: String? = null,
     @SerialName("house_no") val houseNo: String? = null,
-    val gender: String,
     val age: Int? = null,
-    val caste: String? = null,
+    val street: String? = null,
     val mobile: String? = null,
-    @SerialName("c_city") val cCity: String? = null,
-    val profession: String? = null,
+    val caste: String? = null,
+    val village: String? = null,
+    val panchayath: String? = null,
+    val mandal: String? = null,
+    @SerialName("current_city") val currentCity: String? = null,
+    @SerialName("is_local") val isLocal: Boolean = false,
     val party: String? = null,
 )
 
@@ -80,7 +86,7 @@ data class PushRequest(
 
 @Serializable
 data class PushResult(
-    val id: String,
+    @SerialName("voter_id") val voterId: String,
     val status: String,
     val message: String? = null,
     @SerialName("server_revision") val serverRevision: Long? = null,

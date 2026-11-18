@@ -18,8 +18,8 @@ class VocabTest {
     }
 
     @Test
-    fun `gender list is exactly the four canonical values`() {
-        assertEquals(listOf("Male", "Female", "Other", "Unknown"), Vocab.GENDERS)
+    fun `local options are exactly Non-Local and Local`() {
+        assertEquals(listOf("Non-Local", "Local"), Vocab.LOCAL_OPTIONS)
     }
 }
 

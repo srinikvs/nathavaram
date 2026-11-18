@@ -71,16 +71,17 @@ fun SearchScreen(vm: AppViewModel) {
             Text("No matching voters on this phone.")
         }
         LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
-            items(results, key = { it.id }) { voter ->
+            items(results, key = { it.voterId }) { voter ->
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { vm.go(Screen.Edit(voter.id)) }
+                        .clickable { vm.go(Screen.Edit(voter.voterId)) }
                         .padding(vertical = 8.dp),
                 ) {
-                    val name = listOfNotNull(voter.firstName, voter.surname).joinToString(" ")
+                    val name = listOfNotNull(voter.firstName, voter.lastName).joinToString(" ")
                     Text(name, style = MaterialTheme.typography.titleMedium)
-                    Text("${voter.voterId} · house ${voter.houseNo ?: "-"}" + if (voter.dirty) " · not synced" else "")
+                    val place = listOfNotNull(voter.houseNo, voter.street, voter.village).joinToString(", ").ifEmpty { "-" }
+                    Text("${voter.voterId} · $place" + if (voter.dirty) " · not synced" else "")
                 }
                 HorizontalDivider()
             }

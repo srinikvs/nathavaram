@@ -19,7 +19,7 @@ class VoterValidatorTest {
 
         assertEquals("ZZZ0000001", form.voterId)
         assertEquals("Testperson", form.firstName)
-        assertEquals("Unknown", form.gender)
+        assertEquals("Non-Local", form.isLocal)
         assertEquals("", form.party)
     }
 
@@ -37,10 +37,11 @@ class VoterValidatorTest {
     }
 
     @Test
-    fun `gender is matched case-insensitively and blank becomes Unknown`() {
-        assertEquals("Female", ok(valid().copy(gender = "fEMALE")).gender)
-        assertEquals("Unknown", ok(valid().copy(gender = "")).gender)
-        assertTrue(FieldKey.GENDER in errors(valid().copy(gender = "Robot")))
+    fun `there is no gender, permanent address or profession field any more`() {
+        listOf("gender", "permanent_address", "profession").forEach { key ->
+            assertEquals("", VoterForm().get(key))
+            assertEquals(VoterForm(), VoterForm().with(key, "x"))
+        }
     }
 
     @Test
@@ -79,9 +80,34 @@ class VoterValidatorTest {
 
     @Test
     fun `control characters and over-long text are rejected`() {
-        assertTrue(FieldKey.SURNAME in errors(valid().copy(surname = "bad\u0007name")))
-        assertTrue(FieldKey.SURNAME in errors(valid().copy(surname = "x".repeat(129))))
+        assertTrue(FieldKey.LAST_NAME in errors(valid().copy(lastName = "bad\u0007name")))
+        assertTrue(FieldKey.LAST_NAME in errors(valid().copy(lastName = "x".repeat(129))))
+        assertTrue(FieldKey.STREET in errors(valid().copy(street = "x".repeat(1001))))
         assertTrue(FieldKey.HOUSE_NO in errors(valid().copy(houseNo = "x".repeat(65))))
+        assertTrue(FieldKey.VILLAGE in errors(valid().copy(village = "x".repeat(129))))
+        assertTrue(FieldKey.PANCHAYATH in errors(valid().copy(panchayath = "x".repeat(129))))
+        assertTrue(FieldKey.MANDAL in errors(valid().copy(mandal = "x".repeat(129))))
+        assertTrue(FieldKey.CURRENT_CITY in errors(valid().copy(currentCity = "x".repeat(129))))
+    }
+
+    @Test
+    fun `local accepts local and non-local in any case and defaults to non-local`() {
+        assertEquals("Local", ok(valid().copy(isLocal = " LOCAL ")).isLocal)
+        assertEquals("Non-Local", ok(valid().copy(isLocal = "non-local")).isLocal)
+        assertEquals("Local", ok(valid().copy(isLocal = "yes")).isLocal)
+        assertEquals("Non-Local", ok(valid().copy(isLocal = "NO")).isLocal)
+        assertEquals("Non-Local", ok(valid().copy(isLocal = "")).isLocal)
+        assertEquals("Non-Local", ok(valid()).isLocal)
+        assertTrue(FieldKey.IS_LOCAL in errors(valid().copy(isLocal = "maybe")))
+    }
+
+    @Test
+    fun `village panchayath and mandal are trimmed`() {
+        val form = ok(valid().copy(village = "  Samplevillage ", panchayath = " Pan ", mandal = " Man "))
+
+        assertEquals("Samplevillage", form.village)
+        assertEquals("Pan", form.panchayath)
+        assertEquals("Man", form.mandal)
     }
 
     @Test

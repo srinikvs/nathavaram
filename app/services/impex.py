@@ -4,18 +4,26 @@ from __future__ import annotations
 
 import csv
 import io
-import uuid
 from datetime import datetime, timezone
 
 from openpyxl import Workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.constants import CSV_HEADERS, DATA_FIELDS, FIELD_BY_LABEL, IMPORT_ROW_LIMIT, LABEL_BY_FIELD
+from app.constants import (
+    CSV_HEADERS,
+    DATA_FIELDS,
+    DROPPED_IMPORT_HEADERS,
+    IMPORT_HEADER_FIELDS,
+    IMPORT_ROW_LIMIT,
+    LABEL_BY_FIELD,
+    OPTIONAL_IMPORT_FIELDS,
+    VOTER_COLUMNS,
+)
 from app.models import Voter
 from app.schemas import ImportErrorItem, ImportReport, VoterWrite
 from app.services.revision import allocate_revision
-from app.validation import csv_safe, csv_unsafe, dump_dt
+from app.validation import csv_safe, csv_unsafe, dump_dt, local_label
 from pydantic import ValidationError
 
 
@@ -53,8 +61,19 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
         raise ImportRejected("CSV header contains an empty column name")
     if len(set(headers)) != len(headers):
         raise ImportRejected("CSV header contains duplicate column names")
-    missing = [name for name in CSV_HEADERS if name not in headers]
-    extra = [name for name in headers if name not in FIELD_BY_LABEL]
+    # Old headers ("SurName", "Address", "C_City", "2024 Booth", ...) are accepted alongside the
+    # new ones. Gender, Permanent address and Profession were removed: their columns are ignored.
+    extra = [
+        name for name in headers if name not in IMPORT_HEADER_FIELDS and name not in DROPPED_IMPORT_HEADERS
+    ]
+    fields = [IMPORT_HEADER_FIELDS[name] for name in headers if name in IMPORT_HEADER_FIELDS]
+    if len(set(fields)) != len(fields):
+        raise ImportRejected("CSV header contains the same column twice (old and new names mixed)")
+    missing = [
+        label
+        for field, label in VOTER_COLUMNS
+        if field not in fields and field not in OPTIONAL_IMPORT_FIELDS
+    ]
     if missing or extra:
         parts = []
         if missing:
@@ -72,9 +91,9 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
         if rows_read > IMPORT_ROW_LIMIT:
             raise ImportRejected(f"CSV exceeds {IMPORT_ROW_LIMIT} data rows")
         payload_row = {
-            FIELD_BY_LABEL[key.strip()]: csv_unsafe(value or "")
+            IMPORT_HEADER_FIELDS[key.strip()]: csv_unsafe(value or "")
             for key, value in raw.items()
-            if key is not None
+            if key is not None and key.strip() in IMPORT_HEADER_FIELDS
         }
         try:
             parsed = VoterWrite.model_validate(payload_row)
@@ -99,18 +118,16 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
         seen_ids.add(parsed.voter_id)
         accepted.append((offset, parsed))
 
+    tombstones: dict[str, Voter] = {}
     if accepted:
-        existing = set(
-            db.scalars(
-                select(Voter.voter_id).where(
-                    Voter.deleted_at.is_(None),
-                    Voter.voter_id.in_([item.voter_id for _, item in accepted]),
-                )
-            ).all()
-        )
+        stored = db.scalars(
+            select(Voter).where(Voter.voter_id.in_([item.voter_id for _, item in accepted]))
+        ).all()
+        active = {row.voter_id for row in stored if row.deleted_at is None}
+        tombstones = {row.voter_id: row for row in stored if row.deleted_at is not None}
         fresh: list[tuple[int, VoterWrite]] = []
         for row_number, item in accepted:
-            if item.voter_id in existing:
+            if item.voter_id in active:
                 errors.append(
                     ImportErrorItem(
                         row=row_number,
@@ -124,18 +141,18 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
 
     now = dump_dt(datetime.now(timezone.utc))
     for _, item in accepted:
-        voter = Voter(
-            id=str(uuid.uuid4()),
-            created_at=now,
-            updated_at=now,
-            source_id=source_id,
-            revision=0,
-            deleted_at=None,
-        )
+        # A soft-deleted voter_id is revived in place: voter_id is the primary key.
+        voter = tombstones.get(item.voter_id)
+        if voter is None:
+            voter = Voter(voter_id=item.voter_id, revision=0)
+            db.add(voter)
+        voter.created_at = now
+        voter.updated_at = now
+        voter.source_id = source_id
+        voter.deleted_at = None
         for field in DATA_FIELDS:
             setattr(voter, field, getattr(item, field))
         voter.revision = allocate_revision(db)
-        db.add(voter)
     if accepted:
         db.commit()
     errors.sort(key=lambda item: item.row)
@@ -152,7 +169,7 @@ def voters_to_csv(voters: list[Voter]) -> str:
     writer = csv.writer(buffer)
     writer.writerow(list(CSV_HEADERS))
     for voter in voters:
-        writer.writerow([csv_safe(getattr(voter, name)) for name, _label in _columns()])
+        writer.writerow([_cell(voter, name) for name, _label in VOTER_COLUMNS])
     return buffer.getvalue()
 
 
@@ -162,7 +179,7 @@ def voters_to_xlsx(voters: list[Voter]) -> bytes:
     sheet.title = "Voters"
     sheet.append(list(CSV_HEADERS))
     for voter in voters:
-        sheet.append([csv_safe(getattr(voter, name)) for name, _label in _columns()])
+        sheet.append([_cell(voter, name) for name, _label in VOTER_COLUMNS])
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
     buffer = io.BytesIO()
@@ -170,7 +187,8 @@ def voters_to_xlsx(voters: list[Voter]) -> bytes:
     return buffer.getvalue()
 
 
-def _columns():
-    from app.constants import VOTER_COLUMNS
-
-    return VOTER_COLUMNS
+def _cell(voter: Voter, name: str) -> str:
+    value = getattr(voter, name)
+    if name == "is_local":
+        return local_label(value)
+    return csv_safe(value)

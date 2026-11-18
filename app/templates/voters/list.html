@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Voters</h1>
-    <p class="lede">{{ total }} record{% if total != 1 %}s{% endif %}{% if query.q or query.booth or query.ward or query.party or query.gender or query.caste or query.mobile or query.house_no or query.voter_id %} match the filters{% endif %}.</p>
+    <p class="lede">{{ total }} record{% if total != 1 %}s{% endif %}{% if query.q or query.booth or query.ward or query.party or query.caste or query.mobile or query.village or query.is_local or query.voter_id %} match the filters{% endif %}.</p>
   </div>
   <div class="actions">
     <a class="button" href="/voters/new">Add voter</a>
@@ -25,14 +25,14 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div>
     <label for="q">Search</label>
-    <input id="q" name="q" value="{{ query.q or '' }}" placeholder="Name, VoterId, HouseNo, mobile" maxlength="100">
+    <input id="q" name="q" value="{{ query.q or '' }}" placeholder="Name, VoterId, street, village, mobile" maxlength="100">
   </div>
   <div>
-    <label for="booth">2024 Booth</label>
+    <label for="booth">Booth</label>
     <input id="booth" name="booth" value="{{ query.booth or '' }}" maxlength="64">
   </div>
   <div>
-    <label for="ward">2026 Ward</label>
+    <label for="ward">Ward</label>
     <input id="ward" name="ward" value="{{ query.ward or '' }}" maxlength="64">
   </div>
   <div>
@@ -44,7 +44,7 @@
       {% endfor %}
     </select>
   </div>
-  <details {% if query.gender or query.caste or query.mobile or query.house_no or query.voter_id %}open{% endif %}>
+  <details {% if query.caste or query.mobile or query.village or query.panchayath or query.mandal or query.is_local or query.voter_id %}open{% endif %}>
     <summary>More filters</summary>
     <div class="more">
       <div>
@@ -52,8 +52,16 @@
         <input id="voter_id" name="voter_id" value="{{ query.voter_id or '' }}" maxlength="32">
       </div>
       <div>
-        <label for="house_no">HouseNo</label>
-        <input id="house_no" name="house_no" value="{{ query.house_no or '' }}" maxlength="64">
+        <label for="village">Village</label>
+        <input id="village" name="village" value="{{ query.village or '' }}" maxlength="128">
+      </div>
+      <div>
+        <label for="is_local">Local/Non-Local</label>
+        <select id="is_local" name="is_local">
+          <option value="">Any</option>
+          <option value="Local" {% if query.is_local == "Local" %}selected{% endif %}>Local</option>
+          <option value="Non-Local" {% if query.is_local == "Non-Local" %}selected{% endif %}>Non-Local</option>
+        </select>
       </div>
       <div>
         <label for="caste">Caste</label>
@@ -64,13 +72,12 @@
         <input id="mobile" name="mobile" value="{{ query.mobile or '' }}" maxlength="20" inputmode="tel">
       </div>
       <div>
-        <label for="gender">Gender</label>
-        <select id="gender" name="gender">
-          <option value="">Any</option>
-          {% for gender in genders %}
-          <option value="{{ gender }}" {% if query.gender == gender %}selected{% endif %}>{{ gender }}</option>
-          {% endfor %}
-        </select>
+        <label for="panchayath">Panchayath</label>
+        <input id="panchayath" name="panchayath" value="{{ query.panchayath or '' }}" maxlength="128">
+      </div>
+      <div>
+        <label for="mandal">Mandal</label>
+        <input id="mandal" name="mandal" value="{{ query.mandal or '' }}" maxlength="128">
       </div>
     </div>
   </details>
@@ -86,12 +93,16 @@
       <tr>
         <th>VoterId</th>
         <th>FirstName</th>
-        <th>SurName</th>
+        <th>LastName</th>
         <th>RelativeName</th>
         <th>HouseNo</th>
-        <th>2024 Booth</th>
-        <th>2026 Ward</th>
-        <th>Gender</th>
+        <th>Street</th>
+        <th>Village</th>
+        <th>Panchayath</th>
+        <th>Mandal</th>
+        <th>Local/Non-Local</th>
+        <th>Booth</th>
+        <th>Ward</th>
         <th>Age</th>
         <th>Caste</th>
         <th>Party</th>
@@ -104,19 +115,23 @@
       <tr>
         <td data-label="VoterId" translate="no">{{ voter.voter_id }}</td>
         <td data-label="FirstName" translate="no">{{ voter.first_name }}</td>
-        <td data-label="SurName" translate="no">{{ voter.surname|display }}</td>
+        <td data-label="LastName" translate="no">{{ voter.last_name|display }}</td>
         <td data-label="RelativeName" translate="no">{{ voter.relative_name|display }}</td>
         <td data-label="HouseNo" translate="no">{{ voter.house_no|display }}</td>
-        <td data-label="2024 Booth" translate="no">{{ voter.booth_2024|display }}</td>
-        <td data-label="2026 Ward" translate="no">{{ voter.ward_2026|display }}</td>
-        <td data-label="Gender">{{ voter.gender }}</td>
+        <td data-label="Street" translate="no">{{ voter.street|display }}</td>
+        <td data-label="Village" translate="no">{{ voter.village|display }}</td>
+        <td data-label="Panchayath" translate="no">{{ voter.panchayath|display }}</td>
+        <td data-label="Mandal" translate="no">{{ voter.mandal|display }}</td>
+        <td data-label="Local/Non-Local">{{ "Local" if voter.is_local else "Non-Local" }}</td>
+        <td data-label="Booth" translate="no">{{ voter.booth|display }}</td>
+        <td data-label="Ward" translate="no">{{ voter.ward|display }}</td>
         <td data-label="Age">{{ voter.age|display }}</td>
         <td data-label="Caste" translate="no">{{ voter.caste|display }}</td>
         <td data-label="Party">{{ voter.party|display }}</td>
         <td data-label="Mobile" translate="no">{{ voter.mobile|display }}</td>
         <td data-label="Actions" class="row-actions">
-          <a href="/voters/{{ voter.id }}/edit">Edit</a>
-          {% if user.role == "admin" %}<a href="/voters/{{ voter.id }}/delete">Delete</a>{% endif %}
+          <a href="/voters/{{ voter.voter_id }}/edit">Edit</a>
+          {% if user.role == "admin" %}<a href="/voters/{{ voter.voter_id }}/delete">Delete</a>{% endif %}
         </td>
       </tr>
       {% endfor %}

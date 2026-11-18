@@ -7,7 +7,9 @@ Conflict policy (also documented in docs/SYNC.md):
 - The server assigns a new revision only when a change is stored.
 - Equal timestamps with the same content are an idempotent replay.
 - Equal timestamps with different content keep the server row.
-- VoterId clashes with a different active row are reported and not applied.
+- voter_id is the primary key: a change for an existing voter_id is a merge, never a clash.
+  A tombstone keeps its voter_id, so a newer non-delete change for it revives the row.
+- A change whose voter_id is not valid is reported as validation_error and not applied.
 """
 
 from __future__ import annotations
@@ -23,7 +25,14 @@ from app.constants import DATA_FIELDS, SYNC_BATCH_LIMIT
 from app.models import Voter
 from app.schemas import SyncChange, SyncPullResponse, SyncPushRequest, SyncPushResponse, SyncResult, VoterPublic, VoterWrite
 from app.services.revision import allocate_revision, current_revision
-from app.services.voters import strip_to_tombstone, voter_to_public
+from app.errors import ServiceError
+from app.services.voters import (
+    disallowed_changes,
+    forbidden_fields_message,
+    normalize_voter_id,
+    strip_to_tombstone,
+    voter_to_public,
+)
 from app.validation import canonical_voter_id, check_client_timestamp, dump_dt, parse_dt
 
 
@@ -57,14 +66,13 @@ def pull_changes(db: Session, since: int, limit: int) -> SyncPullResponse:
     )
 
 
-def push_changes(db: Session, body: SyncPushRequest) -> SyncPushResponse:
+def push_changes(db: Session, body: SyncPushRequest, *, privileged: bool) -> SyncPushResponse:
+    """`privileged` is owner/admin. Regular users may change USER_EDITABLE_FIELDS only."""
     if len(body.changes) > SYNC_BATCH_LIMIT:
-        from app.errors import ServiceError
-
         raise ServiceError(f"A sync batch can contain at most {SYNC_BATCH_LIMIT} changes", 422)
     results: list[SyncResult] = []
     for change in body.changes:
-        results.append(_apply_guarded(db, change, body.device_id))
+        results.append(_apply_guarded(db, change, body.device_id, privileged))
     db.commit()
     return SyncPushResponse(
         server_time=_server_time(),
@@ -73,31 +81,21 @@ def push_changes(db: Session, body: SyncPushRequest) -> SyncPushResponse:
     )
 
 
-def _apply_guarded(db: Session, change: SyncChange, device_id: str) -> SyncResult:
-    """Apply one change inside a savepoint; a database clash rejects only this change."""
+def _apply_guarded(db: Session, change: SyncChange, device_id: str, privileged: bool) -> SyncResult:
+    """Apply one change inside a savepoint; a database error rejects only this change."""
     try:
         with db.begin_nested():
-            return _apply_one(db, change, device_id)
+            return _apply_one(db, change, device_id, privileged)
     except IntegrityError:
-        record_id = str(change.id)
-        owner = None
-        if change.voter_id:
-            try:
-                owner = _active_voter_id_owner(db, canonical_voter_id(change.voter_id), exclude_id=record_id)
-            except ValueError:
-                owner = None
-        if owner is None:
-            return SyncResult(
-                id=record_id,
-                status="voter_id_conflict",
-                message="VoterId belongs to another active record",
-            )
+        # Two writers inserted the same voter_id at once; the other write won.
+        key = normalize_voter_id(change.voter_id)
+        winner = db.get(Voter, key)
         return SyncResult(
-            id=record_id,
-            status="voter_id_conflict",
-            message=f"VoterId {owner.voter_id} belongs to another active record",
-            server_revision=owner.revision,
-            server_record=voter_to_public(owner),
+            voter_id=key,
+            status="conflict",
+            message="Another change for this VoterId was stored first",
+            server_revision=winner.revision if winner is not None else None,
+            server_record=voter_to_public(winner) if winner is not None else None,
         )
 
 
@@ -105,37 +103,51 @@ def _stale_base(existing: Voter, base_revision: int | None) -> bool:
     return base_revision is not None and existing.revision > base_revision
 
 
-def _apply_one(db: Session, change: SyncChange, device_id: str) -> SyncResult:
+def _forbidden(existing: Voter, message: str) -> SyncResult:
+    """Sync analogue of HTTP 403: this change is refused and nothing is written."""
+    return SyncResult(
+        voter_id=existing.voter_id,
+        status="forbidden",
+        message=message,
+        server_revision=existing.revision,
+        server_record=voter_to_public(existing),
+    )
+
+
+def _apply_one(db: Session, change: SyncChange, device_id: str, privileged: bool) -> SyncResult:
+    try:
+        voter_key = canonical_voter_id(change.voter_id)
+    except ValueError as exc:
+        return SyncResult(
+            voter_id=normalize_voter_id(change.voter_id),
+            status="validation_error",
+            message=f"voter_id: {exc}",
+        )
     try:
         incoming = check_client_timestamp(change.updated_at)
     except ValueError as exc:
-        return SyncResult(id=str(change.id), status="validation_error", message=str(exc))
+        return SyncResult(voter_id=voter_key, status="validation_error", message=str(exc))
 
-    record_id = str(change.id)
-    existing = db.get(Voter, record_id)
+    existing = db.get(Voter, voter_key)
     if change.deleted:
-        return _apply_delete(db, change, existing, incoming, device_id)
+        # HTTP delete is admin-only; allowing it here would let a user delete and re-add a
+        # voter to rewrite fields they may not edit.
+        if not privileged and existing is not None and existing.deleted_at is None:
+            return _forbidden(existing, "Your role cannot delete voters; ask an owner or admin.")
+        return _apply_delete(db, voter_key, existing, incoming, device_id, change.base_revision)
 
     try:
-        snapshot = VoterWrite.model_validate(change.model_dump(exclude={"deleted", "base_revision", "created_at", "updated_at"}))
+        snapshot = VoterWrite.model_validate(
+            change.model_dump(exclude={"deleted", "base_revision", "created_at", "updated_at"})
+        )
     except ValidationError as exc:
         first = exc.errors()[0]
         loc = first.get("loc") or ()
         field = str(loc[-1]) if loc else "record"
         return SyncResult(
-            id=record_id,
+            voter_id=voter_key,
             status="validation_error",
             message=f"{field}: {first['msg']}",
-        )
-
-    clash = _active_voter_id_owner(db, snapshot.voter_id, exclude_id=record_id)
-    if clash is not None:
-        return SyncResult(
-            id=record_id,
-            status="voter_id_conflict",
-            message=f"VoterId {snapshot.voter_id} belongs to another active record",
-            server_revision=clash.revision,
-            server_record=voter_to_public(clash),
         )
 
     if existing is None:
@@ -144,9 +156,9 @@ def _apply_one(db: Session, change: SyncChange, device_id: str) -> SyncResult:
             try:
                 created = dump_dt(check_client_timestamp(change.created_at))
             except ValueError as exc:
-                return SyncResult(id=record_id, status="validation_error", message=str(exc))
+                return SyncResult(voter_id=voter_key, status="validation_error", message=str(exc))
         voter = Voter(
-            id=record_id,
+            voter_id=voter_key,
             created_at=created,
             updated_at=dump_dt(incoming),
             source_id=device_id,
@@ -158,26 +170,26 @@ def _apply_one(db: Session, change: SyncChange, device_id: str) -> SyncResult:
         db.add(voter)
         db.flush()
         return SyncResult(
-            id=record_id,
+            voter_id=voter_key,
             status="applied",
             server_revision=voter.revision,
             server_record=voter_to_public(voter),
         )
 
-    return _merge_existing(db, existing, snapshot, incoming, device_id, change.base_revision)
+    return _merge_existing(db, existing, snapshot, incoming, device_id, change.base_revision, privileged)
 
 
 def _apply_delete(
     db: Session,
-    change: SyncChange,
+    record_id: str,
     existing: Voter | None,
     incoming: datetime,
     device_id: str,
+    base_revision: int | None,
 ) -> SyncResult:
-    record_id = str(change.id)
     if existing is None:
         return SyncResult(
-            id=record_id,
+            voter_id=record_id,
             status="applied",
             message="No server record; delete ignored",
             server_revision=None,
@@ -188,7 +200,7 @@ def _apply_delete(
         return _conflict(existing, "Server record is newer")
     if incoming == stored and existing.deleted_at is not None:
         return SyncResult(
-            id=record_id,
+            voter_id=record_id,
             status="applied",
             message="Already deleted",
             server_revision=existing.revision,
@@ -196,7 +208,7 @@ def _apply_delete(
         )
     if incoming == stored and existing.deleted_at is None:
         return _conflict(existing, "Server record has the same updated_at and is still active")
-    if existing.deleted_at is None and _stale_base(existing, change.base_revision):
+    if existing.deleted_at is None and _stale_base(existing, base_revision):
         return _conflict(existing, "Server record changed after base_revision")
     stamp = dump_dt(incoming)
     strip_to_tombstone(existing)
@@ -206,7 +218,7 @@ def _apply_delete(
     existing.revision = allocate_revision(db)
     db.flush()
     return SyncResult(
-        id=record_id,
+        voter_id=record_id,
         status="applied",
         server_revision=existing.revision,
         server_record=voter_to_public(existing),
@@ -220,6 +232,7 @@ def _merge_existing(
     incoming: datetime,
     device_id: str,
     base_revision: int | None,
+    privileged: bool,
 ) -> SyncResult:
     stored = parse_dt(existing.updated_at)
     if incoming < stored:
@@ -227,7 +240,7 @@ def _merge_existing(
     if incoming == stored:
         if _same_content(existing, snapshot, deleted=False):
             return SyncResult(
-                id=existing.id,
+                voter_id=existing.voter_id,
                 status="applied",
                 message="Already stored",
                 server_revision=existing.revision,
@@ -236,6 +249,14 @@ def _merge_existing(
         return _conflict(existing, "Server record has the same updated_at and different content")
     if _stale_base(existing, base_revision):
         return _conflict(existing, "Server record changed after base_revision")
+    # Stale and replayed changes were handled above, so only a genuine edit reaches this
+    # check. Values equal to the stored ones are ignored: only real changes are refused.
+    if not privileged and existing.deleted_at is None:
+        blocked = disallowed_changes(existing, {f: getattr(snapshot, f) for f in DATA_FIELDS})
+        if blocked:
+            return _forbidden(existing, forbidden_fields_message(blocked))
+    if existing.deleted_at is not None:
+        existing.created_at = dump_dt(incoming)  # a revived row is a new voter, as on create/import
     _write_snapshot(existing, snapshot)
     existing.deleted_at = None
     existing.updated_at = dump_dt(incoming)
@@ -243,7 +264,7 @@ def _merge_existing(
     existing.revision = allocate_revision(db)
     db.flush()
     return SyncResult(
-        id=existing.id,
+        voter_id=existing.voter_id,
         status="applied",
         server_revision=existing.revision,
         server_record=voter_to_public(existing),
@@ -264,19 +285,9 @@ def _same_content(voter: Voter, snapshot: VoterWrite, *, deleted: bool) -> bool:
     return True
 
 
-def _active_voter_id_owner(db: Session, voter_id: str, exclude_id: str) -> Voter | None:
-    return db.scalar(
-        select(Voter).where(
-            Voter.voter_id == voter_id,
-            Voter.deleted_at.is_(None),
-            Voter.id != exclude_id,
-        )
-    )
-
-
 def _conflict(existing: Voter, message: str) -> SyncResult:
     return SyncResult(
-        id=existing.id,
+        voter_id=existing.voter_id,
         status="conflict",
         message=message,
         server_revision=existing.revision,

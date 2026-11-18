@@ -38,26 +38,31 @@ import kotlinx.coroutines.launch
 
 private data class TextField(val key: String, val label: String, val keyboard: KeyboardType = KeyboardType.Text)
 
-private val BEFORE_GENDER = listOf(
+/** Text inputs in the order of the voter list. Local/Non-Local and Party are drop-downs placed in between. */
+private val BEFORE_LOCAL = listOf(
+    TextField(FieldKey.BOOTH, "Booth"),
+    TextField(FieldKey.BOOTH_S_NO, "Booth S.No"),
+    TextField(FieldKey.WARD, "Ward"),
+    TextField(FieldKey.WARD_S_NO, "Ward S.No"),
     TextField(FieldKey.VOTER_ID, "VoterId"),
     TextField(FieldKey.FIRST_NAME, "FirstName"),
-    TextField(FieldKey.SURNAME, "SurName"),
+    TextField(FieldKey.LAST_NAME, "LastName"),
     TextField(FieldKey.RELATIVE_NAME, "RelativeName"),
     TextField(FieldKey.HOUSE_NO, "HouseNo"),
-    TextField(FieldKey.BOOTH_2024, "2024 Booth"),
-    TextField(FieldKey.BS_NO_2024, "2024 B.S.No"),
-    TextField(FieldKey.WARD_2026, "2026 Ward"),
-    TextField(FieldKey.WARD_S_NO, "Ward S No"),
-)
-private val AFTER_GENDER = listOf(
     TextField(FieldKey.AGE, "Age", KeyboardType.Number),
-    TextField(FieldKey.CASTE, "Caste"),
+    TextField(FieldKey.STREET, "Street"),
     TextField(FieldKey.MOBILE, "Mobile", KeyboardType.Phone),
-    TextField(FieldKey.C_CITY, "C_City"),
-    TextField(FieldKey.PROFESSION, "Profession"),
+    TextField(FieldKey.CASTE, "Caste"),
+    TextField(FieldKey.VILLAGE, "Village"),
+    TextField(FieldKey.PANCHAYATH, "Panchayath"),
+    TextField(FieldKey.MANDAL, "Mandal"),
+    TextField(FieldKey.CURRENT_CITY, "Current City"),
 )
 
 private const val NO_ANSWER = "(no answer)"
+private const val READ_ONLY_HINT = "Only an owner or admin can change this"
+private const val RESTRICTED_NOTICE =
+    "You can edit Party, Caste, Mobile, HouseNo and Street. Other fields are read-only; ask an owner or admin to change them."
 
 /** Saves the in-progress form (or "not loaded yet") across configuration changes; never written to disk. */
 private val NullableFormSaver: Saver<VoterForm?, Any> = Saver(
@@ -68,15 +73,15 @@ private val NullableFormSaver: Saver<VoterForm?, Any> = Saver(
 private const val NOT_LOADED = "not-loaded"
 
 @Composable
-fun EditScreen(vm: AppViewModel, id: String?) {
-    var form by rememberSaveable(id, stateSaver = NullableFormSaver) { mutableStateOf<VoterForm?>(null) }
-    var errors by remember(id) { mutableStateOf<Map<String, String>>(emptyMap()) }
+fun EditScreen(vm: AppViewModel, voterId: String?) {
+    var form by rememberSaveable(voterId, stateSaver = NullableFormSaver) { mutableStateOf<VoterForm?>(null) }
+    var errors by remember(voterId) { mutableStateOf<Map<String, String>>(emptyMap()) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(id) {
+    LaunchedEffect(voterId) {
         // After rotation the restored form already holds the operator's typed text; do not overwrite it.
         if (form != null) return@LaunchedEffect
-        val loaded = vm.formFor(id)
+        val loaded = vm.formFor(voterId)
         if (loaded == null) vm.go(Screen.Search) else form = loaded
     }
 
@@ -86,26 +91,38 @@ fun EditScreen(vm: AppViewModel, id: String?) {
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(if (id == null) "Add voter" else "Edit voter", style = MaterialTheme.typography.headlineSmall)
-        BEFORE_GENDER.forEach { f -> Field(f, current, errors) { form = it } }
+        Text(if (voterId == null) "Add voter" else "Edit voter", style = MaterialTheme.typography.headlineSmall)
+        // VoterId is the unique key: typed once when adding, read-only text when editing.
+        // On an existing voter a regular user may edit only Party, Caste, Mobile, HouseNo and Street; the
+        // other fields stay visible but read-only. Owner/admin may edit everything but VoterId.
+        val restricted = voterId != null && !vm.canEditAllFields
+        fun lockedByRole(key: String) = restricted && key !in FieldKey.USER_EDITABLE
+        if (restricted) {
+            Text(RESTRICTED_NOTICE, style = MaterialTheme.typography.bodyMedium)
+        }
+        BEFORE_LOCAL.forEach { f ->
+            val idLocked = voterId != null && f.key == FieldKey.VOTER_ID
+            Field(f, current, errors, readOnly = idLocked || lockedByRole(f.key), idLocked = idLocked) { form = it }
+        }
         Dropdown(
-            label = "Gender",
-            value = current.gender,
-            options = Vocab.GENDERS,
-            error = errors[FieldKey.GENDER],
-        ) { form = current.with(FieldKey.GENDER, it) }
-        AFTER_GENDER.forEach { f -> Field(f, current, errors) { form = it } }
+            label = "Local/Non-Local",
+            value = current.isLocal,
+            options = Vocab.LOCAL_OPTIONS,
+            error = errors[FieldKey.IS_LOCAL],
+            locked = lockedByRole(FieldKey.IS_LOCAL),
+        ) { form = current.with(FieldKey.IS_LOCAL, it) }
         Dropdown(
             label = "Party",
             value = current.party,
             options = listOf("") + Vocab.PARTIES,
             error = errors[FieldKey.PARTY],
+            locked = lockedByRole(FieldKey.PARTY),
         ) { form = current.with(FieldKey.PARTY, it) }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = {
                 scope.launch {
-                    when (val result = vm.save(id, current)) {
+                    when (val result = vm.save(voterId, current)) {
                         is SaveResult.Invalid -> errors = result.errors
                         is SaveResult.Saved -> vm.go(Screen.Search)
                     }
@@ -117,14 +134,28 @@ fun EditScreen(vm: AppViewModel, id: String?) {
 }
 
 @Composable
-private fun Field(spec: TextField, form: VoterForm, errors: Map<String, String>, onChange: (VoterForm) -> Unit) {
+private fun Field(
+    spec: TextField,
+    form: VoterForm,
+    errors: Map<String, String>,
+    readOnly: Boolean = false,
+    idLocked: Boolean = false,
+    onChange: (VoterForm) -> Unit,
+) {
     OutlinedTextField(
         value = form.get(spec.key),
-        onValueChange = { onChange(form.with(spec.key, it)) },
+        onValueChange = { if (!readOnly) onChange(form.with(spec.key, it)) },
+        readOnly = readOnly,
         label = { Text(spec.label) },
         singleLine = true,
         isError = spec.key in errors,
-        supportingText = errors[spec.key]?.let { { Text(it) } },
+        supportingText = (
+            errors[spec.key] ?: when {
+                idLocked -> "VoterId cannot be changed"
+                readOnly -> READ_ONLY_HINT
+                else -> null
+            }
+            )?.let { { Text(it) } },
         keyboardOptions = KeyboardOptions(keyboardType = spec.keyboard),
         modifier = Modifier.fillMaxWidth(),
     )
@@ -137,17 +168,19 @@ private fun Dropdown(
     value: String,
     options: List<String>,
     error: String?,
+    locked: Boolean = false,
     onSelect: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+    // A locked dropdown shows its value but never opens, so the role rule cannot be bypassed by tapping.
+    ExposedDropdownMenuBox(expanded = expanded && !locked, onExpandedChange = { expanded = it && !locked }) {
         OutlinedTextField(
             value = value.ifEmpty { NO_ANSWER },
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
             isError = error != null,
-            supportingText = error?.let { { Text(it) } },
+            supportingText = (error ?: if (locked) READ_ONLY_HINT else null)?.let { { Text(it) } },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth(),
         )

@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.constants import SYNC_BATCH_LIMIT
 from app.validation import (
     canonical_age,
-    canonical_gender,
+    canonical_local,
     canonical_mobile,
     canonical_party,
     canonical_username,
     canonical_voter_id,
     clean_text,
     limit_text,
+    local_label,
     require_text,
 )
 
@@ -115,44 +115,54 @@ class PasswordChangeResult(UserPublic):
 
 
 class VoterWrite(BaseModel):
-    """Full voter snapshot used by create and by sync push."""
+    """Full voter snapshot used by create and by sync push. voter_id is the primary key."""
 
     model_config = ConfigDict(extra="forbid")
 
-    id: UUID | None = None
-    booth_2024: str | None = None
-    bs_no_2024: str | None = None
-    ward_2026: str | None = None
+    booth: str | None = Field(default=None, validation_alias=AliasChoices("booth", "booth_2024"))
+    booth_s_no: str | None = None
+    ward: str | None = Field(default=None, validation_alias=AliasChoices("ward", "ward_2026"))
     ward_s_no: str | None = None
     voter_id: str
     first_name: str
-    surname: str | None = None
+    last_name: str | None = None
     relative_name: str | None = None
     house_no: str | None = None
-    gender: str = "Unknown"
     age: int | None = None
-    caste: str | None = None
+    street: str | None = None
     mobile: str | None = None
-    c_city: str | None = None
-    profession: str | None = None
+    caste: str | None = None
+    village: str | None = None
+    panchayath: str | None = None
+    mandal: str | None = None
+    current_city: str | None = None
+    is_local: bool = False
     party: str | None = None
 
     @field_validator(
-        "booth_2024",
-        "bs_no_2024",
-        "ward_2026",
+        "booth",
+        "booth_s_no",
+        "ward",
         "ward_s_no",
-        "surname",
+        "last_name",
         "relative_name",
         "house_no",
+        "street",
+        "village",
+        "panchayath",
+        "mandal",
+        "current_city",
         "caste",
-        "c_city",
-        "profession",
         mode="before",
     )
     @classmethod
     def _texts(cls, value: object, info) -> str | None:  # noqa: ANN001
         return limit_text(clean_text(value), info.field_name)
+
+    @field_validator("is_local", mode="before")
+    @classmethod
+    def _local(cls, value: object) -> bool:
+        return canonical_local(value)
 
     @field_validator("voter_id", mode="before")
     @classmethod
@@ -165,11 +175,6 @@ class VoterWrite(BaseModel):
         text = limit_text(require_text(value, "FirstName"), "first_name")
         assert text is not None
         return text
-
-    @field_validator("gender", mode="before")
-    @classmethod
-    def _gender(cls, value: object) -> str:
-        return canonical_gender(value)
 
     @field_validator("party", mode="before")
     @classmethod
@@ -190,34 +195,40 @@ class VoterWrite(BaseModel):
 class VoterPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    booth_2024: str | None = None
-    bs_no_2024: str | None = None
-    ward_2026: str | None = None
+    booth: str | None = Field(default=None, validation_alias=AliasChoices("booth", "booth_2024"))
+    booth_s_no: str | None = None
+    ward: str | None = Field(default=None, validation_alias=AliasChoices("ward", "ward_2026"))
     ward_s_no: str | None = None
     voter_id: str | None = None
     first_name: str | None = None
-    surname: str | None = None
+    last_name: str | None = None
     relative_name: str | None = None
     house_no: str | None = None
-    gender: str | None = None
     age: int | None = None
-    caste: str | None = None
+    street: str | None = None
     mobile: str | None = None
-    c_city: str | None = None
-    profession: str | None = None
+    caste: str | None = None
+    village: str | None = None
+    panchayath: str | None = None
+    mandal: str | None = None
+    current_city: str | None = None
+    is_local: bool | None = None
     party: str | None = None
 
     @field_validator(
-        "booth_2024",
-        "bs_no_2024",
-        "ward_2026",
+        "booth",
+        "booth_s_no",
+        "ward",
         "ward_s_no",
-        "surname",
+        "last_name",
         "relative_name",
         "house_no",
+        "street",
+        "village",
+        "panchayath",
+        "mandal",
+        "current_city",
         "caste",
-        "c_city",
-        "profession",
         mode="before",
     )
     @classmethod
@@ -225,6 +236,13 @@ class VoterPatch(BaseModel):
         if value is None:
             return None
         return limit_text(clean_text(value), info.field_name)
+
+    @field_validator("is_local", mode="before")
+    @classmethod
+    def _local(cls, value: object) -> bool:
+        if value is None:
+            raise ValueError("Local/Non-Local cannot be null")
+        return canonical_local(value)
 
     @field_validator("voter_id", mode="before")
     @classmethod
@@ -241,13 +259,6 @@ class VoterPatch(BaseModel):
         text = limit_text(require_text(value, "FirstName"), "first_name")
         assert text is not None
         return text
-
-    @field_validator("gender", mode="before")
-    @classmethod
-    def _gender(cls, value: object) -> str | None:
-        if value is None:
-            raise ValueError("Gender cannot be null")
-        return canonical_gender(value)
 
     @field_validator("party", mode="before")
     @classmethod
@@ -268,22 +279,24 @@ class VoterPatch(BaseModel):
 class VoterPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
-    booth_2024: str | None
-    bs_no_2024: str | None
-    ward_2026: str | None
-    ward_s_no: str | None
     voter_id: str
+    booth: str | None
+    booth_s_no: str | None
+    ward: str | None
+    ward_s_no: str | None
     first_name: str
-    surname: str | None
+    last_name: str | None
     relative_name: str | None
     house_no: str | None
-    gender: str
     age: int | None
-    caste: str | None
+    street: str | None
     mobile: str | None
-    c_city: str | None
-    profession: str | None
+    caste: str | None
+    village: str | None
+    panchayath: str | None
+    mandal: str | None
+    current_city: str | None
+    is_local: bool
     party: str | None
     created_at: str
     updated_at: str
@@ -304,36 +317,51 @@ class VoterSearch(BaseModel):
 
     q: str | None = Field(default=None, max_length=100)
     voter_id: str | None = Field(default=None, max_length=32)
-    house_no: str | None = Field(default=None, max_length=64)
+    village: str | None = Field(default=None, max_length=128)
+    # Local / Non-Local narrows the list; blank (or "Any") applies no filter.
+    is_local: str | None = Field(default=None, max_length=16)
+    panchayath: str | None = Field(default=None, max_length=128)
+    mandal: str | None = Field(default=None, max_length=128)
     booth: str | None = Field(default=None, max_length=64)
     ward: str | None = Field(default=None, max_length=64)
     caste: str | None = Field(default=None, max_length=128)
     party: str | None = Field(default=None, max_length=32)
     mobile: str | None = Field(default=None, max_length=20)
-    gender: str | None = Field(default=None, max_length=16)
     page: int = 1
     page_size: int = 50
 
     @field_validator(
         "q",
         "voter_id",
-        "house_no",
+        "village",
+        "is_local",
+        "panchayath",
+        "mandal",
         "booth",
         "ward",
         "caste",
         "party",
         "mobile",
-        "gender",
         mode="before",
     )
     @classmethod
     def _blank(cls, value: object) -> str | None:
         if value is None:
             return None
+        if isinstance(value, bool):
+            return local_label(value)
         if not isinstance(value, str):
             raise ValueError("Expected text")
         text = value.strip()
         return text or None
+
+    @field_validator("is_local")
+    @classmethod
+    def _local_filter(cls, value: str | None) -> str | None:
+        """Normalise to 'Local' / 'Non-Local'; 'Any' means no filter."""
+        if value is None or value.casefold() == "any":
+            return None
+        return local_label(canonical_local(value))
 
     @field_validator("page")
     @classmethod
@@ -348,13 +376,6 @@ class VoterSearch(BaseModel):
         if value < 1 or value > 200:
             raise ValueError("page_size must be between 1 and 200")
         return value
-
-    @field_validator("gender")
-    @classmethod
-    def _gender(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        return canonical_gender(value)
 
     @field_validator("party")
     @classmethod
@@ -389,38 +410,42 @@ class ReportSummary(BaseModel):
     total: int
     by_booth: list[CountRow]
     by_ward: list[CountRow]
-    by_gender: list[CountRow]
+    by_village: list[CountRow]
+    by_panchayath: list[CountRow]
+    by_mandal: list[CountRow]
+    by_local: list[CountRow]
     by_age_band: list[CountRow]
     by_caste: list[CountRow]
     by_party: list[CountRow]
-    by_profession: list[CountRow]
 
 
 class SyncChange(BaseModel):
-    """One offline record. A non-delete is a full snapshot, not a patch."""
+    """One offline record, keyed by voter_id. A non-delete is a full snapshot, not a patch."""
 
     model_config = ConfigDict(extra="forbid")
 
-    id: UUID
+    voter_id: str
     updated_at: datetime
     deleted: bool = False
     base_revision: int | None = None
     created_at: datetime | None = None
-    booth_2024: str | None = None
-    bs_no_2024: str | None = None
-    ward_2026: str | None = None
+    booth: str | None = Field(default=None, validation_alias=AliasChoices("booth", "booth_2024"))
+    booth_s_no: str | None = None
+    ward: str | None = Field(default=None, validation_alias=AliasChoices("ward", "ward_2026"))
     ward_s_no: str | None = None
-    voter_id: str | None = None
     first_name: str | None = None
-    surname: str | None = None
+    last_name: str | None = None
     relative_name: str | None = None
     house_no: str | None = None
-    gender: str | None = None
     age: int | None = None
-    caste: str | None = None
+    street: str | None = None
     mobile: str | None = None
-    c_city: str | None = None
-    profession: str | None = None
+    caste: str | None = None
+    village: str | None = None
+    panchayath: str | None = None
+    mandal: str | None = None
+    current_city: str | None = None
+    is_local: bool | str | None = None
     party: str | None = None
 
     @field_validator("age", mode="before")
@@ -449,7 +474,7 @@ class SyncPushRequest(BaseModel):
 
 
 class SyncResult(BaseModel):
-    id: str
+    voter_id: str
     status: str
     message: str | None = None
     server_revision: int | None = None

@@ -5,13 +5,12 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta, timezone
 
-from app.constants import GENDERS, PARTIES, TEXT_LIMITS
+from app.constants import PARTIES, TEXT_LIMITS
 
 _MOBILE_SEPARATORS = re.compile(r"[\s\-().]")
 _VOTER_ID = re.compile(r"^[A-Z0-9]{3,32}$")
 _USERNAME = re.compile(r"^[A-Za-z0-9._-]{3,32}$")
 
-_GENDER_LOOKUP = {value.casefold(): value for value in GENDERS}
 _PARTY_LOOKUP = {value.casefold(): value for value in PARTIES}
 
 FORMULA_PREFIXES = frozenset({"=", "+", "-", "@", "\t", "\r"})
@@ -33,6 +32,32 @@ def clean_text(value: object) -> str | None:
     return text
 
 
+_YES = frozenset({"yes", "y", "true", "1", "local"})
+_NO = frozenset({"no", "n", "false", "0", "non-local", "non local", "nonlocal"})
+
+
+def canonical_local(value: object) -> bool:
+    """Local/Non-Local as a boolean. Yes/Local is true; blank, No and Non-Local are false."""
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        key = value.strip().casefold()
+        if key == "" or key in _NO:
+            return False
+        if key in _YES:
+            return True
+    raise ValueError("Local/Non-Local must be Local or Non-Local")
+
+
+def local_label(value: bool | None) -> str:
+    """Label shown in the web form, list, CSV and Excel."""
+    return "Local" if value else "Non-Local"
+
+
 def require_text(value: object, label: str) -> str:
     text = clean_text(value)
     if text is None:
@@ -47,19 +72,6 @@ def limit_text(value: str | None, field: str) -> str | None:
     if len(value) > limit:
         raise ValueError(f"Use at most {limit} characters")
     return value
-
-
-def canonical_gender(value: object) -> str:
-    if value is None or (isinstance(value, str) and not value.strip()):
-        return "Unknown"
-    text = clean_text(value)
-    if text is None:
-        return "Unknown"
-    found = _GENDER_LOOKUP.get(text.casefold())
-    if found is None:
-        allowed = ", ".join(GENDERS)
-        raise ValueError(f"Gender must be one of: {allowed}")
-    return found
 
 
 def canonical_party(value: object) -> str | None:

@@ -29,12 +29,14 @@
 </section>
 {% endmacro %}
 <div class="report-grid">
-  {{ breakdown("2024 Booth", report.by_booth) }}
-  {{ breakdown("2026 Ward", report.by_ward) }}
-  {{ breakdown("Gender", report.by_gender) }}
+  {{ breakdown("Booth", report.by_booth) }}
+  {{ breakdown("Ward", report.by_ward) }}
+  {{ breakdown("Village", report.by_village) }}
+  {{ breakdown("Panchayath", report.by_panchayath) }}
+  {{ breakdown("Mandal", report.by_mandal) }}
+  {{ breakdown("Local/Non-Local", report.by_local) }}
   {{ breakdown("Age band", report.by_age_band) }}
   {{ breakdown("Caste", report.by_caste) }}
   {{ breakdown("Party", report.by_party) }}
-  {{ breakdown("Profession", report.by_profession) }}
 </div>
 {% endblock %}
