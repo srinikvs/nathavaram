@@ -19,6 +19,7 @@ class VoterFormSavedStateTest {
         age = "41",
         mobile = "9000000001",
         party = "Independent",
+        constituency = "Sampleconstituency",
     )
 
     @Test
@@ -41,6 +42,7 @@ class VoterFormSavedStateTest {
     @Test
     fun `a list of the wrong size or type is rejected`() {
         assertNull(VoterForm.fromSavedList(listOf("a", "b")))
-        assertNull(VoterForm.fromSavedList(List(19) { if (it == 3) 7 else "x" }))
+        assertNull(VoterForm.fromSavedList(List(20) { if (it == 3) 7 else "x" }))
+        assertNull(VoterForm.fromSavedList(List(19) { "x" }))
     }
 }

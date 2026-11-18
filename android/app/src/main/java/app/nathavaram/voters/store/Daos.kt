@@ -36,7 +36,8 @@ interface VoterDao {
             last_name LIKE :pattern ESCAPE '\' OR relative_name LIKE :pattern ESCAPE '\' OR
             mobile LIKE :pattern ESCAPE '\' OR house_no LIKE :pattern ESCAPE '\' OR
             street LIKE :pattern ESCAPE '\' OR village LIKE :pattern ESCAPE '\' OR
-            panchayath LIKE :pattern ESCAPE '\' OR mandal LIKE :pattern ESCAPE '\'
+            panchayath LIKE :pattern ESCAPE '\' OR mandal LIKE :pattern ESCAPE '\' OR
+            constituency LIKE :pattern ESCAPE '\'
         )
         ORDER BY first_name COLLATE NOCASE, voter_id
         LIMIT :limit

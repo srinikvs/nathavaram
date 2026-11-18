@@ -24,6 +24,7 @@ object ConflictDiff {
         "Current City" to { it.currentCity },
         "Local/Non-Local" to { if (it.isLocal) "Local" else "Non-Local" },
         "Party" to { it.party },
+        "Constituency" to { it.constituency },
     )
 
     fun diff(local: VoterDto?, server: VoterDto?): List<FieldDiff> {

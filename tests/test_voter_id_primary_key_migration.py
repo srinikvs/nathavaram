@@ -18,7 +18,7 @@ OLD_HEAD = "0006_fold_house_no_into_address"
 REQUESTED_COLUMNS = [
     "voter_id", "booth", "booth_s_no", "ward", "ward_s_no", "first_name", "last_name",
     "relative_name", "house_no", "age", "street", "mobile", "caste", "village",
-    "panchayath", "mandal", "current_city", "is_local", "party",
+    "panchayath", "mandal", "current_city", "is_local", "party", "constituency",
 ]
 SYNC_COLUMNS = {"created_at", "updated_at", "revision", "deleted_at", "source_id"}
 
@@ -200,3 +200,16 @@ def test_upgrade_resumes_after_a_run_that_died_after_the_rename(old_db):
     tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     con.close()
     assert "voters_old" not in tables
+
+
+def test_constituency_is_added_last_and_downgrade_drops_it(old_db):
+    command.upgrade(_config(old_db), "head")
+
+    names = [row[1] for row in _table_info(old_db)]
+    assert [n for n in names if n not in SYNC_COLUMNS][-1] == "constituency"
+    assert _rows(old_db)["AAA1000001"]["constituency"] is None
+
+    command.downgrade(_config(old_db), "0007_voter_id_primary_key")
+
+    assert "constituency" not in [row[1] for row in _table_info(old_db)]
+    assert len(_rows(old_db)) == 5

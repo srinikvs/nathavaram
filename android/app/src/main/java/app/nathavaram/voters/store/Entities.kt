@@ -34,6 +34,7 @@ data class VoterEntity(
     /** Local / Non-Local. Defaults to Non-Local (false). */
     @ColumnInfo(name = "is_local", defaultValue = "0") val isLocal: Boolean = false,
     val party: String? = null,
+    val constituency: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: String,
     @ColumnInfo(name = "updated_at") val updatedAt: String,
     val revision: Long = 0,

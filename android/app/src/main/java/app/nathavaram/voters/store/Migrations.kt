@@ -106,6 +106,13 @@ object Migrations {
         }
     }
 
+    /** Adds the nullable `constituency` column; every existing row keeps its data and gets null. */
+    val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `voters` ADD COLUMN `constituency` TEXT")
+        }
+    }
+
     private const val HOUSE_PREFIX = "H.No "
     private const val HOUSE_NO_MAX = 64
 

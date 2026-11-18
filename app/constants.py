@@ -28,6 +28,7 @@ VOTER_COLUMNS: tuple[tuple[str, str], ...] = (
     ("current_city", "Current City"),
     ("is_local", "Local/Non-Local"),
     ("party", "Party"),
+    ("constituency", "Constituency"),
 )
 
 CSV_HEADERS: tuple[str, ...] = tuple(label for _, label in VOTER_COLUMNS)
@@ -121,6 +122,7 @@ TEXT_LIMITS: dict[str, int] = {
     "mandal": 128,
     "current_city": 128,
     "party": 32,
+    "constituency": 128,
 }
 
 # Filters that can expose personal data. They travel in a POST body, never in a URL.

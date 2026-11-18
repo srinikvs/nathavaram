@@ -20,7 +20,7 @@ def test_sample_header_and_import(ctx):
     assert header.split(",") == list(CSV_HEADERS)
     rows = SAMPLE.read_text(encoding="utf-8").strip().splitlines()
     assert len(rows) == 10
-    assert rows[1].endswith(",")
+    assert rows[1].endswith(",Sampleconstituency")
 
     imported = ctx.client.post(
         "/api/voters/import.csv",
@@ -144,6 +144,7 @@ def test_csv_and_excel_round_trip_telugu(ctx):
     assert sheet["B1"].value == "Booth S.No"
     assert sheet["E1"].value == "VoterId"
     assert sheet["S1"].value == "Party"
+    assert sheet["T1"].value == "Constituency"
     assert sheet["R1"].value == "Local/Non-Local"
 
 

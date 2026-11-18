@@ -30,6 +30,7 @@ object SyncMerge {
         houseNo = e.houseNo, age = e.age, street = e.street, mobile = e.mobile, caste = e.caste,
         village = e.village, panchayath = e.panchayath, mandal = e.mandal,
         currentCity = e.currentCity, isLocal = e.isLocal, party = e.party,
+        constituency = e.constituency,
     )
 
     fun toDto(e: VoterEntity): VoterDto = VoterDto(
@@ -39,6 +40,7 @@ object SyncMerge {
         houseNo = e.houseNo, age = e.age, street = e.street, mobile = e.mobile, caste = e.caste,
         village = e.village, panchayath = e.panchayath, mandal = e.mandal,
         currentCity = e.currentCity, isLocal = e.isLocal, party = e.party,
+        constituency = e.constituency,
         createdAt = e.createdAt, updatedAt = e.updatedAt, revision = e.revision,
         deletedAt = e.deletedAt, sourceId = e.sourceId,
     )
@@ -52,7 +54,7 @@ object SyncMerge {
             houseNo = dto.houseNo, age = dto.age, street = dto.street, mobile = dto.mobile,
             caste = dto.caste, village = dto.village, panchayath = dto.panchayath,
             mandal = dto.mandal, currentCity = dto.currentCity, isLocal = dto.isLocal,
-            party = dto.party, createdAt = dto.createdAt, updatedAt = dto.updatedAt,
+            party = dto.party, constituency = dto.constituency, createdAt = dto.createdAt, updatedAt = dto.updatedAt,
             revision = dto.revision, deletedAt = null, sourceId = dto.sourceId, dirty = false,
         )
 

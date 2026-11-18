@@ -23,6 +23,7 @@ object FieldKey {
     const val CURRENT_CITY = "current_city"
     const val IS_LOCAL = "is_local"
     const val PARTY = "party"
+    const val CONSTITUENCY = "constituency"
 
     /**
      * The only fields the regular "user" role may change on an existing voter (same list as the
@@ -53,6 +54,7 @@ data class VoterForm(
     /** "Local" or "Non-Local". */
     val isLocal: String = Vocab.NON_LOCAL,
     val party: String = "",
+    val constituency: String = "",
 ) {
     fun get(key: String): String = when (key) {
         FieldKey.BOOTH -> booth
@@ -74,6 +76,7 @@ data class VoterForm(
         FieldKey.CURRENT_CITY -> currentCity
         FieldKey.IS_LOCAL -> isLocal
         FieldKey.PARTY -> party
+        FieldKey.CONSTITUENCY -> constituency
         else -> ""
     }
 
@@ -97,6 +100,7 @@ data class VoterForm(
         FieldKey.CURRENT_CITY -> copy(currentCity = value)
         FieldKey.IS_LOCAL -> copy(isLocal = value)
         FieldKey.PARTY -> copy(party = value)
+        FieldKey.CONSTITUENCY -> copy(constituency = value)
         else -> this
     }
 
@@ -112,7 +116,7 @@ data class VoterForm(
     /** Flat list of every field in declaration order, for instance-state saving (rotation). */
     fun toSavedList(): List<String> = listOf(
         booth, boothSNo, ward, wardSNo, voterId, firstName, lastName, relativeName, houseNo,
-        age, street, mobile, caste, village, panchayath, mandal, currentCity, isLocal, party,
+        age, street, mobile, caste, village, panchayath, mandal, currentCity, isLocal, party, constituency,
     )
 
     companion object {
@@ -125,11 +129,11 @@ data class VoterForm(
                 voterId = s[4], firstName = s[5], lastName = s[6], relativeName = s[7],
                 houseNo = s[8], age = s[9], street = s[10], mobile = s[11], caste = s[12],
                 village = s[13], panchayath = s[14], mandal = s[15], currentCity = s[16],
-                isLocal = s[17], party = s[18],
+                isLocal = s[17], party = s[18], constituency = s[19],
             )
         }
 
-        private const val FIELD_COUNT = 19
+        private const val FIELD_COUNT = 20
 
         fun from(e: VoterEntity): VoterForm = VoterForm(
             booth = e.booth.orEmpty(),
@@ -151,6 +155,7 @@ data class VoterForm(
             currentCity = e.currentCity.orEmpty(),
             isLocal = if (e.isLocal) Vocab.LOCAL else Vocab.NON_LOCAL,
             party = e.party.orEmpty(),
+            constituency = e.constituency.orEmpty(),
         )
     }
 }

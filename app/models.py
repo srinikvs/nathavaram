@@ -83,6 +83,7 @@ class Voter(Base):
     # Default No (Non-Local): rows that existed before the column was added migrate as not local.
     is_local: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
     party: Mapped[str | None] = mapped_column(String(32))
+    constituency: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, index=True)

@@ -20,6 +20,7 @@ def test_create_search_update_and_soft_delete(ctx):
     assert body["street"] == "Sample Street"
     assert body["panchayath"] == "Samplepanchayath"
     assert body["mandal"] == "Samplemandal"
+    assert body["constituency"] == "Sampleconstituency"
     assert "id" not in body
     assert body["voter_id"] == "ZZZ1000001"
     assert body["revision"] >= 1
@@ -39,6 +40,7 @@ def test_create_search_update_and_soft_delete(ctx):
     assert by_party.json()["total"] == 0
     assert search(ctx, panchayath="samplepanch").json()["total"] == 1
     assert search(ctx, mandal="samplemandal").json()["total"] == 1
+    assert search(ctx, q="sampleconstituency").json()["total"] == 1
     assert search(ctx, is_local="Local").json()["total"] == 1
     assert search(ctx, is_local="Non-Local").json()["total"] == 0
 
@@ -250,7 +252,7 @@ def test_soft_delete_keeps_only_the_key_and_strips_every_personal_field(ctx):
     assert tomb["revision"] == body["revision"]
     for field in (
         "mobile", "caste", "party", "last_name", "relative_name", "house_no", "street",
-        "village", "panchayath", "mandal", "current_city", "age", "booth", "ward",
+        "village", "panchayath", "mandal", "current_city", "age", "booth", "ward", "constituency",
     ):
         assert tomb[field] is None, field
     assert tomb["first_name"] == ""

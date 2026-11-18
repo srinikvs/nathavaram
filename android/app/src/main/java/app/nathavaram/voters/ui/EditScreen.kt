@@ -118,6 +118,10 @@ fun EditScreen(vm: AppViewModel, voterId: String?) {
             error = errors[FieldKey.PARTY],
             locked = lockedByRole(FieldKey.PARTY),
         ) { form = current.with(FieldKey.PARTY, it) }
+        Field(
+            TextField(FieldKey.CONSTITUENCY, "Constituency"), current, errors,
+            readOnly = lockedByRole(FieldKey.CONSTITUENCY), idLocked = false,
+        ) { form = it }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = {

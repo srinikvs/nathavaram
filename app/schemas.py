@@ -138,6 +138,7 @@ class VoterWrite(BaseModel):
     current_city: str | None = None
     is_local: bool = False
     party: str | None = None
+    constituency: str | None = None
 
     @field_validator(
         "booth",
@@ -152,6 +153,7 @@ class VoterWrite(BaseModel):
         "panchayath",
         "mandal",
         "current_city",
+        "constituency",
         "caste",
         mode="before",
     )
@@ -214,6 +216,7 @@ class VoterPatch(BaseModel):
     current_city: str | None = None
     is_local: bool | None = None
     party: str | None = None
+    constituency: str | None = None
 
     @field_validator(
         "booth",
@@ -228,6 +231,7 @@ class VoterPatch(BaseModel):
         "panchayath",
         "mandal",
         "current_city",
+        "constituency",
         "caste",
         mode="before",
     )
@@ -298,6 +302,7 @@ class VoterPublic(BaseModel):
     current_city: str | None
     is_local: bool
     party: str | None
+    constituency: str | None
     created_at: str
     updated_at: str
     revision: int
@@ -447,6 +452,7 @@ class SyncChange(BaseModel):
     current_city: str | None = None
     is_local: bool | str | None = None
     party: str | None = None
+    constituency: str | None = None
 
     @field_validator("age", mode="before")
     @classmethod
