@@ -13,7 +13,7 @@ class ForbiddenResultTest {
     private val now = "2026-11-11T13:00:00.000000Z"
 
     private fun forbidden(record: VoterDto?) = PushResult(
-        id = Fixtures.ID_1,
+        voterId = Fixtures.VOTER_1,
         status = ResultStatus.FORBIDDEN,
         message = "Your role cannot change: Ward.",
         serverRevision = record?.revision,
@@ -48,19 +48,25 @@ class ForbiddenResultTest {
     }
 
     @Test
-    fun `push change and pulled record carry address village permanent address and local, not house no`() {
-        val entity = Fixtures.entity(village = "Samplevillage", isLocal = true).copy(permanentAddress = "Sample Lane 5")
+    fun `push change and pulled record carry the new columns and none of the removed ones`() {
+        val entity = Fixtures.entity(village = "Samplevillage", isLocal = true)
+            .copy(panchayath = "Samplepanchayath", mandal = "Samplemandal", currentCity = "Samplecity")
 
         val push = SyncMerge.toPushChange(entity)
         val json = SyncJson.json.encodeToString(PushChange.serializer(), push)
         val back = SyncMerge.fromDto(SyncMerge.toDto(entity))
 
-        assertEquals("H.No 12-A", push.address)
+        assertEquals("12-A", push.houseNo)
+        assertEquals("Main Street", push.street)
         assertEquals("Samplevillage", push.village)
-        assertEquals("Sample Lane 5", push.permanentAddress)
+        assertEquals("Samplepanchayath", push.panchayath)
+        assertEquals("Samplemandal", push.mandal)
+        assertEquals("Samplecity", push.currentCity)
         assertTrue(push.isLocal)
-        assertTrue("\"is_local\":true" in json && "\"permanent_address\"" in json)
-        assertFalse("house_no" in json)
+        assertTrue("\"is_local\":true" in json && "\"house_no\":\"12-A\"" in json)
+        for (gone in listOf("gender", "permanent_address", "profession", "surname", "\"address\"", "c_city", "bs_no_2024", "\"id\"")) {
+            assertFalse(gone, gone in json)
+        }
         assertEquals(entity.copy(dirty = false), back.copy(dirty = false))
     }
 
@@ -73,13 +79,13 @@ class ForbiddenResultTest {
 
     @Test
     fun `conflict screen lists the new fields and no house no`() {
-        val local = Fixtures.dto().copy(address = "A", village = "V1", permanentAddress = "P1", isLocal = true)
-        val server = Fixtures.dto().copy(address = "B", village = "V2", permanentAddress = "P2", isLocal = false)
+        val local = Fixtures.dto().copy(street = "A", houseNo = "1", village = "V1", panchayath = "P1", mandal = "M1", isLocal = true)
+        val server = Fixtures.dto().copy(street = "B", houseNo = "2", village = "V2", panchayath = "P2", mandal = "M2", isLocal = false)
 
         val labels = ConflictDiff.diff(local, server).map { it.label }
 
-        assertTrue(labels.containsAll(listOf("Address", "Village", "Permanent address", "Local")))
-        assertFalse("HouseNo" in labels)
+        assertTrue(labels.containsAll(listOf("Street", "HouseNo", "Village", "Panchayath", "Mandal", "Local/Non-Local")))
+        assertFalse("Permanent address" in labels)
         assertNull(ConflictDiff.diff(local, local).firstOrNull())
     }
 }

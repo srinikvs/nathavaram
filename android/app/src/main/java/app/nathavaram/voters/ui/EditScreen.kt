@@ -38,31 +38,31 @@ import kotlinx.coroutines.launch
 
 private data class TextField(val key: String, val label: String, val keyboard: KeyboardType = KeyboardType.Text)
 
-private val BEFORE_GENDER = listOf(
+/** Text inputs in the order of the voter list. Local/Non-Local and Party are drop-downs placed in between. */
+private val BEFORE_LOCAL = listOf(
+    TextField(FieldKey.BOOTH, "Booth"),
+    TextField(FieldKey.BOOTH_S_NO, "Booth S.No"),
+    TextField(FieldKey.WARD, "Ward"),
+    TextField(FieldKey.WARD_S_NO, "Ward S.No"),
     TextField(FieldKey.VOTER_ID, "VoterId"),
     TextField(FieldKey.FIRST_NAME, "FirstName"),
-    TextField(FieldKey.SURNAME, "SurName"),
+    TextField(FieldKey.LAST_NAME, "LastName"),
     TextField(FieldKey.RELATIVE_NAME, "RelativeName"),
-    TextField(FieldKey.ADDRESS, "Address"),
-    TextField(FieldKey.VILLAGE, "Village"),
-    TextField(FieldKey.PERMANENT_ADDRESS, "Permanent address"),
-    TextField(FieldKey.BOOTH, "Booth"),
-    TextField(FieldKey.BS_NO_2024, "2024 B.S.No"),
-    TextField(FieldKey.WARD, "Ward"),
-    TextField(FieldKey.WARD_S_NO, "Ward S No"),
-)
-private val AFTER_GENDER = listOf(
+    TextField(FieldKey.HOUSE_NO, "HouseNo"),
     TextField(FieldKey.AGE, "Age", KeyboardType.Number),
-    TextField(FieldKey.CASTE, "Caste"),
+    TextField(FieldKey.STREET, "Street"),
     TextField(FieldKey.MOBILE, "Mobile", KeyboardType.Phone),
-    TextField(FieldKey.C_CITY, "C_City"),
-    TextField(FieldKey.PROFESSION, "Profession"),
+    TextField(FieldKey.CASTE, "Caste"),
+    TextField(FieldKey.VILLAGE, "Village"),
+    TextField(FieldKey.PANCHAYATH, "Panchayath"),
+    TextField(FieldKey.MANDAL, "Mandal"),
+    TextField(FieldKey.CURRENT_CITY, "Current City"),
 )
 
 private const val NO_ANSWER = "(no answer)"
 private const val READ_ONLY_HINT = "Only an owner or admin can change this"
 private const val RESTRICTED_NOTICE =
-    "You can edit Party, Caste, Mobile and Address. Other fields are read-only; ask an owner or admin to change them."
+    "You can edit Party, Caste, Mobile, HouseNo and Street. Other fields are read-only; ask an owner or admin to change them."
 
 /** Saves the in-progress form (or "not loaded yet") across configuration changes; never written to disk. */
 private val NullableFormSaver: Saver<VoterForm?, Any> = Saver(
@@ -73,15 +73,15 @@ private val NullableFormSaver: Saver<VoterForm?, Any> = Saver(
 private const val NOT_LOADED = "not-loaded"
 
 @Composable
-fun EditScreen(vm: AppViewModel, id: String?) {
-    var form by rememberSaveable(id, stateSaver = NullableFormSaver) { mutableStateOf<VoterForm?>(null) }
-    var errors by remember(id) { mutableStateOf<Map<String, String>>(emptyMap()) }
+fun EditScreen(vm: AppViewModel, voterId: String?) {
+    var form by rememberSaveable(voterId, stateSaver = NullableFormSaver) { mutableStateOf<VoterForm?>(null) }
+    var errors by remember(voterId) { mutableStateOf<Map<String, String>>(emptyMap()) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(id) {
+    LaunchedEffect(voterId) {
         // After rotation the restored form already holds the operator's typed text; do not overwrite it.
         if (form != null) return@LaunchedEffect
-        val loaded = vm.formFor(id)
+        val loaded = vm.formFor(voterId)
         if (loaded == null) vm.go(Screen.Search) else form = loaded
     }
 
@@ -91,36 +91,26 @@ fun EditScreen(vm: AppViewModel, id: String?) {
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(if (id == null) "Add voter" else "Edit voter", style = MaterialTheme.typography.headlineSmall)
+        Text(if (voterId == null) "Add voter" else "Edit voter", style = MaterialTheme.typography.headlineSmall)
         // VoterId is the unique key: typed once when adding, read-only text when editing.
-        // On an existing voter a regular user may edit only Party, Caste, Mobile and Address; the
+        // On an existing voter a regular user may edit only Party, Caste, Mobile, HouseNo and Street; the
         // other fields stay visible but read-only. Owner/admin may edit everything but VoterId.
-        val restricted = id != null && !vm.canEditAllFields
+        val restricted = voterId != null && !vm.canEditAllFields
         fun lockedByRole(key: String) = restricted && key !in FieldKey.USER_EDITABLE
         if (restricted) {
             Text(RESTRICTED_NOTICE, style = MaterialTheme.typography.bodyMedium)
         }
-        BEFORE_GENDER.forEach { f ->
-            val idLocked = id != null && f.key == FieldKey.VOTER_ID
+        BEFORE_LOCAL.forEach { f ->
+            val idLocked = voterId != null && f.key == FieldKey.VOTER_ID
             Field(f, current, errors, readOnly = idLocked || lockedByRole(f.key), idLocked = idLocked) { form = it }
         }
         Dropdown(
-            label = "Local",
+            label = "Local/Non-Local",
             value = current.isLocal,
-            options = Vocab.YES_NO,
+            options = Vocab.LOCAL_OPTIONS,
             error = errors[FieldKey.IS_LOCAL],
             locked = lockedByRole(FieldKey.IS_LOCAL),
         ) { form = current.with(FieldKey.IS_LOCAL, it) }
-        Dropdown(
-            label = "Gender",
-            value = current.gender,
-            options = Vocab.GENDERS,
-            error = errors[FieldKey.GENDER],
-            locked = lockedByRole(FieldKey.GENDER),
-        ) { form = current.with(FieldKey.GENDER, it) }
-        AFTER_GENDER.forEach { f ->
-            Field(f, current, errors, readOnly = lockedByRole(f.key)) { form = it }
-        }
         Dropdown(
             label = "Party",
             value = current.party,
@@ -132,7 +122,7 @@ fun EditScreen(vm: AppViewModel, id: String?) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = {
                 scope.launch {
-                    when (val result = vm.save(id, current)) {
+                    when (val result = vm.save(voterId, current)) {
                         is SaveResult.Invalid -> errors = result.errors
                         is SaveResult.Saved -> vm.go(Screen.Search)
                     }

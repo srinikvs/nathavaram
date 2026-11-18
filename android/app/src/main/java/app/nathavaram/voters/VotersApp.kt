@@ -21,7 +21,7 @@ class AppContainer(private val app: Application) {
     val tokens: TokenStore by lazy { EncryptedTokenStore(app) }
     val database: AppDatabase by lazy {
         Room.databaseBuilder(app, AppDatabase::class.java, "voters-local")
-            .addMigrations(Migrations.MIGRATION_1_2)
+            .addMigrations(Migrations.MIGRATION_1_2, Migrations.MIGRATION_2_3)
             .build()
     }
 

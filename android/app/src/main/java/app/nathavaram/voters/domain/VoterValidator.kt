@@ -3,7 +3,7 @@ package app.nathavaram.voters.domain
 /** Client-side mirror of the rules in docs/SCHEMA.md. The server stays authoritative. */
 object VoterValidator {
     sealed interface Result {
-        /** [form] is trimmed and normalized: uppercase VoterId, canonical gender and party. */
+        /** [form] is trimmed and normalized: uppercase VoterId, canonical Local/Non-Local and party. */
         data class Ok(val form: VoterForm) : Result
         data class Invalid(val errors: Map<String, String>) : Result
     }
@@ -15,15 +15,14 @@ object VoterValidator {
     private val VOTER_ID = Regex("^[A-Z0-9]{3,32}$")
     private val MOBILE = Regex("^(?:\\+91|91|0)?[6-9]\\d{9}$")
 
-    private const val ADDRESS_MAX = 1000
+    private const val STREET_MAX = 1000
     private val SHORT_FIELDS = listOf(
-        FieldKey.BOOTH, FieldKey.BS_NO_2024, FieldKey.WARD, FieldKey.WARD_S_NO,
+        FieldKey.BOOTH, FieldKey.BOOTH_S_NO, FieldKey.WARD, FieldKey.WARD_S_NO, FieldKey.HOUSE_NO,
     )
     private val LONG_FIELDS = listOf(
-        FieldKey.SURNAME, FieldKey.RELATIVE_NAME, FieldKey.CASTE,
-        FieldKey.C_CITY, FieldKey.PROFESSION, FieldKey.VILLAGE,
+        FieldKey.LAST_NAME, FieldKey.RELATIVE_NAME, FieldKey.CASTE, FieldKey.VILLAGE,
+        FieldKey.PANCHAYATH, FieldKey.MANDAL, FieldKey.CURRENT_CITY,
     )
-    private val ADDRESS_FIELDS = listOf(FieldKey.ADDRESS, FieldKey.PERMANENT_ADDRESS)
 
     fun validate(input: VoterForm): Result {
         val errors = linkedMapOf<String, String>()
@@ -35,10 +34,10 @@ object VoterValidator {
         }
         for (key in SHORT_FIELDS) checkLength(form, key, SHORT_MAX, errors)
         for (key in LONG_FIELDS) checkLength(form, key, LONG_MAX, errors)
-        for (key in ADDRESS_FIELDS) checkLength(form, key, ADDRESS_MAX, errors)
+        checkLength(form, FieldKey.STREET, STREET_MAX, errors)
 
         val local = Vocab.canonicalLocal(form.isLocal)
-        if (local == null) errors[FieldKey.IS_LOCAL] = "Choose Yes or No"
+        if (local == null) errors[FieldKey.IS_LOCAL] = "Choose Local or Non-Local"
         else form = form.copy(isLocal = local)
 
         form = form.copy(voterId = form.voterId.uppercase())
@@ -50,14 +49,6 @@ object VoterValidator {
             errors[FieldKey.FIRST_NAME] = "Required"
         } else {
             checkLength(form, FieldKey.FIRST_NAME, LONG_MAX, errors)
-        }
-
-        if (form.gender.isEmpty()) {
-            form = form.copy(gender = Vocab.DEFAULT_GENDER)
-        } else {
-            val gender = Vocab.canonicalGender(form.gender)
-            if (gender == null) errors[FieldKey.GENDER] = "Choose Male, Female, Other or Unknown"
-            else form = form.copy(gender = gender)
         }
 
         if (form.age.isNotEmpty()) {
@@ -87,10 +78,10 @@ object VoterValidator {
     private fun isControl(c: Char): Boolean = c.code < 32 || c.code == 127
 
     private val ALL_KEYS = listOf(
-        FieldKey.BOOTH, FieldKey.BS_NO_2024, FieldKey.WARD, FieldKey.WARD_S_NO,
-        FieldKey.VOTER_ID, FieldKey.FIRST_NAME, FieldKey.SURNAME, FieldKey.RELATIVE_NAME,
-        FieldKey.ADDRESS, FieldKey.VILLAGE, FieldKey.PERMANENT_ADDRESS, FieldKey.IS_LOCAL,
-        FieldKey.GENDER, FieldKey.AGE, FieldKey.CASTE, FieldKey.MOBILE,
-        FieldKey.C_CITY, FieldKey.PROFESSION, FieldKey.PARTY,
+        FieldKey.BOOTH, FieldKey.BOOTH_S_NO, FieldKey.WARD, FieldKey.WARD_S_NO,
+        FieldKey.VOTER_ID, FieldKey.FIRST_NAME, FieldKey.LAST_NAME, FieldKey.RELATIVE_NAME,
+        FieldKey.HOUSE_NO, FieldKey.AGE, FieldKey.STREET, FieldKey.MOBILE, FieldKey.CASTE,
+        FieldKey.VILLAGE, FieldKey.PANCHAYATH, FieldKey.MANDAL, FieldKey.CURRENT_CITY,
+        FieldKey.IS_LOCAL, FieldKey.PARTY,
     )
 }

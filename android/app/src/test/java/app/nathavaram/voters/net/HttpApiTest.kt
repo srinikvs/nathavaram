@@ -67,14 +67,14 @@ class HttpApiTest {
         server.enqueue(
             json(
                 """{"server_time":"2026-11-11T12:00:00.000000Z","server_revision":9,"results":[
-                    {"id":"a","status":"applied","server_revision":9,"server_record":null},
-                    {"id":"b","status":"voter_id_conflict","message":"in use","server_record":{"id":"c","voter_id":"ZZZ0000001","first_name":"Existing","gender":"Male","revision":4}}
+                    {"voter_id":"ZZZ0000001","status":"applied","server_revision":9,"server_record":null},
+                    {"voter_id":"ZZZ0000002","status":"conflict","message":"newer","server_record":{"voter_id":"ZZZ0000002","first_name":"Existing","revision":4}}
                 ]}""",
             ),
         )
         val change = PushChange(
-            id = "a", updatedAt = "2026-11-11T11:00:00.000000Z", createdAt = "2026-11-11T10:00:00.000000Z",
-            baseRevision = 3, voterId = "ZZZ0000001", firstName = "Testperson", gender = "Male",
+            voterId = "ZZZ0000001", updatedAt = "2026-11-11T11:00:00.000000Z", createdAt = "2026-11-11T10:00:00.000000Z",
+            baseRevision = 3, firstName = "Testperson", lastName = "One", houseNo = "12-A", street = "Main Street",
         )
 
         val response = api().push(PushRequest("android-test", listOf(change)))
@@ -88,8 +88,12 @@ class HttpApiTest {
         assertTrue(body.contains("\"device_id\":\"android-test\""))
         assertTrue(body.contains("\"base_revision\":3"))
         assertTrue(body.contains("\"deleted\":false"))
-        assertEquals(listOf("applied", "voter_id_conflict"), response.results.map { it.status })
-        assertEquals("c", response.results[1].serverRecord?.id)
+        assertTrue(body.contains("\"voter_id\":\"ZZZ0000001\""))
+        assertTrue(body.contains("\"house_no\":\"12-A\""))
+        assertTrue("no row id is sent", !body.contains("\"id\":"))
+        assertEquals(listOf("applied", "conflict"), response.results.map { it.status })
+        assertEquals(listOf("ZZZ0000001", "ZZZ0000002"), response.results.map { it.voterId })
+        assertEquals("ZZZ0000002", response.results[1].serverRecord?.voterId)
     }
 
     @Test

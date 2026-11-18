@@ -34,8 +34,8 @@ A fresh install uses the built-in default `https://nathavaram.duckdns.org` (no t
 
 | Piece | File |
 | --- | --- |
-| Room tables: `voters` (all SCHEMA columns plus local `dirty`), `sync_state` (pull cursor `server_revision`), `sync_conflicts` | `data/Entities.kt`, `data/Daos.kt` |
-| Save: validates, uppercases VoterId, canonical gender/party, client UUID, stamps `updated_at`, sets `dirty`, queues a sync | `data/VoterRepository.kt` |
+| Room tables (database version 3): `voters` (all SCHEMA columns plus local `dirty`, **`voter_id` is the primary key**), `sync_state` (pull cursor `server_revision`), `conflicts` (keyed on `voter_id`) | `store/Entities.kt`, `store/Daos.kt`, `store/Migrations.kt` |
+| Save: validates, uppercases VoterId, canonical Local/Non-Local and party, stamps `updated_at`, sets `dirty`, queues a sync. Adding a VoterId that is only a soft-deleted row revives that row | `store/VoterRepository.kt` |
 | Merge and conflict rules (pure) | `sync/SyncMerge.kt` |
 | Push then pull loop, per-item results | `sync/SyncEngine.kt` |
 | WorkManager (needs network, exponential backoff, 15 min periodic) | `sync/SyncScheduler.kt`, `sync/SyncWorker.kt` |
@@ -44,15 +44,19 @@ A fresh install uses the built-in default `https://nathavaram.duckdns.org` (no t
 
 Sync behavior:
 
-- Dirty rows are pushed as full snapshots with `base_revision` set to the last revision seen for that id (omitted for a row never synced).
+- Dirty rows are pushed as full snapshots with `base_revision` set to the last revision seen for that voter (omitted for a row never synced). The key on the wire is `voter_id`; there is no row id.
 - Every result is applied on its own, so one `conflict` never drops the rest of the batch.
 - `applied`: the row is replaced by `server_record` and the dirty flag is cleared. If the operator edited the row again while the push was in flight, the newer edit stays dirty.
-- `conflict` / `voter_id_conflict`: the server row replaces the local one and an entry appears under **Review** with the differing fields. For `voter_id_conflict` on a row the server never saw, the local row is dropped and the existing voter is kept.
+- `conflict` / `forbidden`: the server row replaces the local one and an entry appears under **Review** with the differing fields. (`voter_id_conflict` no longer exists: the same `voter_id` is the same record, so two devices that add it offline merge by last-write-wins.)
 - `validation_error`: the row stays dirty, with the server message under **Review**. Saving the record again clears the note.
-- Pull runs until `has_more` is false. Tombstones are stored stripped (`voter_id` is the inert placeholder, never read as an EPIC) and hidden from search. A dirty local row newer than the pulled one is not overwritten; its revision moves up to the one just seen so its next push is not rejected as stale.
+- Pull runs until `has_more` is false. Tombstones are stored stripped (only the `voter_id` key is kept) and hidden from search; a newer record for the same `voter_id` revives it. A dirty local row newer than the pulled one is not overwritten; its revision moves up to the one just seen so its next push is not rejected as stale.
 - The cursor is stored only after a page is applied.
 - If the phone clock differs from `server_time` by more than 5 minutes, the search screen shows a warning.
 - HTTP 403 with code `password_change_required` (at `detail.code` or top-level `code`) is a forced password change, not a generic error. Login or sync stops (no retry), sign-in and the search screen show a message to change the password on the web change-password page and sign in again, and the flag clears on the next successful sync or sign-in. There is no in-app change-password screen. Any other 403 stays a plain HTTP error. Parsing is in `net/PasswordChangeRequired.kt`, text in `ui/ErrorMessages.kt`.
+
+## Upgrading the local database (v2 → v3)
+
+`Migrations.MIGRATION_2_3` rebuilds the `voters` table so `voter_id` is the primary key, mirroring server migration `0007`: `bs_no_2024`, `surname`, `c_city` become `booth_s_no`, `last_name`, `current_city`; `address` becomes `street` with a leading `H.No <n>,` split into `house_no`; `panchayath` and `mandal` are added; `gender`, `permanent_address` and `profession` are **dropped** (their values are not kept). Dirty rows keep their flag and revision, so pending edits still sync. If two rows ever shared a `voter_id` the newest `updated_at` is kept. The `conflicts` review notes are cleared because they were stored in the old shape. This app version needs the server version that has migration `0007`; an older app cannot sync with it.
 
 ## Privacy
 

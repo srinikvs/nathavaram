@@ -40,7 +40,7 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_ROLE, null).orEmpty()
         set(value) = prefs.edit().putString(KEY_ROLE, value).apply()
 
-    /** Owner/admin may edit every field except VoterId; the regular user role only Party, Caste, Mobile, Address. */
+    /** Owner/admin may edit every field except VoterId; the regular user role only Party, Caste, Mobile, HouseNo, Street. */
     val canEditAllFields: Boolean get() = role == ROLE_ADMIN
 
     /** Random, generated once per install. Sent as `device_id` and stored as `source_id` by the server. */

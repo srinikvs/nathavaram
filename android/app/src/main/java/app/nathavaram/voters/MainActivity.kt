@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
                         Screen.Login -> LoginScreen(viewModel)
                         Screen.Settings -> SettingsScreen(viewModel)
                         Screen.Search -> SearchScreen(viewModel)
-                        is Screen.Edit -> EditScreen(viewModel, current.id)
+                        is Screen.Edit -> EditScreen(viewModel, current.voterId)
                         Screen.Conflicts -> ConflictsScreen(viewModel)
                     }
                 }

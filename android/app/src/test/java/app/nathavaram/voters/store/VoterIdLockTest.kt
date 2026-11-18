@@ -11,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -25,7 +26,6 @@ class VoterIdLockTest {
     private lateinit var db: AppDatabase
     private lateinit var repo: VoterRepository
     private var clock = 0
-    private var nextId = 0
 
     @Before
     fun setUp() {
@@ -35,7 +35,6 @@ class VoterIdLockTest {
         repo = VoterRepository(
             db,
             now = { "2026-11-11T10:00:%02d.000000Z".format(++clock) },
-            newId = { "00000000-0000-4000-8000-%012d".format(++nextId) },
         )
     }
 
@@ -45,11 +44,11 @@ class VoterIdLockTest {
     }
 
     private fun form(voterId: String = "ZZZ0000001", first: String = "Testperson") =
-        VoterForm(voterId = voterId, firstName = first, gender = "Male", mobile = "9000000001", booth = "12A", ward = "3")
+        VoterForm(voterId = voterId, firstName = first, mobile = "9000000001", booth = "12A", ward = "3")
 
     @Test
     fun `editing keeps the stored voter id even when the form carries a different one`() = runBlocking {
-        val id = (repo.save(null, form()) as SaveResult.Saved).id
+        val id = (repo.save(null, form()) as SaveResult.Saved).voterId
 
         val result = repo.save(id, form(voterId = "ZZZ0000099", first = "Renamed"))
 
@@ -61,7 +60,7 @@ class VoterIdLockTest {
 
     @Test
     fun `a pushed change never carries a changed voter id`() = runBlocking {
-        val id = (repo.save(null, form()) as SaveResult.Saved).id
+        val id = (repo.save(null, form()) as SaveResult.Saved).voterId
         repo.save(id, form(voterId = "ZZZ0000099"))
 
         val push = SyncMerge.toPushChange(db.voterDao().get(id)!!)
@@ -71,14 +70,14 @@ class VoterIdLockTest {
 
     @Test
     fun `other fields stay editable`() = runBlocking {
-        val id = (repo.save(null, form()) as SaveResult.Saved).id
+        val id = (repo.save(null, form()) as SaveResult.Saved).voterId
 
-        repo.save(id, form().copy(booth = "40", ward = "9", surname = "Changed"))
+        repo.save(id, form().copy(booth = "40", ward = "9", lastName = "Changed"))
 
         val stored = repo.get(id)!!
         assertEquals("40", stored.booth)
         assertEquals("9", stored.ward)
-        assertEquals("Changed", stored.surname)
+        assertEquals("Changed", stored.lastName)
     }
 
     @Test
@@ -95,12 +94,26 @@ class VoterIdLockTest {
     }
 
     @Test
-    fun `a voter id freed by a removed record can be added again`() = runBlocking {
-        db.voterDao().upsert(SyncMerge.fromDto(Fixtures.tombstoneDto(id = Fixtures.ID_1)))
+    fun `a removed voter id can be added again and revives the same row`() = runBlocking {
+        db.voterDao().upsert(SyncMerge.fromDto(Fixtures.tombstoneDto(voterId = "ZZZ0000001", revision = 7)))
 
-        val result = repo.save(null, form())
+        val result = repo.save(null, form(first = "Back Again"))
 
         assertTrue(result is SaveResult.Saved)
+        val stored = db.voterDao().get("ZZZ0000001")!!
+        assertNull(stored.deletedAt)
+        assertEquals("Back Again", stored.firstName)
+        assertEquals("the push must carry the tombstone's revision as base_revision", 7L, stored.revision)
+        assertTrue(stored.dirty)
+        assertEquals(1, db.voterDao().dirtyRows().size)
+    }
+
+    @Test
+    fun `voter id is the primary key so the row is found by it`() = runBlocking {
+        repo.save(null, form(voterId = "zzz0000007"))
+
+        assertEquals("ZZZ0000007", repo.get("ZZZ0000007")?.voterId)
+        assertNull(repo.get("ZZZ0000008"))
     }
 
     @Test

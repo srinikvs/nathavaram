@@ -29,8 +29,8 @@ fun ConflictsScreen(vm: AppViewModel) {
         TextButton(onClick = { vm.go(Screen.Search) }) { Text("Back") }
         if (conflicts.isEmpty()) Text("Nothing to review.")
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(conflicts, key = { it.voterUuid }) { conflict ->
-                ConflictCard(conflict, onDismiss = { vm.dismissConflict(conflict.voterUuid) })
+            items(conflicts, key = { it.voterId }) { conflict ->
+                ConflictCard(conflict, onDismiss = { vm.dismissConflict(conflict.voterId) })
                 HorizontalDivider()
             }
         }
@@ -56,7 +56,7 @@ private fun ConflictCard(conflict: ConflictEntity, onDismiss: () -> Unit) {
 
 private fun headline(kind: String): String = when (kind) {
     ResultStatus.CONFLICT -> "Changed on the server — the server version was kept"
-    ResultStatus.VOTER_ID_CONFLICT -> "VoterId already used — the existing record was kept"
+    ResultStatus.FORBIDDEN -> "Your role cannot change this — the server version was kept"
     ResultStatus.VALIDATION_ERROR -> "The server rejected this edit — fix it and save again"
     else -> "Sync note"
 }

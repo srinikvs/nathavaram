@@ -16,12 +16,11 @@ interface SyncApi {
 data class SyncSummary(
     val applied: Int = 0,
     val conflicts: Int = 0,
-    val voterIdConflicts: Int = 0,
     val validationErrors: Int = 0,
     val pulled: Int = 0,
     val clockSkew: Boolean = false,
 ) {
-    val needsAttention: Boolean get() = conflicts + voterIdConflicts + validationErrors > 0
+    val needsAttention: Boolean get() = conflicts + validationErrors > 0
 }
 
 /** Push dirty rows, then pull until `has_more` is false (docs/SYNC.md, "What the Android client should do"). */
@@ -38,11 +37,9 @@ class SyncEngine(
     private class Tally {
         var applied = 0
         var conflicts = 0
-        var voterIdConflicts = 0
         var validationErrors = 0
         var pulled = 0
         var clockSkew = false
-        var rewind = false
     }
 
     suspend fun run(): SyncSummary {
@@ -50,7 +47,7 @@ class SyncEngine(
         push(tally)
         pull(tally)
         return SyncSummary(
-            tally.applied, tally.conflicts, tally.voterIdConflicts,
+            tally.applied, tally.conflicts,
             tally.validationErrors, tally.pulled, tally.clockSkew,
         )
     }
@@ -59,42 +56,38 @@ class SyncEngine(
         for (batch in dao.dirtyRows().chunked(PUSH_BATCH_LIMIT)) {
             val response = api.push(PushRequest(deviceId, batch.map(SyncMerge::toPushChange)))
             noteServerTime(response.serverTime, tally)
-            val sent = batch.associateBy { it.id.lowercase() }
+            val sent = batch.associateBy { it.voterId.uppercase() }
             db.withTransaction {
                 // Each result is applied on its own: one conflict never drops the others.
                 for (result in response.results) {
-                    val pushed = sent[result.id.lowercase()] ?: continue
-                    val decision = SyncMerge.applyPushResult(dao.get(pushed.id), pushed, result, now())
-                    persist(pushed.id, decision, tally)
+                    val pushed = sent[result.voterId.uppercase()] ?: continue
+                    val decision = SyncMerge.applyPushResult(dao.get(pushed.voterId), pushed, result, now())
+                    persist(pushed.voterId, decision, tally)
                 }
             }
         }
     }
 
-    private suspend fun persist(id: String, decision: PushDecision, tally: Tally) {
+    private suspend fun persist(voterId: String, decision: PushDecision, tally: Tally) {
         if (decision.store.isNotEmpty()) dao.upsertAll(decision.store)
-        decision.deleteIds.forEach { dao.delete(it) }
         decision.conflict?.let { conflictDao.upsert(it) }
-        if (decision.kind == PushKind.APPLIED) conflictDao.delete(id)
-        if (decision.rewindCursor) tally.rewind = true
+        if (decision.kind == PushKind.APPLIED) conflictDao.delete(voterId)
         when (decision.kind) {
             PushKind.APPLIED -> tally.applied++
             PushKind.CONFLICT, PushKind.FORBIDDEN -> tally.conflicts++
-            PushKind.VOTER_ID_CONFLICT -> tally.voterIdConflicts++
             PushKind.VALIDATION_ERROR -> tally.validationErrors++
             PushKind.UNKNOWN -> Unit
         }
     }
 
     private suspend fun pull(tally: Tally) {
-        if (tally.rewind) dao.putState(SyncStateEntity(serverRevision = 0))
         var cursor = dao.cursor() ?: 0L
         while (true) {
             val page = api.pull(cursor, PULL_LIMIT)
             noteServerTime(page.serverTime, tally)
             val next = db.withTransaction {
                 for (dto in page.changes) {
-                    dao.upsert(SyncMerge.applyPulled(dao.get(dto.id), dto).entity)
+                    dao.upsert(SyncMerge.applyPulled(dao.get(dto.voterId), dto).entity)
                 }
                 // The cursor moves only after the whole page is stored.
                 val stored = page.changes.lastOrNull()?.revision ?: maxOf(cursor, page.serverRevision)
