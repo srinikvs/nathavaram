@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import io
-import uuid
 from datetime import datetime, timezone
 
 from openpyxl import Workbook
@@ -14,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.constants import (
     CSV_HEADERS,
     DATA_FIELDS,
+    DROPPED_IMPORT_HEADERS,
     IMPORT_HEADER_FIELDS,
     IMPORT_ROW_LIMIT,
     LABEL_BY_FIELD,
@@ -23,7 +23,7 @@ from app.constants import (
 from app.models import Voter
 from app.schemas import ImportErrorItem, ImportReport, VoterWrite
 from app.services.revision import allocate_revision
-from app.validation import csv_safe, csv_unsafe, dump_dt, fold_house_no, local_label
+from app.validation import csv_safe, csv_unsafe, dump_dt, local_label
 from pydantic import ValidationError
 
 
@@ -61,9 +61,11 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
         raise ImportRejected("CSV header contains an empty column name")
     if len(set(headers)) != len(headers):
         raise ImportRejected("CSV header contains duplicate column names")
-    # Old headers ("2024 Booth", "2026 Ward", "HouseNo") are accepted alongside the new ones.
-    # Older files lack Address/Village/Permanent address/Local; those columns are optional.
-    extra = [name for name in headers if name not in IMPORT_HEADER_FIELDS]
+    # Old headers ("SurName", "Address", "C_City", "2024 Booth", ...) are accepted alongside the
+    # new ones. Gender, Permanent address and Profession were removed: their columns are ignored.
+    extra = [
+        name for name in headers if name not in IMPORT_HEADER_FIELDS and name not in DROPPED_IMPORT_HEADERS
+    ]
     fields = [IMPORT_HEADER_FIELDS[name] for name in headers if name in IMPORT_HEADER_FIELDS]
     if len(set(fields)) != len(fields):
         raise ImportRejected("CSV header contains the same column twice (old and new names mixed)")
@@ -91,12 +93,8 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
         payload_row = {
             IMPORT_HEADER_FIELDS[key.strip()]: csv_unsafe(value or "")
             for key, value in raw.items()
-            if key is not None
+            if key is not None and key.strip() in IMPORT_HEADER_FIELDS
         }
-        # The old HouseNo column is not stored any more: fold it into Address.
-        house_no = payload_row.pop("house_no", None)
-        if house_no and house_no.strip():
-            payload_row["address"] = fold_house_no(house_no, payload_row.get("address"))
         try:
             parsed = VoterWrite.model_validate(payload_row)
         except ValidationError as exc:
@@ -120,18 +118,16 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
         seen_ids.add(parsed.voter_id)
         accepted.append((offset, parsed))
 
+    tombstones: dict[str, Voter] = {}
     if accepted:
-        existing = set(
-            db.scalars(
-                select(Voter.voter_id).where(
-                    Voter.deleted_at.is_(None),
-                    Voter.voter_id.in_([item.voter_id for _, item in accepted]),
-                )
-            ).all()
-        )
+        stored = db.scalars(
+            select(Voter).where(Voter.voter_id.in_([item.voter_id for _, item in accepted]))
+        ).all()
+        active = {row.voter_id for row in stored if row.deleted_at is None}
+        tombstones = {row.voter_id: row for row in stored if row.deleted_at is not None}
         fresh: list[tuple[int, VoterWrite]] = []
         for row_number, item in accepted:
-            if item.voter_id in existing:
+            if item.voter_id in active:
                 errors.append(
                     ImportErrorItem(
                         row=row_number,
@@ -145,18 +141,18 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
 
     now = dump_dt(datetime.now(timezone.utc))
     for _, item in accepted:
-        voter = Voter(
-            id=str(uuid.uuid4()),
-            created_at=now,
-            updated_at=now,
-            source_id=source_id,
-            revision=0,
-            deleted_at=None,
-        )
+        # A soft-deleted voter_id is revived in place: voter_id is the primary key.
+        voter = tombstones.get(item.voter_id)
+        if voter is None:
+            voter = Voter(voter_id=item.voter_id, revision=0)
+            db.add(voter)
+        voter.created_at = now
+        voter.updated_at = now
+        voter.source_id = source_id
+        voter.deleted_at = None
         for field in DATA_FIELDS:
             setattr(voter, field, getattr(item, field))
         voter.revision = allocate_revision(db)
-        db.add(voter)
     if accepted:
         db.commit()
     errors.sort(key=lambda item: item.row)

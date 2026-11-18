@@ -53,13 +53,13 @@ def test_cookie_post_with_wrong_token_is_rejected(ctx):
 def test_patch_and_delete_with_cookie_need_the_token(ctx):
     created = ctx.client.post("/api/voters", headers=ctx.auth, json=voter_payload()).json()
     csrf = _cookie_login(ctx)
-    url = f"/api/voters/{created['id']}"
+    url = f"/api/voters/{created['voter_id']}"
 
-    assert ctx.client.patch(url, json={"profession": "Farmer"}).status_code == 403
+    assert ctx.client.patch(url, json={"caste": "SampleGroupB"}).status_code == 403
     assert ctx.client.delete(url).status_code == 403
-    assert ctx.client.get(url).json()["profession"] == "Teacher"
+    assert ctx.client.get(url).json()["caste"] == "SampleGroupA"
 
-    patched = ctx.client.patch(url, json={"profession": "Farmer"}, headers={"X-CSRF-Token": csrf})
+    patched = ctx.client.patch(url, json={"caste": "SampleGroupB"}, headers={"X-CSRF-Token": csrf})
     assert patched.status_code == 200
     assert ctx.client.delete(url, headers={"X-CSRF-Token": csrf}).status_code == 200
 
@@ -122,7 +122,6 @@ def test_html_forms_include_the_token_and_enforce_it(ctx):
     fields = {
         "voter_id": "ZZZ2000010",
         "first_name": "Webperson",
-        "gender": "Male",
         "mobile": "9000000034",
     }
 

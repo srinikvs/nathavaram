@@ -78,9 +78,9 @@ Both roles can see caste, party, and mobile. Treat every account as access to pe
 
 Import and export use these headers, in this order:
 
-`Booth, 2024 B.S.No, Ward, Ward S No, VoterId, FirstName, SurName, RelativeName, Address, Village, Permanent address, Local, Gender, Age, Caste, Mobile, C_City, Profession, Party`
+`Booth, Booth S.No, Ward, Ward S.No, VoterId, FirstName, LastName, RelativeName, HouseNo, Age, Street, Mobile, Caste, Village, Panchayath, Mandal, Current City, Local/Non-Local, Party`
 
-Older files still import: `2024 Booth` / `2026 Ward` headers work, a `HouseNo` column is folded into the start of Address as `H.No <n>, <address>`, and Address, Village, Permanent address and Local may be left out. Local is Yes or No (blank means No).
+Only VoterId and FirstName are required. Older files still import: `2024 Booth` / `2026 Ward`, `SurName`, `Address`, `C_City`, `2024 B.S.No`, `Ward S No` and `Local` headers work, and the removed Gender, Permanent address and Profession columns are ignored.
 
 The file must be UTF-8 (a byte-order mark is accepted). Export writes UTF-8 with a BOM so Excel on Windows keeps Telugu text, and it prefixes a quote when a cell starts with `=`, `+`, `-`, `@`, a tab, or a carriage return (this includes the report export). Import removes one such leading quote, so `+91` mobiles survive a round trip. Party may be empty. A fake nine-row file is at `sample/voters_sample.csv` and on the Import page after you sign in.
 
@@ -100,25 +100,25 @@ All `/api` routes require a signed-in user except `POST /api/auth/login`.
 | POST | `/api/users` | Owner: create a user |
 | PATCH | `/api/users/{id}` | Owner: change role, active flag, or password (a password reset forces a change at next use) |
 | GET | `/api/voters` | List one page. Query params: `page`, `page_size` only. Search filters in the URL are refused with 422 so personal data stays out of access logs |
-| POST | `/api/voters/search` | Search. JSON body: `q`, `voter_id`, `village`, `is_local` (`Yes` / `No` / `Any`), `booth`, `ward`, `caste`, `party`, `mobile`, `gender`, `page`, `page_size` |
-| POST | `/api/voters` | Create. Optional `id` (UUID) so a device can keep the key it generated offline |
-| GET | `/api/voters/{id}` | One active voter |
-| PATCH | `/api/voters/{id}` | Partial update |
-| DELETE | `/api/voters/{id}` | Admin: soft delete. The row is stripped of personal fields |
+| POST | `/api/voters/search` | Search. JSON body: `q`, `voter_id`, `village`, `panchayath`, `mandal`, `is_local` (`Local` / `Non-Local` / `Any`), `booth`, `ward`, `caste`, `party`, `mobile`, `page`, `page_size` |
+| POST | `/api/voters` | Create. `voter_id` is the primary key; a soft-deleted `voter_id` is revived in place |
+| GET | `/api/voters/{voter_id}` | One active voter |
+| PATCH | `/api/voters/{voter_id}` | Partial update |
+| DELETE | `/api/voters/{voter_id}` | Admin: soft delete. The row is stripped of personal fields |
 | POST | `/api/voters/import.csv` | Admin: multipart CSV import. Body field name is `file` |
 | POST | `/api/voters/export.csv` | Admin: CSV of the active rows matching the filters in the optional JSON body |
 | POST | `/api/voters/export.xlsx` | Admin: Excel workbook of those rows |
-| GET | `/api/reports/summary` | Counts by booth, ward, gender, age band, caste, party, profession |
+| GET | `/api/reports/summary` | Counts by booth, ward, village, panchayath, mandal, local/non-local, age band, caste, party |
 | GET | `/api/reports/export.csv` | The same counts as CSV |
 | GET | `/api/sync/pull?since=&limit=` | Changes with `revision` greater than `since`, including soft deletes |
 | POST | `/api/sync/push` | Batch of device snapshots. See [docs/SYNC.md](docs/SYNC.md) |
 
-Search is partial and case-insensitive for the text fields, including Telugu. `q` matches name, VoterId, address, village, mobile, caste, booth, ward, and party.
+Search is partial and case-insensitive for the text fields, including Telugu. `q` matches name, VoterId, house no, street, village, panchayath, mandal, current city, mobile, caste, booth, ward, and party.
 
-Editing: any signed-in user can add a voter. On an existing voter the `user` role may change only Party, Caste, Mobile and Address; owner and admin may change every field except VoterId, which nobody can change after create. See `docs/SCHEMA.md`.
+Editing: any signed-in user can add a voter. On an existing voter the `user` role may change only Party, Caste, Mobile, HouseNo and Street; owner and admin may change every field except VoterId, which nobody can change after create. See `docs/SCHEMA.md`.
 
 `GET /healthz` does not require a login. It returns no voter data.
 
 ## Phase 2
 
-The Android app is not in this repository. [docs/SYNC.md](docs/SYNC.md) describes the pull/push contract, last-write-wins by `updated_at`, the server revision counter, and how a VoterId clash is reported. The Room database should use the same snake_case columns, a UUID primary key, `created_at`, `updated_at`, `revision`, `deleted_at`, and `source_id`.
+The Android app is not in this repository. [docs/SYNC.md](docs/SYNC.md) describes the pull/push contract, last-write-wins by `updated_at`, the server revision counter, and how a change to an existing VoterId is merged. The Room database should use the same snake_case columns, `voter_id` as the primary key, `created_at`, `updated_at`, `revision`, `deleted_at`, and `source_id`.

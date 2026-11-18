@@ -34,7 +34,7 @@ def test_sample_header_and_import(ctx):
     telugu = search(ctx, q="నమూనా")
     assert telugu.json()["total"] == 1
     assert telugu.json()["items"][0]["party"] is None
-    assert telugu.json()["items"][0]["c_city"] == "నాతవరం"
+    assert telugu.json()["items"][0]["current_city"] == "నాతవరం"
 
     again = ctx.client.post(
         "/api/voters/import.csv",
@@ -50,9 +50,9 @@ def test_import_reports_row_errors_and_keeps_valid_rows(ctx):
     body = "\n".join(
         [
             header,
-            "1,10,1,1,ZZZ0000100,Good,Row,Rel,Main St,Samplevillage,,Yes,Male,40,SampleGroupA,9000000099,Nathavaram,Farmer,",
-            "1,10,1,1,BAD ID,Nope,Row,Rel,Main St,Samplevillage,,No,Male,40,SampleGroupA,9000000098,Nathavaram,Farmer,",
-            "1,10,1,1,ZZZ0000101,Also,Bad,Rel,Main St,Samplevillage,,No,Male,nope,SampleGroupA,123,Nathavaram,Farmer,NotAParty",
+            "1,10,1,1,ZZZ0000100,Good,Row,Rel,H-1,40,Main St,9000000099,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Local,",
+            "1,10,1,1,BAD ID,Nope,Row,Rel,H-1,40,Main St,9000000098,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Non-Local,",
+            "1,10,1,1,ZZZ0000101,Also,Bad,Rel,H-1,nope,Main St,123,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Non-Local,NotAParty",
         ]
     )
     imported = ctx.client.post(
@@ -66,12 +66,63 @@ def test_import_reports_row_errors_and_keeps_valid_rows(ctx):
     assert report["skipped"] == 2
     assert {item["row"] for item in report["errors"]} == {3, 4}
 
-    missing = ctx.client.post(
+    no_key = ctx.client.post(
         "/api/voters/import.csv",
         headers=ctx.auth,
-        files={"file": ("bad.csv", b"VoterId,FirstName\nZZZ1,Only\n", "text/csv")},
+        files={"file": ("bad.csv", b"FirstName\nOnly\n", "text/csv")},
     )
-    assert missing.status_code == 400
+    assert no_key.status_code == 400
+    assert "VoterId" in no_key.json()["detail"]
+
+
+def test_import_accepts_only_voter_id_and_first_name_columns(ctx):
+    imported = ctx.client.post(
+        "/api/voters/import.csv",
+        headers=ctx.auth,
+        files={"file": ("min.csv", b"VoterId,FirstName\nZZZ1000,Only\n", "text/csv")},
+    )
+
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["imported"] == 1
+    assert search(ctx, voter_id="ZZZ1000").json()["items"][0]["is_local"] is False
+
+
+def test_import_accepts_old_headers_and_ignores_dropped_columns(ctx):
+    header = "Booth,2024 B.S.No,Ward,Ward S No,VoterId,FirstName,SurName,RelativeName,Address,Village,Permanent address,Local,Gender,Age,Caste,Mobile,C_City,Profession,Party"
+    row = "1,10,1,1,ZZZ0000500,Old,Header,Rel,H.No 9,Villa,Perm lane,Yes,Male,40,SampleGroupA,9000000091,Hyd,Farmer,TDP"
+
+    imported = ctx.client.post(
+        "/api/voters/import.csv",
+        headers=ctx.auth,
+        files={"file": ("old.csv", f"{header}\n{row}\n".encode("utf-8"), "text/csv")},
+    )
+
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["imported"] == 1
+    voter = search(ctx, voter_id="ZZZ0000500").json()["items"][0]
+    assert voter["booth_s_no"] == "10"
+    assert voter["last_name"] == "Header"
+    assert voter["street"] == "H.No 9"
+    assert voter["current_city"] == "Hyd"
+    assert voter["is_local"] is True
+    assert not {"gender", "profession", "permanent_address"} & set(voter)
+
+
+def test_import_revives_a_soft_deleted_voter_id_in_place(ctx):
+    created = ctx.client.post("/api/voters", headers=ctx.auth, json=voter_payload(voter_id="ZZZ1000700")).json()
+    assert ctx.client.delete("/api/voters/ZZZ1000700", headers=ctx.auth).status_code == 200
+
+    imported = ctx.client.post(
+        "/api/voters/import.csv",
+        headers=ctx.auth,
+        files={"file": ("again.csv", b"VoterId,FirstName\nZZZ1000700,Back\n", "text/csv")},
+    )
+
+    assert imported.json()["imported"] == 1
+    voter = search(ctx, voter_id="ZZZ1000700").json()["items"][0]
+    assert voter["first_name"] == "Back"
+    assert voter["deleted_at"] is None
+    assert voter["revision"] > created["revision"]
 
 
 def test_csv_and_excel_round_trip_telugu(ctx):
@@ -90,7 +141,10 @@ def test_csv_and_excel_round_trip_telugu(ctx):
     workbook = load_workbook(io.BytesIO(ctx.client.post("/api/voters/export.xlsx", headers=ctx.auth).content))
     sheet = workbook["Voters"]
     assert sheet["A1"].value == "Booth"
+    assert sheet["B1"].value == "Booth S.No"
     assert sheet["E1"].value == "VoterId"
+    assert sheet["S1"].value == "Party"
+    assert sheet["R1"].value == "Local/Non-Local"
 
 
 def test_export_neutralises_formulas_and_keeps_plus91_mobile_round_trip(ctx):
@@ -101,7 +155,7 @@ def test_export_neutralises_formulas_and_keeps_plus91_mobile_round_trip(ctx):
             voter_id="ZZZ1000201",
             first_name="=SUM(1+1)",
             relative_name="@Relative",
-            profession="-Teacher",
+            house_no="-12",
             mobile="+91 90000 00022",
         ),
     )
@@ -115,11 +169,12 @@ def test_export_neutralises_formulas_and_keeps_plus91_mobile_round_trip(ctx):
     cells = dict(zip(rows[0], rows[1]))
     assert cells["FirstName"] == "'=SUM(1+1)"
     assert cells["RelativeName"] == "'@Relative"
-    assert cells["Profession"] == "'-Teacher"
+    assert cells["HouseNo"] == "'-12"
+    assert cells["Local/Non-Local"] == "Local"
     assert cells["Mobile"] == "'+91 90000 00022"
     assert not any(cell.startswith(("=", "+", "-", "@", "\t", "\r")) for cell in rows[1] if cell)
 
-    assert ctx.client.delete(f"/api/voters/{voter['id']}", headers=ctx.auth).status_code == 200
+    assert ctx.client.delete(f"/api/voters/{voter['voter_id']}", headers=ctx.auth).status_code == 200
     again = ctx.client.post(
         "/api/voters/import.csv",
         headers=ctx.auth,
@@ -149,7 +204,7 @@ def test_report_csv_labels_are_formula_safe(ctx):
     ctx.client.post(
         "/api/voters",
         headers=ctx.auth,
-        json=voter_payload(voter_id="ZZZ1000203", caste="=HYPERLINK(1)", profession="+cmd"),
+        json=voter_payload(voter_id="ZZZ1000203", caste="=HYPERLINK(1)", village="+cmd"),
     )
     exported = ctx.client.get("/api/reports/export.csv", headers=ctx.auth)
     rows = list(csv.reader(io.StringIO(exported.content.decode("utf-8-sig"))))
@@ -162,7 +217,7 @@ def test_report_csv_labels_are_formula_safe(ctx):
 def test_plain_leading_quote_text_is_not_altered_on_import(ctx):
     header = ",".join(CSV_HEADERS)
     body = "\n".join(
-        [header, "1,10,1,1,ZZZ0000300,'Quoted,Row,Rel,Main St,Samplevillage,,No,Male,40,SampleGroupA,9000000091,Nathavaram,Farmer,"]
+        [header, "1,10,1,1,ZZZ0000300,'Quoted,Row,Rel,H-1,40,Main St,9000000091,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Non-Local,"]
     )
     ctx.client.post(
         "/api/voters/import.csv",
@@ -185,7 +240,7 @@ def test_regular_user_cannot_export_import_or_delete_but_can_search_and_edit(ctx
         files={"file": ("voters_sample.csv", SAMPLE.read_bytes(), "text/csv")},
     )
     assert denied_import.status_code == 403
-    assert ctx.client.delete(f"/api/voters/{created['id']}", headers=user).status_code == 403
+    assert ctx.client.delete(f"/api/voters/{created['voter_id']}", headers=user).status_code == 403
     assert ctx.client.get("/api/users", headers=user).status_code == 403
     assert (
         ctx.client.post(
@@ -199,8 +254,8 @@ def test_regular_user_cannot_export_import_or_delete_but_can_search_and_edit(ctx
     found = ctx.client.post("/api/voters/search", headers=user, json={"q": "testperson"})
     assert found.status_code == 200
     assert found.json()["total"] == 1
-    assert ctx.client.get(f"/api/voters/{created['id']}", headers=user).status_code == 200
-    edited = ctx.client.patch(f"/api/voters/{created['id']}", headers=user, json={"caste": "SampleGroupZ"})
+    assert ctx.client.get(f"/api/voters/{created['voter_id']}", headers=user).status_code == 200
+    edited = ctx.client.patch(f"/api/voters/{created['voter_id']}", headers=user, json={"caste": "SampleGroupZ"})
     assert edited.status_code == 200
     assert edited.json()["caste"] == "SampleGroupZ"
     # Nothing the user attempted removed or imported rows.
@@ -217,7 +272,7 @@ def test_admin_can_export_import_delete_and_manage_users(ctx):
     assert ctx.client.post("/api/voters/export.csv", headers=ctx.auth).status_code == 200
     assert ctx.client.post("/api/voters/export.xlsx", headers=ctx.auth).status_code == 200
     first = search(ctx).json()["items"][0]
-    assert ctx.client.delete(f"/api/voters/{first['id']}", headers=ctx.auth).status_code == 200
+    assert ctx.client.delete(f"/api/voters/{first['voter_id']}", headers=ctx.auth).status_code == 200
     assert ctx.client.get("/api/users", headers=ctx.auth).status_code == 200
 
 
@@ -276,7 +331,10 @@ def test_reports_cover_the_required_breakdowns(ctx):
     body = summary.json()
     assert body["total"] == 9
     assert sum(row["count"] for row in body["by_booth"]) == 9
-    assert sum(row["count"] for row in body["by_gender"]) == 9
+    assert sum(row["count"] for row in body["by_panchayath"]) == 9
+    assert sum(row["count"] for row in body["by_mandal"]) == 9
+    assert {row["label"] for row in body["by_local"]} == {"Local", "Non-Local"}
+    assert "by_gender" not in body and "by_profession" not in body
     assert sum(row["count"] for row in body["by_age_band"]) == 9
     booths = {row["label"]: row["count"] for row in body["by_booth"]}
     assert booths["1"] == 2

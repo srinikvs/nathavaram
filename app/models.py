@@ -45,12 +45,14 @@ class SyncState(Base):
 
 
 class Voter(Base):
+    """One row per voter. voter_id (EPIC number) is the primary key.
+
+    A soft-deleted row keeps its voter_id and loses every other personal field, so the
+    same voter_id can be added again: that revives the tombstone row.
+    """
+
     __tablename__ = "voters"
     __table_args__ = (
-        CheckConstraint(
-            "gender IN ('Male', 'Female', 'Other', 'Unknown')",
-            name="ck_voters_gender",
-        ),
         CheckConstraint("age IS NULL OR (age >= 1 AND age <= 130)", name="ck_voters_age"),
         CheckConstraint(
             "party IS NULL OR party IN ("
@@ -61,26 +63,25 @@ class Voter(Base):
         ),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    booth: Mapped[str | None] = mapped_column(String(64))
-    bs_no_2024: Mapped[str | None] = mapped_column(String(64))
-    ward: Mapped[str | None] = mapped_column(String(64))
+    voter_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    booth: Mapped[str | None] = mapped_column(String(64), index=True)
+    booth_s_no: Mapped[str | None] = mapped_column(String(64))
+    ward: Mapped[str | None] = mapped_column(String(64), index=True)
     ward_s_no: Mapped[str | None] = mapped_column(String(64))
-    voter_id: Mapped[str] = mapped_column(String(32), nullable=False)
     first_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    surname: Mapped[str | None] = mapped_column(String(128))
+    last_name: Mapped[str | None] = mapped_column(String(128))
     relative_name: Mapped[str | None] = mapped_column(String(128))
-    address: Mapped[str | None] = mapped_column(Text)
-    village: Mapped[str | None] = mapped_column(Text)
-    permanent_address: Mapped[str | None] = mapped_column(Text)
-    # Default No: rows that existed before the column was added migrate as not local.
-    is_local: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
-    gender: Mapped[str] = mapped_column(String(16), nullable=False, default="Unknown")
+    house_no: Mapped[str | None] = mapped_column(String(64))
     age: Mapped[int | None] = mapped_column(Integer)
-    caste: Mapped[str | None] = mapped_column(String(128))
+    street: Mapped[str | None] = mapped_column(Text)
     mobile: Mapped[str | None] = mapped_column(String(20))
-    c_city: Mapped[str | None] = mapped_column(String(128))
-    profession: Mapped[str | None] = mapped_column(String(128))
+    caste: Mapped[str | None] = mapped_column(String(128))
+    village: Mapped[str | None] = mapped_column(String(128))
+    panchayath: Mapped[str | None] = mapped_column(String(128))
+    mandal: Mapped[str | None] = mapped_column(String(128))
+    current_city: Mapped[str | None] = mapped_column(String(128))
+    # Default No (Non-Local): rows that existed before the column was added migrate as not local.
+    is_local: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
     party: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False)

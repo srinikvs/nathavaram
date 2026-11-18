@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from app.config import ROOT
 from app.constants import (
     DATA_FIELDS,
-    GENDERS,
     LABEL_BY_FIELD,
     PARTIES,
     SEARCH_FILTER_FIELDS,
@@ -96,7 +95,7 @@ def _voter_form(form) -> dict:
 
 
 def _stored_values(voter) -> dict:
-    """The saved row as form strings. Local shows as Yes / No."""
+    """The saved row as form strings. Local shows as Local / Non-Local."""
     values = {
         field: getattr(voter, field) if getattr(voter, field) is not None else ""
         for field in DATA_FIELDS
@@ -260,7 +259,6 @@ def _render_list(request: Request, db: Session, user, query: VoterSearch):
             "query": query,
             "error": None,
             "filter_values": _filter_values(query),
-            "genders": GENDERS,
             "parties": PARTIES,
         },
     )
@@ -277,7 +275,6 @@ def _list_error(request: Request, user, exc: ValidationError):
             "query": VoterSearch(),
             "error": _form_errors(exc)[0],
             "filter_values": {},
-            "genders": GENDERS,
             "parties": PARTIES,
         },
         status_code=422,
@@ -374,7 +371,7 @@ async def new_voter_submit(request: Request, db: Session = Depends(get_db), user
             },
             status_code=exc.status_code,
         )
-    return RedirectResponse(f"/voters/{voter.id}/edit?saved=1", status_code=303)
+    return RedirectResponse(f"/voters/{voter.voter_id}/edit?saved=1", status_code=303)
 
 
 @router.get("/voters/{voter_id}/edit")
@@ -462,7 +459,7 @@ async def edit_voter_submit(
             },
             status_code=exc.status_code,
         )
-    return RedirectResponse(f"/voters/{voter_id}/edit?saved=1", status_code=303)
+    return RedirectResponse(f"/voters/{voter.voter_id}/edit?saved=1", status_code=303)
 
 
 @router.get("/voters/{voter_id}/delete")

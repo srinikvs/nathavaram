@@ -1,4 +1,4 @@
-"""VoterId is immutable after create; "2024 Booth"/"2026 Ward" are now "Booth"/"Ward"."""
+"""VoterId is the primary key and immutable after create; "2024 Booth"/"2026 Ward" are "Booth"/"Ward"."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from tests.conftest import csrf_from_page, voter_payload
 NEW_HEADER = ",".join(CSV_HEADERS)
 OLD_HEADER = NEW_HEADER.replace("Booth", "2024 Booth", 1).replace("Ward,", "2026 Ward,", 1)
 ROW = (
-    "7,10,2,1,{vid},Csvperson,Row,Rel,Main St,Samplevillage,Sample Lane,Yes,"
-    "Male,40,SampleGroupA,9000000091,Nathavaram,Farmer,"
+    "7,10,2,1,{vid},Csvperson,Row,Rel,H-1,40,Main St,9000000091,SampleGroupA,"
+    "Samplevillage,Pan,Man,Nathavaram,Local,"
 )
 
 
@@ -47,32 +47,32 @@ def test_patch_with_a_different_voter_id_is_rejected_and_the_row_is_unchanged(ct
     voter = _create(ctx)
 
     response = ctx.client.patch(
-        f"/api/voters/{voter['id']}", headers=ctx.auth, json={"voter_id": "ZZZ1000099"}
+        f"/api/voters/{voter['voter_id']}", headers=ctx.auth, json={"voter_id": "ZZZ1000099"}
     )
 
     assert response.status_code in (400, 422)
     assert "cannot be changed" in response.text
-    assert ctx.client.get(f"/api/voters/{voter['id']}", headers=ctx.auth).json() == voter
+    assert ctx.client.get(f"/api/voters/{voter['voter_id']}", headers=ctx.auth).json() == voter
 
 
 def test_patch_that_mixes_a_new_voter_id_with_other_edits_changes_nothing(ctx):
     voter = _create(ctx)
 
     response = ctx.client.patch(
-        f"/api/voters/{voter['id']}",
+        f"/api/voters/{voter['voter_id']}",
         headers=ctx.auth,
         json={"voter_id": "ZZZ1000099", "first_name": "Renamed"},
     )
 
     assert response.status_code in (400, 422)
-    assert ctx.client.get(f"/api/voters/{voter['id']}", headers=ctx.auth).json() == voter
+    assert ctx.client.get(f"/api/voters/{voter['voter_id']}", headers=ctx.auth).json() == voter
 
 
 def test_patch_may_repeat_the_same_voter_id_and_other_fields_stay_editable(ctx):
     voter = _create(ctx)
 
     response = ctx.client.patch(
-        f"/api/voters/{voter['id']}",
+        f"/api/voters/{voter['voter_id']}",
         headers=ctx.auth,
         json={
             "voter_id": voter["voter_id"],
@@ -97,7 +97,7 @@ def test_web_edit_form_shows_voter_id_as_read_only_text(ctx):
     voter = _create(ctx)
     _web_token(ctx)
 
-    edit = ctx.client.get(f"/voters/{voter['id']}/edit")
+    edit = ctx.client.get(f"/voters/{voter['voter_id']}/edit")
     new = ctx.client.get("/voters/new")
 
     assert edit.status_code == 200
@@ -111,11 +111,11 @@ def test_web_edit_post_with_a_different_voter_id_is_refused(ctx):
     token = _web_token(ctx)
     form = {**voter_payload(first_name="Hacked", voter_id="ZZZ1000099"), "csrf_token": token}
 
-    response = ctx.client.post(f"/voters/{voter['id']}/edit", data=form)
+    response = ctx.client.post(f"/voters/{voter['voter_id']}/edit", data=form)
 
     assert response.status_code == 400
     assert "cannot be changed" in response.text
-    stored = ctx.client.get(f"/api/voters/{voter['id']}", headers=ctx.auth).json()
+    stored = ctx.client.get(f"/api/voters/{voter['voter_id']}", headers=ctx.auth).json()
     assert stored["voter_id"] == "ZZZ1000001"
     assert stored["first_name"] == "Testperson"
 
@@ -127,11 +127,11 @@ def test_web_edit_post_without_voter_id_saves_the_other_fields(ctx):
     del form["voter_id"]
 
     response = ctx.client.post(
-        f"/voters/{voter['id']}/edit", data={**form, "csrf_token": token}, follow_redirects=False
+        f"/voters/{voter['voter_id']}/edit", data={**form, "csrf_token": token}, follow_redirects=False
     )
 
     assert response.status_code == 303
-    stored = ctx.client.get(f"/api/voters/{voter['id']}", headers=ctx.auth).json()
+    stored = ctx.client.get(f"/api/voters/{voter['voter_id']}", headers=ctx.auth).json()
     assert (stored["voter_id"], stored["first_name"], stored["booth"], stored["ward"]) == (
         "ZZZ1000001",
         "Renamed",
@@ -140,27 +140,32 @@ def test_web_edit_post_without_voter_id_saves_the_other_fields(ctx):
     )
 
 
-def test_sync_push_cannot_change_the_voter_id_of_an_existing_record(ctx):
+def test_sync_push_with_another_voter_id_is_a_different_record_and_leaves_the_original(ctx):
     voter = _create(ctx)
     change = {
-        "id": voter["id"],
-        "updated_at": (datetime.now(timezone.utc) + timedelta(seconds=5)).isoformat(),
-        "base_revision": voter["revision"],
         "voter_id": "ZZZ1000099",
+        "updated_at": (datetime.now(timezone.utc) + timedelta(seconds=5)).isoformat(),
         "first_name": "Synced",
-        "gender": "Female",
     }
 
     pushed = ctx.client.post(
         "/api/sync/push", headers=ctx.auth, json={"device_id": "lab-phone-1", "changes": [change]}
     )
 
-    result = pushed.json()["results"][0]
-    assert result["status"] == "validation_error"
-    assert "cannot be changed" in result["message"]
-    stored = ctx.client.get(f"/api/voters/{voter['id']}", headers=ctx.auth).json()
-    assert stored["voter_id"] == "ZZZ1000001"
-    assert stored["first_name"] == "Testperson"
+    assert pushed.json()["results"][0]["status"] == "applied"
+    stored = ctx.client.get(f"/api/voters/{voter['voter_id']}", headers=ctx.auth).json()
+    assert stored == voter
+    assert ctx.client.get("/api/voters/ZZZ1000099", headers=ctx.auth).json()["first_name"] == "Synced"
+
+
+def test_sync_change_without_a_voter_id_is_rejected(ctx):
+    change = {"updated_at": datetime.now(timezone.utc).isoformat(), "first_name": "NoKey"}
+
+    pushed = ctx.client.post(
+        "/api/sync/push", headers=ctx.auth, json={"device_id": "lab-phone-1", "changes": [change]}
+    )
+
+    assert pushed.status_code == 422
 
 
 # --- Duplicate VoterId on add ----------------------------------------------
@@ -205,9 +210,9 @@ def test_web_pages_say_booth_and_ward_not_the_year_labels(ctx):
     }
 
     # The import page deliberately documents the legacy headers it still accepts.
-    legacy_note = '"2024 Booth", "2026 Ward" and "HouseNo" headers work'
-    assert legacy_note in pages["import"]
-    pages["import"] = pages["import"].replace(legacy_note, "")
+    legacy_note = re.search(r'<p class="lede">Only VoterId.*?</p>', pages["import"], re.S)
+    assert legacy_note is not None and '"2024 Booth"' in legacy_note.group(0)
+    pages["import"] = pages["import"].replace(legacy_note.group(0), "")
 
     for name, html in pages.items():
         assert "2024 Booth" not in html, name
@@ -218,7 +223,7 @@ def test_web_pages_say_booth_and_ward_not_the_year_labels(ctx):
     assert "<th>Ward</th>" in pages["list"]
     assert 'id="booth" name="booth"' in pages["new"]
     assert "Booth" in pages["reports"] and "Ward" in pages["reports"]
-    assert "Booth, 2024 B.S.No, Ward," in pages["import"]
+    assert "Booth, Booth S.No, Ward, Ward S.No, VoterId," in pages["import"]
 
 
 def test_search_filters_booth_and_ward(ctx):
@@ -315,10 +320,10 @@ def test_csv_import_rejects_old_and_new_names_for_the_same_column(ctx):
 
 
 def test_csv_import_still_rejects_unknown_and_missing_columns(ctx):
-    missing = _import(ctx, "\n".join([NEW_HEADER.replace("Ward,", "", 1), "x"]))
+    missing = _import(ctx, "\n".join([NEW_HEADER.replace("VoterId,", "", 1), "x"]))
     unknown = _import(ctx, "\n".join([NEW_HEADER + ",Nonsense", ROW.format(vid="ZZZ0000505") + ",x"]))
 
-    assert missing.status_code == 400 and "missing Ward" in missing.json()["detail"]
+    assert missing.status_code == 400 and "missing VoterId" in missing.json()["detail"]
     assert unknown.status_code == 400 and "unexpected Nonsense" in unknown.json()["detail"]
 
 
@@ -358,7 +363,7 @@ def test_migration_renames_the_columns_and_keeps_every_value(tmp_path):
     assert {"booth", "ward"} <= columns
     assert not ({"booth_2024", "ward_2026"} & columns)
     assert row == ("12A", "3", "ZZZ9000001")
-    assert "uq_voters_voter_id_active" in indexes
+    assert "uq_voters_voter_id_active" not in indexes  # voter_id is the primary key now
     assert {"ix_voters_booth", "ix_voters_ward"} <= indexes
 
     command.downgrade(cfg, "0003_token_version")
