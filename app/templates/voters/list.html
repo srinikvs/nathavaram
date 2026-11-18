@@ -110,6 +110,7 @@
         <th>Current City</th>
         <th>Local/Non-Local</th>
         <th>Party</th>
+        <th>Constituency</th>
         <th></th>
       </tr>
     </thead>
@@ -135,6 +136,7 @@
         <td data-label="Current City" translate="no">{{ voter.current_city|display }}</td>
         <td data-label="Local/Non-Local">{{ "Local" if voter.is_local else "Non-Local" }}</td>
         <td data-label="Party">{{ voter.party|display }}</td>
+        <td data-label="Constituency" translate="no">{{ voter.constituency|display }}</td>
         <td data-label="Actions" class="row-actions">
           <a href="/voters/{{ voter.voter_id }}/edit">Edit</a>
           {% if user.role == "admin" %}<a href="/voters/{{ voter.voter_id }}/delete">Delete</a>{% endif %}

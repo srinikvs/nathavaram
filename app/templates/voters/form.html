@@ -115,6 +115,10 @@
       {% endfor %}
     </select>
   </div>
+  <div>
+    <label for="constituency">Constituency</label>
+    <input id="constituency" name="constituency" maxlength="128" value="{{ values.get('constituency', '') }}" translate="no" {{ lock_text }}>
+  </div>
   <div class="full actions">
     <button type="submit">Save voter</button>
     {% if voter and user.role == "admin" %}<a class="button danger" href="/voters/{{ voter.voter_id }}/delete">Delete</a>{% endif %}

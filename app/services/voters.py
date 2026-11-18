@@ -247,6 +247,7 @@ _SEARCH_TEXT_COLUMNS = (
     Voter.booth,
     Voter.ward,
     Voter.party,
+    Voter.constituency,
 )
 
 

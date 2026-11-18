@@ -105,6 +105,7 @@ def voter_payload(**overrides) -> dict:
         "village": "Samplevillage",
         "panchayath": "Samplepanchayath",
         "mandal": "Samplemandal",
+        "constituency": "Sampleconstituency",
         "current_city": "Nathavaram",
         "is_local": True,
         "party": "TDP",

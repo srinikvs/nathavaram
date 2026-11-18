@@ -43,6 +43,7 @@ data class VoterDto(
     @SerialName("current_city") val currentCity: String? = null,
     @SerialName("is_local") val isLocal: Boolean = false,
     val party: String? = null,
+    val constituency: String? = null,
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("updated_at") val updatedAt: String = "",
     val revision: Long = 0,
@@ -76,6 +77,7 @@ data class PushChange(
     @SerialName("current_city") val currentCity: String? = null,
     @SerialName("is_local") val isLocal: Boolean = false,
     val party: String? = null,
+    val constituency: String? = null,
 )
 
 @Serializable

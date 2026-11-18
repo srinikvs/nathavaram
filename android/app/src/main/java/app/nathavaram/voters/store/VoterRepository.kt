@@ -86,6 +86,7 @@ class VoterRepository(
             currentCity = valid.currentCity.ifEmpty { null },
             isLocal = valid.isLocal == Vocab.LOCAL,
             party = valid.party.ifEmpty { null },
+            constituency = valid.constituency.ifEmpty { null },
             // A revived row is a new voter: it gets a new created_at but keeps the tombstone's
             // revision, so the push carries a current base_revision.
             createdAt = locked?.createdAt ?: stamp,

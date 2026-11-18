@@ -21,7 +21,7 @@ object VoterValidator {
     )
     private val LONG_FIELDS = listOf(
         FieldKey.LAST_NAME, FieldKey.RELATIVE_NAME, FieldKey.CASTE, FieldKey.VILLAGE,
-        FieldKey.PANCHAYATH, FieldKey.MANDAL, FieldKey.CURRENT_CITY,
+        FieldKey.PANCHAYATH, FieldKey.MANDAL, FieldKey.CURRENT_CITY, FieldKey.CONSTITUENCY,
     )
 
     fun validate(input: VoterForm): Result {
@@ -82,6 +82,6 @@ object VoterValidator {
         FieldKey.VOTER_ID, FieldKey.FIRST_NAME, FieldKey.LAST_NAME, FieldKey.RELATIVE_NAME,
         FieldKey.HOUSE_NO, FieldKey.AGE, FieldKey.STREET, FieldKey.MOBILE, FieldKey.CASTE,
         FieldKey.VILLAGE, FieldKey.PANCHAYATH, FieldKey.MANDAL, FieldKey.CURRENT_CITY,
-        FieldKey.IS_LOCAL, FieldKey.PARTY,
+        FieldKey.IS_LOCAL, FieldKey.PARTY, FieldKey.CONSTITUENCY,
     )
 }

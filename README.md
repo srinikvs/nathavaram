@@ -78,7 +78,7 @@ Both roles can see caste, party, and mobile. Treat every account as access to pe
 
 Import and export use these headers, in this order:
 
-`Booth, Booth S.No, Ward, Ward S.No, VoterId, FirstName, LastName, RelativeName, HouseNo, Age, Street, Mobile, Caste, Village, Panchayath, Mandal, Current City, Local/Non-Local, Party`
+`Booth, Booth S.No, Ward, Ward S.No, VoterId, FirstName, LastName, RelativeName, HouseNo, Age, Street, Mobile, Caste, Village, Panchayath, Mandal, Current City, Local/Non-Local, Party, Constituency`
 
 Only VoterId and FirstName are required. Older files still import: `2024 Booth` / `2026 Ward`, `SurName`, `Address`, `C_City`, `2024 B.S.No`, `Ward S No` and `Local` headers work, and the removed Gender, Permanent address and Profession columns are ignored.
 

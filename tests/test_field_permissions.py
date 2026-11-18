@@ -456,7 +456,7 @@ def test_list_page_shows_the_requested_columns(ctx):
 
     for header in (
         "VoterId", "FirstName", "LastName", "RelativeName", "HouseNo", "Street", "Village",
-        "Panchayath", "Mandal", "Local/Non-Local", "Booth", "Ward", "Age", "Caste", "Party", "Mobile",
+        "Panchayath", "Mandal", "Local/Non-Local", "Booth", "Ward", "Age", "Caste", "Party", "Mobile", "Constituency",
     ):
         assert f"<th>{header}</th>" in page, header
     assert 'name="village"' in page and 'name="is_local"' in page
@@ -474,7 +474,7 @@ def test_form_pages_show_the_requested_fields_and_not_the_removed_ones(ctx):
         for label in (
             "Booth", "Booth S.No", "Ward", "Ward S.No", "FirstName", "LastName", "RelativeName",
             "HouseNo", "Age", "Street", "Mobile", "Caste", "Village", "Panchayath", "Mandal",
-            "Current City", "Local/Non-Local", "Party",
+            "Current City", "Local/Non-Local", "Party", "Constituency",
         ):
             assert re.search(rf"<label for=\"[a-z_]+\">{re.escape(label)}( <abbr[^>]*>\*</abbr>)?</label>", page), (url, label)
         for gone in ("Gender", "Profession", "Permanent address", "C_City", "SurName"):
@@ -535,7 +535,7 @@ def test_csv_export_has_the_requested_headers(ctx):
     assert list(CSV_HEADERS) == [
         "Booth", "Booth S.No", "Ward", "Ward S.No", "VoterId", "FirstName", "LastName",
         "RelativeName", "HouseNo", "Age", "Street", "Mobile", "Caste", "Village", "Panchayath",
-        "Mandal", "Current City", "Local/Non-Local", "Party",
+        "Mandal", "Current City", "Local/Non-Local", "Party", "Constituency",
     ]
     assert not {"Gender", "Profession", "Permanent address", "Address", "SurName"} & set(rows[0])
     assert {row["VoterId"]: row["Local/Non-Local"] for row in rows} == {
