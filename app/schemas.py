@@ -499,3 +499,18 @@ class SyncPullResponse(BaseModel):
     since: int
     has_more: bool
     changes: list[VoterPublic]
+
+
+class MasterColumn(BaseModel):
+    key: str
+    label: str
+    numeric: bool = False
+
+
+class MasterTable(BaseModel):
+    entity: str
+    label: str
+    available: bool
+    note: str | None = None
+    columns: list[MasterColumn]
+    rows: list[dict[str, str | int]]

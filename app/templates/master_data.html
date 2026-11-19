@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Master Data · Nathavaram{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Master Data</h1>
+    <p class="lede">Lists derived from active voter records. Counts ignore removed rows.</p>
+  </div>
+</div>
+<nav class="tabs" aria-label="Master data lists">
+  {% for item in tabs %}
+  <a href="/master-data?tab={{ item.entity }}"{% if item.entity == active %} aria-current="page"{% endif %}>{{ item.label }}</a>
+  {% endfor %}
+</nav>
+<section>
+  <h2>{{ table.label }}</h2>
+  {% if not table.available %}
+  <p class="lede">{{ table.note }}</p>
+  {% elif not table.rows %}
+  <p class="lede">No {{ table.label|lower }} values yet.</p>
+  {% else %}
+  <p class="lede">{{ table.rows|length }} row{% if table.rows|length != 1 %}s{% endif %}.</p>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>{% for col in table.columns %}<th{% if col.numeric %} class="num"{% endif %}>{{ col.label }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for row in table.rows %}
+        <tr>
+          {% for col in table.columns %}
+          <td{% if col.numeric %} class="num"{% else %} translate="no"{% endif %}>{{ row[col.key] }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

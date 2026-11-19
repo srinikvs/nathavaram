@@ -31,9 +31,19 @@
     <p class="who">{{ user.username }} · {{ user.role }}</p>
     {% endif %}
   </header>
-  <main id="content">
-    {% block content %}{% endblock %}
-  </main>
+  <div class="shell{% if user and user.role == 'admin' %} has-sidebar{% endif %}">
+    {% if user and user.role == "admin" %}
+    <aside class="sidebar" aria-label="Admin">
+      <p class="sidebar-title">Admin</p>
+      <a class="sidebar-link" href="/master-data"{% if request.url.path == "/master-data" %} aria-current="page"{% endif %}>
+        <span class="gear" aria-hidden="true">&#9881;</span> Master Data
+      </a>
+    </aside>
+    {% endif %}
+    <main id="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
   <script src="/static/app.js"></script>
 </body>
 </html>
