@@ -45,7 +45,11 @@ While it is true:
 
 Created users: `POST /api/users` and the web form `POST /users` always store `must_change_password=true`; a client-supplied value is rejected (422), not honored. The 10-character minimum is enforced by the `UserCreate` schema and again in `create_user`. Web pages that would otherwise skip the gate (`GET /`, `GET /login` when already signed in, `next=` targets) redirect to `/change-password` while the flag is set. Allowed while flagged: login, logout, `GET/POST /change-password`, `POST /api/auth/change-password`, `/static`, `/healthz`.
 
-Every signed-in user (any role) has a "Change password" link in the web nav and may change their password at any time, not only on first login.
+Every signed-in user (any role) has a "Change password" link in the web sidebar (ADMIN section) and may change their password at any time, not only on first login.
+
+## Sidebar navigation
+
+The web UI has no top nav links; navigation lives in the left sidebar (`app/web/nav.py`). Master Data, Survey Report and Import are shown to admins only, Users to the owner admin only. Hiding a link is cosmetic: each route still enforces its role on the server (403 for non-admins). "Coming soon" stub pages require login, and the admin ones (Survey Report) are admin-only too.
 
 ## Owner user management
 

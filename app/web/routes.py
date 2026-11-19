@@ -41,6 +41,7 @@ from app.services.voters import (
 )
 from app.validation import local_label
 from app.services.voters import VOTER_ID_LOCKED_MESSAGE
+from app.web.nav import ADMIN, COMING_SOON_PAGES
 from app.web.templates import render
 
 router = APIRouter()
@@ -495,6 +496,21 @@ def delete_submit(
     except ServiceError:
         return RedirectResponse("/voters", status_code=303)
     return RedirectResponse("/voters?removed=1", status_code=303)
+
+
+def _register_coming_soon_pages() -> None:
+    """Stub pages for sidebar entries whose features are not built yet."""
+    for path, item in COMING_SOON_PAGES.items():
+
+        def page(request: Request, user=Depends(web_user), item=item):
+            if item.audience == ADMIN and user.role != "admin":
+                return _forbidden(request, user)
+            return render(request, "coming_soon.html", {"user": user, "page_title": item.label})
+
+        router.add_api_route(path, page, methods=["GET"], name="soon" + path.replace("/", "_"))
+
+
+_register_coming_soon_pages()
 
 
 @router.get("/reports")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app.services.master_data import ENTITIES
@@ -175,8 +177,12 @@ def test_page_shows_tabs_sidebar_and_no_survey_or_excel_tabs(ctx):
     ):
         assert f">{label}</a>" in page.text
     assert 'class="sidebar"' in page.text
-    assert "Survey" not in page.text
-    assert "Excel" not in page.text
+    tab_strip = re.search(
+        r'<nav class="tabs"[^>]*>(.*?)</nav>', page.text, re.DOTALL
+    )
+    assert tab_strip is not None
+    assert "Survey" not in tab_strip.group(1)
+    assert "Excel" not in tab_strip.group(1)
 
 
 def test_page_falls_back_to_the_first_tab_for_an_unknown_tab(ctx):
