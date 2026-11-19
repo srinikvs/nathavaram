@@ -87,16 +87,6 @@ a { color: var(--green); }
 .site-header a { color: inherit; text-decoration: none; }
 .brand a { font-size: 1.7rem; font-weight: 700; letter-spacing: 0.01em; }
 .eyebrow, .tag, .who { margin: 0; color: #d9cbb8; font-size: 0.82rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.nav { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
-.nav a, .linkish {
-  color: #f6f1e7;
-  text-decoration: none;
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  border-bottom: 2px solid transparent;
-}
-.nav a:hover, .nav a:focus { border-bottom-color: #e6b089; }
 .linkish {
   background: none;
   border: 0;
@@ -108,12 +98,17 @@ main { padding: 20px; max-width: 1180px; margin: 0 auto; }
 .shell.has-sidebar { display: grid; grid-template-columns: 1fr; }
 .shell.has-sidebar main { width: 100%; }
 .sidebar { background: var(--paper-2); border-bottom: 1px solid var(--line); padding: 10px 20px; }
+.sidebar-section { margin-bottom: 14px; }
+.sidebar-section form { margin: 0; }
 .sidebar-title { margin: 0; color: var(--muted); font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .sidebar-link {
   display: flex; align-items: center; gap: 8px; min-height: 44px;
   color: var(--green); text-decoration: none; font-weight: 600;
   border-left: 3px solid transparent; padding-left: 8px;
 }
+.sidebar-link.is-soon { color: var(--muted); font-weight: 500; }
+.soon-badge { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; border: 1px solid var(--line); border-radius: 8px; padding: 0 6px; }
+button.sidebar-link { width: 100%; text-align: left; border-top: 0; border-right: 0; border-bottom: 0; border-radius: 0; background: none; cursor: pointer; font-size: inherit; }
 .sidebar-link:hover, .sidebar-link[aria-current="page"] { border-left-color: #b4532a; background: var(--ok); }
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid var(--line); margin-bottom: 16px; }
 .tabs a {
@@ -124,7 +119,7 @@ main { padding: 20px; max-width: 1180px; margin: 0 auto; }
 .tabs a[aria-current="page"] { color: var(--green); font-weight: 700; border-bottom-color: #b4532a; }
 .table-scroll { overflow-x: auto; }
 @media (min-width: 900px) {
-  .shell.has-sidebar { grid-template-columns: 200px minmax(0, 1fr); }
+  .shell.has-sidebar { grid-template-columns: 220px minmax(0, 1fr); }
   .sidebar { border-bottom: 0; border-right: 1px solid var(--line); padding: 20px 12px; min-height: 60vh; }
 }
 h1 { font-size: 1.8rem; line-height: 1.2; margin: 0 0 6px; }

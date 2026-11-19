@@ -497,6 +497,36 @@ def delete_submit(
     return RedirectResponse("/voters?removed=1", status_code=303)
 
 
+def _register_coming_soon_pages() -> None:
+    """Stub pages for sidebar entries whose features are not built yet."""
+    for path, item in COMING_SOON_PAGES.items():
+
+        def page(request: Request, user=Depends(web_user), item=item):
+            if item.audience == ADMIN and user.role != "admin":
+                return _forbidden(request, user)
+            return render(request, "coming_soon.html", {"user": user, "page_title": item.label})
+
+        router.add_api_route(path, page, methods=["GET"], name="soon" + path.replace("/", "_"))
+
+
+_register_coming_soon_pages()
+
+
+def _register_coming_soon_pages() -> None:
+    """Stub pages for sidebar entries whose features are not built yet."""
+    for path, item in COMING_SOON_PAGES.items():
+
+        def page(request: Request, user=Depends(web_user), item=item):
+            if item.audience == ADMIN and user.role != "admin":
+                return _forbidden(request, user)
+            return render(request, "coming_soon.html", {"user": user, "page_title": item.label})
+
+        router.add_api_route(path, page, methods=["GET"], name="soon" + path.replace("/", "_"))
+
+
+_register_coming_soon_pages()
+
+
 @router.get("/reports")
 def reports(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
     return render(request, "reports.html", {"user": user, "report": build_report(db)})

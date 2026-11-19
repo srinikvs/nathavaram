@@ -11,11 +11,13 @@ from app.config import ROOT
 from app.constants import PARTIES
 from app.security import csrf_token_for
 from app.validation import parse_dt
+from app.web.nav import sections_for
 
 templates = Jinja2Templates(directory=str(ROOT / "app" / "templates"))
 IST = timezone(timedelta(hours=5, minutes=30))
 
 templates.env.globals["parties"] = PARTIES
+templates.env.globals["nav_sections"] = sections_for
 
 
 def format_ist(value: str | None) -> str:
