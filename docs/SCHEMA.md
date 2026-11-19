@@ -111,6 +111,24 @@ DATABASE_URL=sqlite:///./data/nathavaram.db alembic upgrade head
 
 Check constraints in the database repeat the age and party rules so a raw SQL write cannot bypass them.
 
+## Master data (admin)
+
+No new tables and no migration. `GET /api/master-data` and `GET /api/master-data/{entity}` (and the `/master-data` page) are admin-only and read-only. Each list is a `GROUP BY` over active (not soft-deleted) voters, with blank values grouped as `(blank)` and blank children not counted:
+
+| Tab | Grouped by | Counts |
+| --- | --- | --- |
+| `constituency` | `constituency` | mandals, panchayaths, voters |
+| `mandalam` | `mandal`, `constituency` | panchayaths, villages, voters |
+| `panchayathi` | `panchayath`, `mandal` | villages, booths, voters |
+| `booth` | `booth` | wards, streets, voters |
+| `ward` | `ward` | booths, streets, voters |
+| `street` | `street`, `ward` | booths, voters |
+| `caste` | `caste` | voters |
+| `profession` | none | `available: false`. Profession is not a voter column (dropped in `0007`) |
+| `city` | `current_city` | local voters, voters |
+
+An unknown entity returns 404; a non-admin gets 403. Voter sync is unaffected.
+
 ## Age bands used by reports
 
 These are derived. They are not stored.

@@ -27,6 +27,7 @@ from app.services.login import (
     attempt_login,
     guarded_change_password,
 )
+from app.services.master_data import ENTITIES, build_master_table, tab_list
 from app.services.reports import build_report
 from app.services.users import create_user, delete_user, list_users, reset_user_password
 from app.services.voters import (
@@ -43,6 +44,8 @@ from app.services.voters import VOTER_ID_LOCKED_MESSAGE
 from app.web.templates import render
 
 router = APIRouter()
+
+DEFAULT_MASTER_TAB = "constituency"
 
 
 class LoginRequired(Exception):
@@ -497,6 +500,24 @@ def delete_submit(
 @router.get("/reports")
 def reports(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
     return render(request, "reports.html", {"user": user, "report": build_report(db)})
+
+
+@router.get("/master-data")
+def master_data_page(
+    request: Request,
+    tab: str = DEFAULT_MASTER_TAB,
+    db: Session = Depends(get_db),
+    user=Depends(web_user),
+):
+    if user.role != "admin":
+        return _forbidden(request, user)
+    if tab not in ENTITIES:
+        tab = DEFAULT_MASTER_TAB
+    return render(
+        request,
+        "master_data.html",
+        {"user": user, "tabs": tab_list(), "active": tab, "table": build_master_table(db, tab)},
+    )
 
 
 @router.get("/import")

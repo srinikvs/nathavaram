@@ -105,6 +105,28 @@ a { color: var(--green); }
   cursor: pointer;
 }
 main { padding: 20px; max-width: 1180px; margin: 0 auto; }
+.shell.has-sidebar { display: grid; grid-template-columns: 1fr; }
+.shell.has-sidebar main { width: 100%; }
+.sidebar { background: var(--paper-2); border-bottom: 1px solid var(--line); padding: 10px 20px; }
+.sidebar-title { margin: 0; color: var(--muted); font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.sidebar-link {
+  display: flex; align-items: center; gap: 8px; min-height: 44px;
+  color: var(--green); text-decoration: none; font-weight: 600;
+  border-left: 3px solid transparent; padding-left: 8px;
+}
+.sidebar-link:hover, .sidebar-link[aria-current="page"] { border-left-color: #b4532a; background: var(--ok); }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid var(--line); margin-bottom: 16px; }
+.tabs a {
+  min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px;
+  color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -2px;
+}
+.tabs a:hover { color: var(--green); }
+.tabs a[aria-current="page"] { color: var(--green); font-weight: 700; border-bottom-color: #b4532a; }
+.table-scroll { overflow-x: auto; }
+@media (min-width: 900px) {
+  .shell.has-sidebar { grid-template-columns: 200px minmax(0, 1fr); }
+  .sidebar { border-bottom: 0; border-right: 1px solid var(--line); padding: 20px 12px; min-height: 60vh; }
+}
 h1 { font-size: 1.8rem; line-height: 1.2; margin: 0 0 6px; }
 h2 { font-size: 1.05rem; margin: 0 0 8px; }
 .lede { margin: 0; color: var(--muted); }

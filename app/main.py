@@ -18,7 +18,7 @@ from app import database
 from app.database import dispose_db, get_db, init_db
 from app.deps import csrf_guard
 from app.migrate import run_migrations
-from app.routers import auth, reports, sync, users, voters
+from app.routers import auth, master_data, reports, sync, users, voters
 from app.services.bootstrap import seed_admin
 from app.services.throttle import LoginThrottle
 from app.web.routes import LoginRequired, PasswordChangeRequired
@@ -103,6 +103,7 @@ def create_app() -> FastAPI:
     app.include_router(users.router)
     app.include_router(voters.router)
     app.include_router(reports.router)
+    app.include_router(master_data.router)
     app.include_router(sync.router)
     app.include_router(web_router)
     app.mount("/static", StaticFiles(directory=str(ROOT / "app" / "static")), name="static")
