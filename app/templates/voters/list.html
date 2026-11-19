@@ -163,6 +163,10 @@
   {% endfor %}
 </p>
 {% else %}
+{% if user.role == "admin" %}
 <p class="empty">No voters yet. Add one, or import the sample CSV from the Import page.</p>
+{% else %}
+<p class="empty">No voters match your search.</p>
+{% endif %}
 {% endif %}
 {% endblock %}

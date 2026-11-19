@@ -166,3 +166,22 @@ def test_login_page_has_no_sidebar(ctx):
     html = ctx.client.get("/login").text
 
     assert '<aside class="sidebar"' not in html
+
+
+def test_empty_voter_list_shows_import_hint_to_admin(ctx):
+    _web_login(ctx, "admin", "admin-pass-123")
+
+    page = ctx.client.get("/voters")
+
+    assert page.status_code == 200
+    assert "Import page" in page.text
+
+
+def test_empty_voter_list_hides_import_hint_from_regular_user(ctx):
+    _as_clerk(ctx)
+
+    page = ctx.client.get("/voters")
+
+    assert page.status_code == 200
+    assert "No voters match your search" in page.text
+    assert "Import page" not in page.text
