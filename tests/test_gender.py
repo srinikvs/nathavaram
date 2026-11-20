@@ -221,7 +221,8 @@ def test_list_shows_gender_and_the_placeholder_for_a_voter_without_one(ctx):
     # Arrange
     ids = {"Male": "ZZZ2000003", "Female": "ZZZ2000004", "Other": "ZZZ2000001", None: "ZZZ2000002"}
     for offset, (gender, voter_id) in enumerate(ids.items()):
-        extra = {"gender": gender} if gender else {}
+        # The voter without a gender also has no house number, so both show the placeholder.
+        extra = {"gender": gender} if gender else {"house_no": ""}
         _create(ctx, voter_id=voter_id, mobile=f"90000000{31 + offset}", **extra)
     _web_login(ctx)
 
