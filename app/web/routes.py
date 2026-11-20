@@ -540,7 +540,7 @@ def master_data_page(
     return render(
         request,
         "master_data.html",
-        {"user": user, "tabs": tab_list(), "active": tab, "table": build_master_table(db, tab)},
+        {"user": user, "tabs": tab_list(), "active_tab": tab, "table": build_master_table(db, tab)},
     )
 
 

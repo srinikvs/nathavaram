@@ -6,6 +6,8 @@ Internal names are snake_case.
 
 from __future__ import annotations
 
+import re
+
 # (internal name, exact display name) in the order clerks see on paper.
 # voter_id is the primary key of the voters table.
 VOTER_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -42,6 +44,7 @@ DATA_FIELDS: tuple[str, ...] = tuple(name for name, _ in VOTER_COLUMNS)
 # Gender is a real optional column again (see VOTER_COLUMNS).
 LEGACY_HEADER_ALIASES: dict[str, str] = {
     "2024 B.S.No": "booth_s_no",
+    "B.S.No": "booth_s_no",
     "bs_no_2024": "booth_s_no",
     "Ward S No": "ward_s_no",
     "SurName": "last_name",
@@ -68,6 +71,32 @@ IMPORT_HEADER_FIELDS: dict[str, str] = {
     **FIELD_BY_LABEL,
     **LEGACY_HEADER_ALIASES,
 }
+
+def normalize_header(name: str) -> str:
+    """Lookup key for an import header: case-insensitive, whitespace-collapsed, no trailing dots.
+
+    Dots, underscores and spaces are also treated as equivalent separators ("B.S.No" ~ "B S No"
+    ~ "b_s_no"). The build below refuses any rule that would merge headers of different fields.
+    """
+    return re.sub(r"[\s._]+", " ", name.casefold()).strip()
+
+
+def _build_header_lookup() -> tuple[dict[str, str], frozenset[str]]:
+    lookup: dict[str, str] = {}
+    for header, field in IMPORT_HEADER_FIELDS.items():
+        key = normalize_header(header)
+        if lookup.setdefault(key, field) != field:
+            raise ValueError(f"import header {header!r} collides on normalized key {key!r}")
+    dropped = frozenset(normalize_header(h) for h in DROPPED_IMPORT_HEADERS)
+    clash = dropped & lookup.keys()
+    if clash:
+        raise ValueError(f"dropped import headers collide with real ones: {sorted(clash)}")
+    return lookup, dropped
+
+
+# Normalized header -> internal field, and normalized names of ignored columns.
+NORMALIZED_HEADER_FIELDS, NORMALIZED_DROPPED_HEADERS = _build_header_lookup()
+
 # Columns an older CSV may lack. Only VoterId and FirstName are required.
 OPTIONAL_IMPORT_FIELDS: frozenset[str] = frozenset(
     {name for name, _ in VOTER_COLUMNS} - {"voter_id", "first_name"}

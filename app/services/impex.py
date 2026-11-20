@@ -17,8 +17,9 @@ from sqlalchemy.orm import Session
 from app.constants import (
     CSV_HEADERS,
     DATA_FIELDS,
-    DROPPED_IMPORT_HEADERS,
-    IMPORT_HEADER_FIELDS,
+    NORMALIZED_DROPPED_HEADERS,
+    NORMALIZED_HEADER_FIELDS,
+    normalize_header,
     IMPORT_ROW_LIMIT,
     LABEL_BY_FIELD,
     OPTIONAL_IMPORT_FIELDS,
@@ -210,10 +211,14 @@ def _import_table(
     # Old headers ("SurName", "Address", "C_City", "2024 Booth", ...) are accepted alongside the
     # new ones. Permanent address and Profession were removed: their columns are ignored.
     # Gender is a real optional column: a file without it imports with gender left blank.
+    # Lookup ignores case, extra whitespace and trailing dots (see normalize_header).
+    keys = [normalize_header(name) for name in headers]
     extra = [
-        name for name in headers if name not in IMPORT_HEADER_FIELDS and name not in DROPPED_IMPORT_HEADERS
+        name
+        for name, key in zip(headers, keys)
+        if key not in NORMALIZED_HEADER_FIELDS and key not in NORMALIZED_DROPPED_HEADERS
     ]
-    fields = [IMPORT_HEADER_FIELDS[name] for name in headers if name in IMPORT_HEADER_FIELDS]
+    fields = [NORMALIZED_HEADER_FIELDS[key] for key in keys if key in NORMALIZED_HEADER_FIELDS]
     if len(set(fields)) != len(fields):
         raise ImportRejected(f"{label} header contains the same column twice (old and new names mixed)")
     missing = [
@@ -238,9 +243,9 @@ def _import_table(
         if rows_read > IMPORT_ROW_LIMIT:
             raise ImportRejected(f"{label} exceeds {IMPORT_ROW_LIMIT} data rows")
         payload_row = {
-            IMPORT_HEADER_FIELDS[key]: csv_unsafe(value)
+            NORMALIZED_HEADER_FIELDS[normalize_header(key)]: csv_unsafe(value)
             for key, value in raw.items()
-            if key in IMPORT_HEADER_FIELDS
+            if normalize_header(key) in NORMALIZED_HEADER_FIELDS
         }
         try:
             parsed = VoterWrite.model_validate(payload_row)

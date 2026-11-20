@@ -95,8 +95,8 @@ a { color: var(--green); }
   cursor: pointer;
 }
 main { padding: 20px; max-width: 1180px; margin: 0 auto; }
-.shell.has-sidebar { display: grid; grid-template-columns: 1fr; }
-.shell.has-sidebar main { width: 100%; }
+.shell.has-sidebar { display: grid; grid-template-columns: minmax(0, 1fr); }
+.shell.has-sidebar main { width: 100%; min-width: 0; }
 .sidebar { background: var(--paper-2); border-bottom: 1px solid var(--line); padding: 10px 20px; }
 .sidebar-section { margin-bottom: 14px; }
 .sidebar-section form { margin: 0; }
@@ -129,8 +129,12 @@ main { padding: 20px; max-width: 1180px; margin: 0 auto; }
   min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px;
   color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -2px;
 }
-.tabs a:hover { color: var(--green); }
-.tabs a[aria-current="page"] { color: var(--green); font-weight: 700; border-bottom-color: #b4532a; }
+.tabs a:hover { color: var(--green); background: #efe8d8; }
+.tabs a[aria-current="page"],
+.tabs a[aria-current="page"]:hover {
+  color: #fff; background: var(--green); font-weight: 700;
+  border-bottom-color: #b4532a; border-radius: 6px 6px 0 0;
+}
 .table-scroll { overflow-x: auto; }
 @media (min-width: 900px) {
   .shell.has-sidebar { grid-template-columns: 260px minmax(0, 1fr); }
@@ -232,8 +236,9 @@ form.inline { display: inline; margin: 0; }
   clip: rect(0 0 0 0); white-space: nowrap;
 }
 .columns { font-size: 0.92rem; }
-.report-grid { display: grid; gap: 14px; }
+.report-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; }
 .report-block {
+  min-width: 0;
   background: var(--paper-2);
   border: 1px solid var(--line);
   padding: 12px;
@@ -248,7 +253,7 @@ abbr { text-decoration: none; color: var(--chili); }
   .filters { grid-template-columns: 1.4fr repeat(3, 1fr); align-items: end; }
   .filters details, .filters .actions { grid-column: 1 / -1; }
   .more { grid-template-columns: repeat(3, 1fr); }
-  .report-grid { grid-template-columns: 1fr 1fr; }
+  .report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
   html, body { max-width: 100%; overflow-x: hidden; }
