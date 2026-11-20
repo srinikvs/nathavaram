@@ -275,6 +275,8 @@ def _apply_filters(stmt, query: VoterSearch):
         stmt = stmt.where(_contains(Voter.caste, query.caste))
     if query.party:
         stmt = stmt.where(func.lower(Voter.party) == query.party.lower())
+    if query.gender:
+        stmt = stmt.where(Voter.gender == query.gender)
     if query.mobile:
         stmt = stmt.where(_contains(Voter.mobile, query.mobile))
     return stmt

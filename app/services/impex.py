@@ -62,7 +62,8 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
     if len(set(headers)) != len(headers):
         raise ImportRejected("CSV header contains duplicate column names")
     # Old headers ("SurName", "Address", "C_City", "2024 Booth", ...) are accepted alongside the
-    # new ones. Gender, Permanent address and Profession were removed: their columns are ignored.
+    # new ones. Permanent address and Profession were removed: their columns are ignored.
+    # Gender is a real optional column: a file without it imports with gender left blank.
     extra = [
         name for name in headers if name not in IMPORT_HEADER_FIELDS and name not in DROPPED_IMPORT_HEADERS
     ]

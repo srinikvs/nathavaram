@@ -18,6 +18,7 @@ VOTER_COLUMNS: tuple[tuple[str, str], ...] = (
     ("last_name", "LastName"),
     ("relative_name", "RelativeName"),
     ("house_no", "HouseNo"),
+    ("gender", "Gender"),
     ("age", "Age"),
     ("street", "Street"),
     ("mobile", "Mobile"),
@@ -37,7 +38,8 @@ LABEL_BY_FIELD: dict[str, str] = {name: label for name, label in VOTER_COLUMNS}
 DATA_FIELDS: tuple[str, ...] = tuple(name for name, _ in VOTER_COLUMNS)
 
 # Extra CSV import headers: labels and column names used before the voterId-key rework.
-# Gender, Permanent address and Profession no longer exist; those columns are ignored.
+# Permanent address and Profession no longer exist; those columns are ignored.
+# Gender is a real optional column again (see VOTER_COLUMNS).
 LEGACY_HEADER_ALIASES: dict[str, str] = {
     "2024 B.S.No": "booth_s_no",
     "bs_no_2024": "booth_s_no",
@@ -58,7 +60,7 @@ LEGACY_HEADER_ALIASES: dict[str, str] = {
 }
 # Headers of columns that were dropped. They are accepted and discarded so old exports import.
 DROPPED_IMPORT_HEADERS: frozenset[str] = frozenset(
-    {"Gender", "gender", "Permanent address", "permanent_address", "Profession", "profession"}
+    {"Permanent address", "permanent_address", "Profession", "profession"}
 )
 # Display labels, internal column names (house_no, booth_s_no, ...) and the legacy aliases.
 IMPORT_HEADER_FIELDS: dict[str, str] = {
@@ -71,6 +73,7 @@ OPTIONAL_IMPORT_FIELDS: frozenset[str] = frozenset(
     {name for name, _ in VOTER_COLUMNS} - {"voter_id", "first_name"}
 )
 
+# Gender is deliberately absent: only owner/admin may set it on an existing voter (like Age).
 # The only fields the regular "user" role may change on an existing voter.
 # Owner/admin may change every field except voter_id, which nobody can change.
 # HouseNo is included because it used to be part of Address, which users could edit.
@@ -79,6 +82,8 @@ USER_EDITABLE_FIELDS: frozenset[str] = frozenset(
 )
 
 # Exact dropdown values. Blank / null is allowed and is not one of these.
+GENDERS: tuple[str, ...] = ("Male", "Female", "Other")
+
 PARTIES: tuple[str, ...] = (
     "TDP",
     "YSRCP",
@@ -114,6 +119,7 @@ TEXT_LIMITS: dict[str, int] = {
     "last_name": 128,
     "relative_name": 128,
     "house_no": 64,
+    "gender": 16,
     "street": 1000,
     "caste": 128,
     "mobile": 20,
@@ -133,6 +139,7 @@ SEARCH_FILTER_FIELDS: tuple[str, ...] = (
     "panchayath",
     "mandal",
     "is_local",
+    "gender",
     "booth",
     "ward",
     "caste",

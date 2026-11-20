@@ -37,6 +37,7 @@ LOCKED_CHANGES = {
     "mandal": "Othermandal",
     "is_local": False,
     "age": 50,
+    "gender": "Female",
     "current_city": "Elsewhere",
 }
 ALLOWED_CHANGES = {
@@ -455,13 +456,13 @@ def test_list_page_shows_the_requested_columns(ctx):
     page = ctx.client.get("/voters").text
 
     for header in (
-        "VoterId", "FirstName", "LastName", "RelativeName", "HouseNo", "Street", "Village",
+        "VoterId", "FirstName", "LastName", "RelativeName", "HouseNo", "Gender", "Street", "Village",
         "Panchayath", "Mandal", "Local/Non-Local", "Booth", "Ward", "Age", "Caste", "Party", "Mobile", "Constituency",
     ):
         assert f"<th>{header}</th>" in page, header
     assert 'name="village"' in page and 'name="is_local"' in page
     assert 'name="panchayath"' in page and 'name="mandal"' in page
-    for gone in ("<th>Gender</th>", "Profession", "Permanent address", "<th>Address</th>", "<th>SurName</th>"):
+    for gone in ("Profession", "Permanent address", "<th>Address</th>", "<th>SurName</th>"):
         assert gone not in page, gone
 
 
@@ -473,11 +474,11 @@ def test_form_pages_show_the_requested_fields_and_not_the_removed_ones(ctx):
         page = ctx.client.get(url).text
         for label in (
             "Booth", "Booth S.No", "Ward", "Ward S.No", "FirstName", "LastName", "RelativeName",
-            "HouseNo", "Age", "Street", "Mobile", "Caste", "Village", "Panchayath", "Mandal",
+            "HouseNo", "Gender", "Age", "Street", "Mobile", "Caste", "Village", "Panchayath", "Mandal",
             "Current City", "Local/Non-Local", "Party", "Constituency",
         ):
             assert re.search(rf"<label for=\"[a-z_]+\">{re.escape(label)}( <abbr[^>]*>\*</abbr>)?</label>", page), (url, label)
-        for gone in ("Gender", "Profession", "Permanent address", "C_City", "SurName"):
+        for gone in ("Profession", "Permanent address", "C_City", "SurName"):
             assert gone not in page, (url, gone)
 
 
@@ -534,10 +535,10 @@ def test_csv_export_has_the_requested_headers(ctx):
     assert list(rows[0]) == list(CSV_HEADERS)
     assert list(CSV_HEADERS) == [
         "Booth", "Booth S.No", "Ward", "Ward S.No", "VoterId", "FirstName", "LastName",
-        "RelativeName", "HouseNo", "Age", "Street", "Mobile", "Caste", "Village", "Panchayath",
+        "RelativeName", "HouseNo", "Gender", "Age", "Street", "Mobile", "Caste", "Village", "Panchayath",
         "Mandal", "Current City", "Local/Non-Local", "Party", "Constituency",
     ]
-    assert not {"Gender", "Profession", "Permanent address", "Address", "SurName"} & set(rows[0])
+    assert not {"Profession", "Permanent address", "Address", "SurName"} & set(rows[0])
     assert {row["VoterId"]: row["Local/Non-Local"] for row in rows} == {
         "ZZZ1000001": "Local",
         "ZZZ1000002": "Non-Local",
@@ -562,7 +563,7 @@ def test_csv_export_import_round_trip_keeps_the_new_columns(ctx):
 
 def test_csv_import_accepts_local_and_non_local_values(ctx):
     header = ",".join(CSV_HEADERS)
-    row = "1,2,3,4,{vid},Newhdr,Row,Rel,H1,40,Main St,9000000091,G,Samplevillage,Pan,Man,N,{local},"
+    row = "1,2,3,4,{vid},Newhdr,Row,Rel,H1,,40,Main St,9000000091,G,Samplevillage,Pan,Man,N,{local},"
 
     imported = _import(
         ctx,
@@ -577,7 +578,7 @@ def test_csv_import_accepts_local_and_non_local_values(ctx):
 
 def test_csv_import_reports_a_bad_local_value_for_that_row(ctx):
     header = ",".join(CSV_HEADERS)
-    row = "1,2,3,4,ZZZ0000604,Badlocal,Row,Rel,,40,,9000000091,G,V,P,M,N,perhaps,"
+    row = "1,2,3,4,ZZZ0000604,Badlocal,Row,Rel,,,40,,9000000091,G,V,P,M,N,perhaps,"
 
     imported = _import(ctx, "\n".join([header, row]))
 

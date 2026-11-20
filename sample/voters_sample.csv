@@ -1,10 +1,10 @@
-Booth,Booth S.No,Ward,Ward S.No,VoterId,FirstName,LastName,RelativeName,HouseNo,Age,Street,Mobile,Caste,Village,Panchayath,Mandal,Current City,Local/Non-Local,Party,Constituency
-1,10,1,1,ZZZ0000001,Testperson,One,Relative One,H-1,42,Sample Street A,9000000001,SampleGroupA,Sampleville A,Samplepanchayath,Samplemandal,Nathavaram,Local,,Sampleconstituency
-1,11,1,2,ZZZ0000002,Testperson,Two,Relative Two,H-1,38,Sample Street A,9000000002,SampleGroupA,Sampleville A,Samplepanchayath,Samplemandal,Nathavaram,Local,TDP,
-2,20,1,3,ZZZ0000003,Testperson,Three,Relative Three,H-2,67,Sample Street B,9000000003,SampleGroupB,Sampleville B,Samplepanchayath,Samplemandal,Nathavaram,Non-Local,YSRCP,Sampleconstituency
-2,21,2,4,ZZZ0000004,Testperson,Four,Relative Four,H-3,21,Sample Street B,9000000004,SampleGroupB,Sampleville B,Samplepanchayath,Samplemandal,Nathavaram,Non-Local,Jana Sena,
-3,30,2,5,ZZZ0000005,నమూనా,ఐదు,బంధువు,H-4,55,Sample Street,9000000005,SampleGroupC,నమూనా గ్రామం,Samplepanchayath,Samplemandal,నాతవరం,Local,,Sampleconstituency
-3,31,2,6,ZZZ0000006,Testperson,Six,Relative Six,12-A,30,Sample Street C,+919000000006,SampleGroupC,Sampleville C,Samplepanchayath,Samplemandal,Nathavaram,Local,BJP,
-4,40,3,7,ZZZ0000007,Testperson,Seven,Relative Seven,H-7,,Sample Street C,09000000007,SampleGroupA,Sampleville C,Samplepanchayath,Samplemandal,Nathavaram,Non-Local,INC,Sampleconstituency
-4,41,3,8,ZZZ0000008,Testperson,Eight,Relative Eight,H-8,19,Sample Street,,SampleGroupB,,,Samplemandal,Nathavaram,Non-Local,Independent,
-5,50,3,9,ZZZ0000009,Testperson,Nine,Relative Nine,H-9,73,Sample Street A,9000000009,SampleGroupC,Sampleville A,Samplepanchayath,Samplemandal,Nathavaram,Local,TDP,Sampleconstituency
+Booth,Booth S.No,Ward,Ward S.No,VoterId,FirstName,LastName,RelativeName,HouseNo,Gender,Age,Street,Mobile,Caste,Village,Panchayath,Mandal,Current City,Local/Non-Local,Party,Constituency
+1,10,1,1,ZZZ0000001,Testperson,One,Relative One,H-1,Male,42,Sample Street A,9000000001,SampleGroupA,Sampleville A,Samplepanchayath,Samplemandal,Nathavaram,Local,,Sampleconstituency
+1,11,1,2,ZZZ0000002,Testperson,Two,Relative Two,H-1,Female,38,Sample Street A,9000000002,SampleGroupA,Sampleville A,Samplepanchayath,Samplemandal,Nathavaram,Local,TDP,
+2,20,1,3,ZZZ0000003,Testperson,Three,Relative Three,H-2,Male,67,Sample Street B,9000000003,SampleGroupB,Sampleville B,Samplepanchayath,Samplemandal,Nathavaram,Non-Local,YSRCP,Sampleconstituency
+2,21,2,4,ZZZ0000004,Testperson,Four,Relative Four,H-3,Female,21,Sample Street B,9000000004,SampleGroupB,Sampleville B,Samplepanchayath,Samplemandal,Nathavaram,Non-Local,Jana Sena,
+3,30,2,5,ZZZ0000005,నమూనా,ఐదు,బంధువు,H-4,Other,55,Sample Street,9000000005,SampleGroupC,నమూనా గ్రామం,Samplepanchayath,Samplemandal,నాతవరం,Local,,Sampleconstituency
+3,31,2,6,ZZZ0000006,Testperson,Six,Relative Six,12-A,,30,Sample Street C,+919000000006,SampleGroupC,Sampleville C,Samplepanchayath,Samplemandal,Nathavaram,Local,BJP,
+4,40,3,7,ZZZ0000007,Testperson,Seven,Relative Seven,H-7,Male,,Sample Street C,09000000007,SampleGroupA,Sampleville C,Samplepanchayath,Samplemandal,Nathavaram,Non-Local,INC,Sampleconstituency
+4,41,3,8,ZZZ0000008,Testperson,Eight,Relative Eight,H-8,Female,19,Sample Street,,SampleGroupB,,,Samplemandal,Nathavaram,Non-Local,Independent,
+5,50,3,9,ZZZ0000009,Testperson,Nine,Relative Nine,H-9,,73,Sample Street A,9000000009,SampleGroupC,Sampleville A,Samplepanchayath,Samplemandal,Nathavaram,Local,TDP,Sampleconstituency

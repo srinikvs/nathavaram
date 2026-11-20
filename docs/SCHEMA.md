@@ -17,6 +17,7 @@ Display names below are the exact labels in the web form and the exact CSV/Excel
 | LastName | `last_name` | text, null | Up to 128 characters. Formerly "SurName" / `surname` |
 | RelativeName | `relative_name` | text, null | Up to 128 characters |
 | HouseNo | `house_no` | text, null | Up to 64 characters |
+| Gender | `gender` | text, null | Empty means unknown or not recorded. Otherwise exactly one of `Male`, `Female`, `Other` (column is `VARCHAR(16)` with a `CHECK`). Matching is case-insensitive (`male`, `MALE`) and stored in this canonical form; any other value is refused with 422. Existing voters stay empty: nothing is guessed or backfilled. Only owner/admin can change it on an existing voter (like Age) |
 | Age | `age` | integer, null | Whole number from 1 to 130, or null when unknown |
 | Street | `street` | text, null | Up to 1000 characters. Formerly "Address" / `address` |
 | Mobile | `mobile` | text, null | Stored exactly as entered (trimmed), including a leading `0` or `+91`. Validation is loose: after removing spaces, hyphens, and an optional `+91`, `91`, or `0` prefix, the remaining value must be a 10-digit Indian mobile starting with 6–9 |
@@ -29,7 +30,9 @@ Display names below are the exact labels in the web form and the exact CSV/Excel
 | Party | `party` | text, null | Empty means no answer. Otherwise one of: `TDP`, `YSRCP`, `Jana Sena`, `BJP`, `INC`, `CPI`, `Independent`, `Unknown`, `Prefer not to say`. Matching is case-insensitive and stored in this canonical form |
 | Constituency | `constituency` | text, null | Up to 128 characters. Last column. Only owner/admin can change it on an existing voter |
 
-Gender, Permanent address and Profession were removed (migration `0007`); their values are not kept.
+Permanent address and Profession were removed (migration `0007`); their values are not kept. Gender was dropped by `0007` too (its old values are not restored) and came back as the new optional column above (migration `0009`).
+
+The voter list, CSV and Excel use these 21 columns in exactly the order above (the web list adds an Actions column after them).
 
 Text columns reject ASCII control characters. Names are not restricted to a single script, so Telugu text round-trips through the API, the form, and CSV.
 
@@ -82,7 +85,7 @@ The rule applies to an **existing** voter and is enforced on the server in `PATC
 
 - `booth_2024` / `ward_2026` became `booth` / `ward` (migration `0004`). Writes (create, PATCH, sync push) still accept the old JSON keys `booth_2024` and `ward_2026`, and CSV import accepts the old headers `2024 Booth` and `2026 Ward`. Using an old and a new name for the same column in one file is rejected.
 - `house_no` was folded into `address` in migration `0006` and is a real column again from `0007`, which splits a leading `H.No <n>,` back out of the old address into `house_no` and keeps the rest as `street`.
-- CSV import still accepts the earlier headers `SurName`, `Address`, `C_City`, `2024 B.S.No`, `Ward S No`, `Local`, `House No`, and the internal column names (`house_no`, `booth_s_no`, ...). The removed `Gender`, `Permanent address` and `Profession` columns are ignored if a file still has them. Only VoterId and FirstName are required.
+- CSV import still accepts the earlier headers `SurName`, `Address`, `C_City`, `2024 B.S.No`, `Ward S No`, `Local`, `House No`, and the internal column names (`house_no`, `booth_s_no`, ...). The removed `Permanent address` and `Profession` columns are ignored if a file still has them. `Gender` / `gender` is a real column: a valid value (Male, Female, Other, any case) is stored, a blank cell leaves it empty, an invalid value fails that row, and a file without a Gender column imports with Gender empty. Only VoterId and FirstName are required.
 
 ## Users
 
@@ -103,13 +106,13 @@ There is no default account in the repository. On startup the app inserts one ad
 
 ## Migration
 
-`alembic/versions/0001_initial.py` creates `users`, `sync_state`, and `voters`, including the partial unique index. `alembic/versions/0002_user_security_flags.py` adds `users.must_change_password` (existing rows become true) and `users.is_owner` (existing rows false). `0003_token_version.py` adds `users.token_version` and `users.deleted_at`. `0004_rename_booth_ward.py` renames `voters.booth_2024` to `booth` and `voters.ward_2026` to `ward` with `ALTER TABLE ... RENAME COLUMN`, so every stored value is kept, and recreates their indexes as `ix_voters_booth` and `ix_voters_ward`. Its downgrade renames them back. `0005_add_address_village_local.py` adds `address`, `village` and `permanent_address` (nullable text, so existing rows get null) and `is_local` (`NOT NULL`, server default false, so existing rows become No). `0006_fold_house_no_into_address.py` folds `house_no` into `address` and drops `house_no` (see "House No removal"); its downgrade re-adds an empty `house_no` column and leaves the folded text in `address`. Dropping a column uses `ALTER TABLE ... DROP COLUMN`, which needs SQLite 3.35 or later (PostgreSQL has always had it). `0007_voter_id_primary_key.py` rebuilds the `voters` table (copy, drop, rename) so `voter_id` becomes the primary key: it removes `id`, renames `bs_no_2024`, `surname` and `c_city` to `booth_s_no`, `last_name` and `current_city`, turns `address` into `street` plus `house_no`, adds `panchayath` and `mandal`, drops `gender`, `permanent_address` and `profession` (**their data is not kept**), and drops `uq_voters_voter_id_active`. Rows that were already soft-deleted keep the placeholder `voter_id` they had. Its downgrade rebuilds the old shape with a new UUID per row, `house_no` folded back into `address`, gender `Unknown`, and empty permanent address and profession. `0008_add_constituency.py` adds `constituency` (nullable text, so existing rows get null); its downgrade drops it. **Back up the database before upgrading.** The app runs `alembic upgrade head` on startup. You can also run it yourself:
+`alembic/versions/0001_initial.py` creates `users`, `sync_state`, and `voters`, including the partial unique index. `alembic/versions/0002_user_security_flags.py` adds `users.must_change_password` (existing rows become true) and `users.is_owner` (existing rows false). `0003_token_version.py` adds `users.token_version` and `users.deleted_at`. `0004_rename_booth_ward.py` renames `voters.booth_2024` to `booth` and `voters.ward_2026` to `ward` with `ALTER TABLE ... RENAME COLUMN`, so every stored value is kept, and recreates their indexes as `ix_voters_booth` and `ix_voters_ward`. Its downgrade renames them back. `0005_add_address_village_local.py` adds `address`, `village` and `permanent_address` (nullable text, so existing rows get null) and `is_local` (`NOT NULL`, server default false, so existing rows become No). `0006_fold_house_no_into_address.py` folds `house_no` into `address` and drops `house_no` (see "House No removal"); its downgrade re-adds an empty `house_no` column and leaves the folded text in `address`. Dropping a column uses `ALTER TABLE ... DROP COLUMN`, which needs SQLite 3.35 or later (PostgreSQL has always had it). `0007_voter_id_primary_key.py` rebuilds the `voters` table (copy, drop, rename) so `voter_id` becomes the primary key: it removes `id`, renames `bs_no_2024`, `surname` and `c_city` to `booth_s_no`, `last_name` and `current_city`, turns `address` into `street` plus `house_no`, adds `panchayath` and `mandal`, drops `gender`, `permanent_address` and `profession` (**their data is not kept**), and drops `uq_voters_voter_id_active`. Rows that were already soft-deleted keep the placeholder `voter_id` they had. Its downgrade rebuilds the old shape with a new UUID per row, `house_no` folded back into `address`, gender `Unknown`, and empty permanent address and profession. `0008_add_constituency.py` adds `constituency` (nullable text, so existing rows get null); its downgrade drops it. `0009_add_gender.py` adds `gender` (nullable `VARCHAR(16)` with a `CHECK` allowing null, `Male`, `Female` or `Other`; no default, so existing rows stay null and no data is invented); its downgrade drops the column and its values. **Back up the database before upgrading.** The app runs `alembic upgrade head` on startup. You can also run it yourself:
 
 ```bash
 DATABASE_URL=sqlite:///./data/nathavaram.db alembic upgrade head
 ```
 
-Check constraints in the database repeat the age and party rules so a raw SQL write cannot bypass them.
+Check constraints in the database repeat the age, party and gender rules so a raw SQL write cannot bypass them.
 
 ## Master data (admin)
 

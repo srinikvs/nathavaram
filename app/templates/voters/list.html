@@ -44,7 +44,7 @@
       {% endfor %}
     </select>
   </div>
-  <details {% if query.caste or query.mobile or query.village or query.panchayath or query.mandal or query.is_local or query.voter_id %}open{% endif %}>
+  <details {% if query.caste or query.mobile or query.village or query.panchayath or query.mandal or query.is_local or query.gender or query.voter_id %}open{% endif %}>
     <summary>More filters</summary>
     <div class="more">
       <div>
@@ -61,6 +61,15 @@
           <option value="">Any</option>
           <option value="Local" {% if query.is_local == "Local" %}selected{% endif %}>Local</option>
           <option value="Non-Local" {% if query.is_local == "Non-Local" %}selected{% endif %}>Non-Local</option>
+        </select>
+      </div>
+      <div>
+        <label for="gender">Gender</label>
+        <select id="gender" name="gender">
+          <option value="">Any</option>
+          {% for gender in genders %}
+          <option value="{{ gender }}" {% if query.gender == gender %}selected{% endif %}>{{ gender }}</option>
+          {% endfor %}
         </select>
       </div>
       <div>
@@ -100,6 +109,7 @@
         <th>LastName</th>
         <th>RelativeName</th>
         <th>HouseNo</th>
+        <th>Gender</th>
         <th>Age</th>
         <th>Street</th>
         <th>Mobile</th>
@@ -126,6 +136,7 @@
         <td data-label="LastName" translate="no">{{ voter.last_name|display }}</td>
         <td data-label="RelativeName" translate="no">{{ voter.relative_name|display }}</td>
         <td data-label="HouseNo" translate="no">{{ voter.house_no|display }}</td>
+        <td data-label="Gender">{{ voter.gender or "" }}</td>
         <td data-label="Age">{{ voter.age|display }}</td>
         <td data-label="Street" translate="no">{{ voter.street|display }}</td>
         <td data-label="Mobile" translate="no">{{ voter.mobile|display }}</td>

@@ -68,6 +68,15 @@
     <input id="house_no" name="house_no" maxlength="64" value="{{ values.get('house_no', '') }}" translate="no">
   </div>
   <div>
+    <label for="gender">Gender</label>
+    <select id="gender" name="gender" {{ lock_select }}>
+      <option value="" {% if not values.get('gender') %}selected{% endif %}>—</option>
+      {% for gender in genders %}
+      <option value="{{ gender }}" {% if values.get('gender') == gender %}selected{% endif %}>{{ gender }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
     <label for="age">Age</label>
     <input id="age" name="age" maxlength="3" inputmode="numeric" placeholder="Blank if unknown" value="{{ values.get('age', '') }}" {{ lock_text }}>
   </div>

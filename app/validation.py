@@ -5,13 +5,14 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta, timezone
 
-from app.constants import PARTIES, TEXT_LIMITS
+from app.constants import GENDERS, PARTIES, TEXT_LIMITS
 
 _MOBILE_SEPARATORS = re.compile(r"[\s\-().]")
 _VOTER_ID = re.compile(r"^[A-Z0-9]{3,32}$")
 _USERNAME = re.compile(r"^[A-Za-z0-9._-]{3,32}$")
 
 _PARTY_LOOKUP = {value.casefold(): value for value in PARTIES}
+_GENDER_LOOKUP = {value.casefold(): value for value in GENDERS}
 
 FORMULA_PREFIXES = frozenset({"=", "+", "-", "@", "\t", "\r"})
 
@@ -85,6 +86,19 @@ def canonical_party(value: object) -> str | None:
     if found is None:
         allowed = ", ".join(PARTIES)
         raise ValueError(f"Party must be empty or one of: {allowed}")
+    return found
+
+
+def canonical_gender(value: object) -> str | None:
+    """Blank -> None; male/MALE -> Male. Anything but Male, Female, Other is refused."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    text = clean_text(value)
+    if text is None:
+        return None
+    found = _GENDER_LOOKUP.get(text.casefold())
+    if found is None:
+        raise ValueError(f"Gender must be empty or one of: {', '.join(GENDERS)}")
     return found
 
 

@@ -9,6 +9,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from app.constants import SYNC_BATCH_LIMIT
 from app.validation import (
     canonical_age,
+    canonical_gender,
     canonical_local,
     canonical_mobile,
     canonical_party,
@@ -128,6 +129,7 @@ class VoterWrite(BaseModel):
     last_name: str | None = None
     relative_name: str | None = None
     house_no: str | None = None
+    gender: str | None = None
     age: int | None = None
     street: str | None = None
     mobile: str | None = None
@@ -193,6 +195,11 @@ class VoterWrite(BaseModel):
     def _age(cls, value: object) -> int | None:
         return canonical_age(value)
 
+    @field_validator("gender", mode="before")
+    @classmethod
+    def _gender(cls, value: object) -> str | None:
+        return canonical_gender(value)
+
 
 class VoterPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -206,6 +213,7 @@ class VoterPatch(BaseModel):
     last_name: str | None = None
     relative_name: str | None = None
     house_no: str | None = None
+    gender: str | None = None
     age: int | None = None
     street: str | None = None
     mobile: str | None = None
@@ -279,6 +287,11 @@ class VoterPatch(BaseModel):
     def _age(cls, value: object) -> int | None:
         return canonical_age(value)
 
+    @field_validator("gender", mode="before")
+    @classmethod
+    def _gender(cls, value: object) -> str | None:
+        return canonical_gender(value)
+
 
 class VoterPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -292,6 +305,7 @@ class VoterPublic(BaseModel):
     last_name: str | None
     relative_name: str | None
     house_no: str | None
+    gender: str | None
     age: int | None
     street: str | None
     mobile: str | None
@@ -331,6 +345,8 @@ class VoterSearch(BaseModel):
     ward: str | None = Field(default=None, max_length=64)
     caste: str | None = Field(default=None, max_length=128)
     party: str | None = Field(default=None, max_length=32)
+    # Male / Female / Other; blank (or "Any") applies no filter.
+    gender: str | None = Field(default=None, max_length=16)
     mobile: str | None = Field(default=None, max_length=20)
     page: int = 1
     page_size: int = 50
@@ -346,6 +362,7 @@ class VoterSearch(BaseModel):
         "ward",
         "caste",
         "party",
+        "gender",
         "mobile",
         mode="before",
     )
@@ -381,6 +398,14 @@ class VoterSearch(BaseModel):
         if value < 1 or value > 200:
             raise ValueError("page_size must be between 1 and 200")
         return value
+
+    @field_validator("gender")
+    @classmethod
+    def _gender_filter(cls, value: str | None) -> str | None:
+        """Normalise to Male / Female / Other; 'Any' means no filter."""
+        if value is None or value.casefold() == "any":
+            return None
+        return canonical_gender(value)
 
     @field_validator("party")
     @classmethod
@@ -442,6 +467,7 @@ class SyncChange(BaseModel):
     last_name: str | None = None
     relative_name: str | None = None
     house_no: str | None = None
+    gender: str | None = None
     age: int | None = None
     street: str | None = None
     mobile: str | None = None
@@ -460,6 +486,11 @@ class SyncChange(BaseModel):
         if value is None or value == "":
             return None
         return canonical_age(value)
+
+    @field_validator("gender", mode="before")
+    @classmethod
+    def _gender(cls, value: object) -> str | None:
+        return canonical_gender(value)
 
 
 class SyncPushRequest(BaseModel):
