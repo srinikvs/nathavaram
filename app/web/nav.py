@@ -58,7 +58,7 @@ NAV_SECTIONS: tuple[NavSection, ...] = (
         (
             NavItem("Master Data", "/master-data", ADMIN),
             _soon("Survey Report", "/survey-report", ADMIN),
-            NavItem("Import", "/import", ADMIN),
+            NavItem("Import CSV / Excel", "/import", ADMIN),
             NavItem("Users", "/users", OWNER),
             NavItem("Change password", "/change-password"),
             NavItem("Log out", "/logout", is_logout=True),

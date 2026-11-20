@@ -80,7 +80,9 @@ Import and export use these headers, in this order:
 
 `Booth, Booth S.No, Ward, Ward S.No, VoterId, FirstName, LastName, RelativeName, HouseNo, Gender, Age, Street, Mobile, Caste, Village, Panchayath, Mandal, Current City, Local/Non-Local, Party, Constituency`
 
-Only VoterId and FirstName are required. Older files still import: `2024 Booth` / `2026 Ward`, `SurName`, `Address`, `C_City`, `2024 B.S.No`, `Ward S No` and `Local` headers work, and the removed Gender, Permanent address and Profession columns are ignored.
+Only VoterId and FirstName are required. Older files still import: `2024 Booth` / `2026 Ward`, `SurName`, `Address`, `C_City`, `2024 B.S.No`, `Ward S No` and `Local` headers work, and the removed Permanent address and Profession columns are ignored. Gender is a real optional column (Male, Female, Other or blank); a file without it leaves gender blank.
+
+The Import page (admin only) takes a `.csv` or an Excel `.xlsx` file and shows the same validation report for both. Excel files use the first sheet, with the header in row 1; numeric cells such as Mobile and Age are read as whole numbers (no `.0`), dates become text, and fully blank rows are skipped. Legacy `.xls`, `.ods`, other file types, password-protected or corrupt workbooks and files over 5 MB are rejected with a message. Fake samples are at `/sample.csv` and `/sample.xlsx` (the Excel sample is built from `sample/voters_sample.csv` on request, so no `.xlsx` is stored in the repo).
 
 The file must be UTF-8 (a byte-order mark is accepted). Export writes UTF-8 with a BOM so Excel on Windows keeps Telugu text, and it prefixes a quote when a cell starts with `=`, `+`, `-`, `@`, a tab, or a carriage return (this includes the report export). Import removes one such leading quote, so `+91` mobiles survive a round trip. Party may be empty. A fake nine-row file is at `sample/voters_sample.csv` and on the Import page after you sign in.
 
@@ -106,6 +108,7 @@ All `/api` routes require a signed-in user except `POST /api/auth/login`.
 | PATCH | `/api/voters/{voter_id}` | Partial update |
 | DELETE | `/api/voters/{voter_id}` | Admin: soft delete. The row is stripped of personal fields |
 | POST | `/api/voters/import.csv` | Admin: multipart CSV import. Body field name is `file` |
+| POST | `/api/voters/import.xlsx` | Admin: multipart Excel (.xlsx) import, first sheet only. Same `file` field, 5 MB limit, columns, validation and report as CSV |
 | POST | `/api/voters/export.csv` | Admin: CSV of the active rows matching the filters in the optional JSON body |
 | POST | `/api/voters/export.xlsx` | Admin: Excel workbook of those rows |
 | GET | `/api/reports/summary` | Counts by booth, ward, village, panchayath, mandal, local/non-local, age band, caste, party |

@@ -61,7 +61,7 @@ Search filters (`q`, `voter_id`, `caste`, `mobile`, and the other filters) are s
 
 `sync_state` is a single row (`id = 1`) holding `current_revision`. Every insert, update, import row, and applied sync change increments it by one and stores that value on the voter. The counter starts at 0.
 
-Because `voter_id` is the primary key, two rows can never share a VoterId. Creating one that belongs to an active voter returns 409 (the service checks first so the API answers before any database error): `A voter with VoterId <id> already exists. Each VoterId must be unique; search for the existing voter or use a different VoterId.` CSV import skips such a row and reports `VoterId <id> already exists`.
+Because `voter_id` is the primary key, two rows can never share a VoterId. Creating one that belongs to an active voter returns 409 (the service checks first so the API answers before any database error): `A voter with VoterId <id> already exists. Each VoterId must be unique; search for the existing voter or use a different VoterId.` CSV import skips such a row and reports `VoterId <id> already exists`. Excel (.xlsx) import goes through the same code path (`app/services/impex.py`, `_import_table`) and gives the same skip, message and report; it reads the first sheet only and stringifies numeric cells without a trailing `.0`.
 
 ### VoterId is fixed after create
 

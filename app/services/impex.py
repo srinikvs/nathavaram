@@ -1,12 +1,16 @@
-"""CSV import with a validation report, plus CSV and Excel export."""
+"""CSV and Excel import with a validation report, plus CSV and Excel export."""
 
 from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timezone
+import zipfile
+from collections.abc import Iterable
+from datetime import date, datetime, time, timezone
+from decimal import Decimal
+from pathlib import Path, PurePath
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -25,6 +29,17 @@ from app.schemas import ImportErrorItem, ImportReport, VoterWrite
 from app.services.revision import allocate_revision
 from app.validation import csv_safe, csv_unsafe, dump_dt, local_label
 from pydantic import ValidationError
+
+
+XLSX_LABEL = "Excel file"
+ACCEPTED_SUFFIXES = frozenset({".csv", ".xlsx"})
+ZIP_MAGIC = b"PK"
+OLE_MAGIC = b"\xd0\xcf\x11\xe0"
+XLSX_UNPACKED_LIMIT = 100 * 1024 * 1024
+LEGACY_OR_LOCKED_MESSAGE = (
+    "This looks like a legacy .xls or password-protected Excel file. Only .csv and .xlsx "
+    "are accepted; remove the password and save as .xlsx"
+)
 
 
 class ImportRejected(Exception):
@@ -57,10 +72,141 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
     if reader.fieldnames is None:
         raise ImportRejected("CSV has no header row")
     headers = [name.strip() if name is not None else "" for name in reader.fieldnames]
+    rows = (
+        (
+            offset,
+            {
+                key.strip(): (value or "")
+                for key, value in raw.items()
+                if key is not None and isinstance(value, (str, type(None)))
+            },
+        )
+        for offset, raw in enumerate(reader, start=2)
+    )
+    return _import_table(db, headers, rows, source_id, "CSV")
+
+
+def import_xlsx(db: Session, payload: bytes, source_id: str) -> ImportReport:
+    """Import the first sheet of an .xlsx workbook through the same path as import_csv."""
+    headers, rows = _read_xlsx(payload)
+    return _import_table(db, headers, iter(rows), source_id, XLSX_LABEL)
+
+
+def import_upload(
+    db: Session, filename: str, payload: bytes, source_id: str, only: str | None = None
+) -> ImportReport:
+    """Import an uploaded CSV or .xlsx, chosen by file name and, for xlsx, the ZIP signature."""
+    kind = detect_upload_kind(filename, payload)
+    if only is not None and kind != only:
+        raise ImportRejected(
+            "This endpoint takes an Excel (.xlsx) file; use /api/voters/import.csv for CSV"
+            if only == "xlsx"
+            else "This endpoint takes a CSV file; use /api/voters/import.xlsx for Excel"
+        )
+    if kind == "xlsx":
+        return import_xlsx(db, payload, source_id)
+    return import_csv(db, payload, source_id)
+
+
+def detect_upload_kind(filename: str, payload: bytes) -> str:
+    """Return "csv" or "xlsx", or raise ImportRejected for any other file type."""
+    suffix = PurePath(filename or "").suffix.lower()
+    if suffix not in ACCEPTED_SUFFIXES:
+        hint = " (legacy .xls is not supported; save as .xlsx)" if suffix == ".xls" else ""
+        raise ImportRejected("Only .csv and .xlsx files are accepted" + hint)
+    if payload.startswith(OLE_MAGIC):
+        raise ImportRejected(LEGACY_OR_LOCKED_MESSAGE)
+    if suffix == ".xlsx" or payload.startswith(ZIP_MAGIC):
+        return "xlsx"
+    return "csv"
+
+
+def oversize_message(filename: str) -> str:
+    if PurePath(filename or "").suffix.lower() == ".csv":
+        return "CSV larger than 5 MB"
+    return "File larger than 5 MB (CSV and Excel uploads are limited to 5 MB)"
+
+
+def _cell_text(value: object) -> str:
+    """Render one worksheet cell as the text a CSV cell would have held."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, (float, Decimal)):
+        if value != value or value in (float("inf"), float("-inf")):
+            return ""
+        return str(int(value)) if value == int(value) else str(value)
+    if isinstance(value, datetime):
+        return value.isoformat(sep=" ") if value.time() != time() else value.date().isoformat()
+    if isinstance(value, (date, time)):
+        return value.isoformat()
+    return str(value)
+
+
+def _read_xlsx(payload: bytes) -> tuple[list[str], list[tuple[int, dict[str, str]]]]:
+    """First sheet as (headers, [(sheet row number, {header: text})]); blank rows are dropped."""
+    if payload.startswith(OLE_MAGIC):
+        raise ImportRejected(LEGACY_OR_LOCKED_MESSAGE)
+    if not payload.strip():
+        raise ImportRejected(f"{XLSX_LABEL} is empty")
+    corrupt = ImportRejected(
+        f"{XLSX_LABEL} could not be read. It may be corrupt or password-protected; "
+        "re-save it as .xlsx without a password"
+    )
+    if not payload.startswith(ZIP_MAGIC):
+        raise corrupt
+    try:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            if sum(info.file_size for info in archive.infolist()) > XLSX_UNPACKED_LIMIT:
+                raise ImportRejected(f"{XLSX_LABEL} is too large when unpacked")
+        book = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
+    except ImportRejected:
+        raise
+    except Exception as exc:  # openpyxl and zipfile raise many types for bad files
+        raise corrupt from exc
+    table: list[tuple[int, list[str]]] = []
+    try:
+        if not book.worksheets:
+            raise ImportRejected(f"{XLSX_LABEL} has no sheets")
+        for number, raw in enumerate(book.worksheets[0].iter_rows(values_only=True), start=1):
+            if number > IMPORT_ROW_LIMIT * 2:
+                raise ImportRejected(f"{XLSX_LABEL} exceeds {IMPORT_ROW_LIMIT} data rows")
+            cells = [_cell_text(value) for value in raw]
+            if any(text.strip() for text in cells):
+                table.append((number, cells))
+    except ImportRejected:
+        raise
+    except Exception as exc:
+        raise corrupt from exc
+    finally:
+        book.close()
+    if not table:
+        raise ImportRejected(f"{XLSX_LABEL} is empty")
+    headers = [text.strip() for text in table[0][1]]
+    while headers and not headers[-1]:
+        headers.pop()
+    width = len(headers)
+    rows = [
+        (number, dict(zip(headers, (cells + [""] * width)[:width]))) for number, cells in table[1:]
+    ]
+    return headers, rows
+
+
+def _import_table(
+    db: Session,
+    headers: list[str],
+    rows: Iterable[tuple[int, dict[str, str]]],
+    source_id: str,
+    label: str,
+) -> ImportReport:
+    """Validate and store rows. Shared by CSV and Excel so both give the same report."""
     if any(not name for name in headers):
-        raise ImportRejected("CSV header contains an empty column name")
+        raise ImportRejected(f"{label} header contains an empty column name")
     if len(set(headers)) != len(headers):
-        raise ImportRejected("CSV header contains duplicate column names")
+        raise ImportRejected(f"{label} header contains duplicate column names")
     # Old headers ("SurName", "Address", "C_City", "2024 Booth", ...) are accepted alongside the
     # new ones. Permanent address and Profession were removed: their columns are ignored.
     # Gender is a real optional column: a file without it imports with gender left blank.
@@ -69,10 +215,10 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
     ]
     fields = [IMPORT_HEADER_FIELDS[name] for name in headers if name in IMPORT_HEADER_FIELDS]
     if len(set(fields)) != len(fields):
-        raise ImportRejected("CSV header contains the same column twice (old and new names mixed)")
+        raise ImportRejected(f"{label} header contains the same column twice (old and new names mixed)")
     missing = [
-        label
-        for field, label in VOTER_COLUMNS
+        column_label
+        for field, column_label in VOTER_COLUMNS
         if field not in fields and field not in OPTIONAL_IMPORT_FIELDS
     ]
     if missing or extra:
@@ -81,20 +227,20 @@ def import_csv(db: Session, payload: bytes, source_id: str) -> ImportReport:
             parts.append("missing " + ", ".join(missing))
         if extra:
             parts.append("unexpected " + ", ".join(extra))
-        raise ImportRejected("CSV columns must match the voter list exactly: " + "; ".join(parts))
+        raise ImportRejected(f"{label} columns must match the voter list exactly: " + "; ".join(parts))
 
     errors: list[ImportErrorItem] = []
     accepted: list[tuple[int, VoterWrite]] = []
     rows_read = 0
     seen_ids: set[str] = set()
-    for offset, raw in enumerate(reader, start=2):
+    for offset, raw in rows:
         rows_read += 1
         if rows_read > IMPORT_ROW_LIMIT:
-            raise ImportRejected(f"CSV exceeds {IMPORT_ROW_LIMIT} data rows")
+            raise ImportRejected(f"{label} exceeds {IMPORT_ROW_LIMIT} data rows")
         payload_row = {
-            IMPORT_HEADER_FIELDS[key.strip()]: csv_unsafe(value or "")
+            IMPORT_HEADER_FIELDS[key]: csv_unsafe(value)
             for key, value in raw.items()
-            if key is not None and key.strip() in IMPORT_HEADER_FIELDS
+            if key in IMPORT_HEADER_FIELDS
         }
         try:
             parsed = VoterWrite.model_validate(payload_row)
@@ -183,6 +329,20 @@ def voters_to_xlsx(voters: list[Voter]) -> bytes:
         sheet.append([_cell(voter, name) for name, _label in VOTER_COLUMNS])
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
+    buffer = io.BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
+
+
+def sample_xlsx_bytes(csv_path: Path) -> bytes:
+    """Build the fake sample workbook from sample/voters_sample.csv (no .xlsx is stored)."""
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "Voters"
+    with csv_path.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.reader(handle):
+            sheet.append(row)
+    sheet.freeze_panes = "A2"
     buffer = io.BytesIO()
     book.save(buffer)
     return buffer.getvalue()
