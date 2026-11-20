@@ -20,7 +20,7 @@
   <p class="lede">No {{ table.label|lower }} values yet.</p>
   {% else %}
   <p class="lede">{{ table.rows|length }} row{% if table.rows|length != 1 %}s{% endif %}.</p>
-  <div class="table-scroll">
+  <div class="table-scroll" data-top-scroll>
     <table>
       <thead>
         <tr>{% for col in table.columns %}<th{% if col.numeric %} class="num"{% endif %}>{{ col.label }}</th>{% endfor %}</tr>
