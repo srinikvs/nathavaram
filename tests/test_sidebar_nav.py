@@ -293,3 +293,62 @@ def test_other_pages_highlight_only_their_own_item(ctx, path):
     _web_login(ctx, "admin", "admin-pass-123")
 
     assert _current(ctx.client.get(path).text) == [path]
+
+
+# --- reports overflow at 412px, master-data active tab ---------------------------
+
+
+def _rule(css: str, selector: str) -> str:
+    match = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", css)
+    assert match, f"CSS rule {selector!r} missing"
+    return match.group(1)
+
+
+def test_report_tables_sit_inside_a_horizontal_scroll_box(ctx):
+    _web_login(ctx, "admin", "admin-pass-123")
+
+    html = ctx.client.get("/reports").text
+
+    blocks = re.findall(r'<section class="report-block">(.*?)</section>', html, re.S)
+    assert len(blocks) == 9
+    for block in blocks:
+        assert re.search(r'<div class="table-wrap[^"]*">\s*<table>', block)
+    assert re.search(r"\.table-wrap \{[^}]*overflow-x: auto", _css())
+
+
+def test_report_layout_cannot_force_a_wider_than_viewport_page():
+    css = _css()
+
+    assert "minmax(0, 1fr)" in _rule(css, ".shell.has-sidebar")
+    assert "min-width: 0" in _rule(css, ".shell.has-sidebar main")
+    assert "minmax(0, 1fr)" in _rule(css, ".report-grid")
+    assert "min-width: 0" in _rule(css, ".report-block")
+    # the desktop two-column grid must also let columns shrink below table width
+    assert "repeat(2, minmax(0, 1fr))" in css
+
+
+def test_master_data_marks_only_the_selected_tab_current(ctx):
+    _web_login(ctx, "admin", "admin-pass-123")
+
+    html = ctx.client.get("/master-data").text
+
+    nav = re.search(r'<nav class="tabs".*?</nav>', html, re.S).group(0)
+    assert nav.count('aria-current="page"') == 1
+    assert len(re.findall(r"<a href=", nav)) > 1
+
+
+def test_active_tab_css_is_distinct_from_inactive_and_hover():
+    css = _css()
+    inactive = _rule(css, ".tabs a")
+    hover = _rule(css, ".tabs a:hover")
+    active = re.search(
+        r'\.tabs a\[aria-current="page"\],\s*\.tabs a\[aria-current="page"\]:hover \{([^}]*)\}', css
+    )
+    assert active, "active tab rule missing"
+
+    assert active.group(1).strip() not in (inactive.strip(), hover.strip())
+    assert "background: var(--green)" in active.group(1)
+    assert "color: #fff" in active.group(1)
+    assert "border-bottom-color" in active.group(1)
+    assert "font-weight: 700" in active.group(1)
+    assert "background" not in inactive
