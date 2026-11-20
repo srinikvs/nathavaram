@@ -198,7 +198,8 @@ def _css() -> str:
 
 
 def _current(html: str) -> list[str]:
-    return re.findall(r'href="([^"]+)" aria-current="page"', html)
+    """aria-current hrefs in the left sidebar only (not page-level tab strips)."""
+    return re.findall(r'href="([^"]+)" aria-current="page"', _sidebar(html))
 
 
 def test_mobile_drawer_markup_is_collapsed_with_accessible_toggle(ctx):
@@ -325,6 +326,14 @@ def test_report_layout_cannot_force_a_wider_than_viewport_page():
     assert "min-width: 0" in _rule(css, ".report-block")
     # the desktop two-column grid must also let columns shrink below table width
     assert "repeat(2, minmax(0, 1fr))" in css
+
+
+def test_sidebar_master_data_highlighted_with_tab_query(ctx):
+    _web_login(ctx, "admin", "admin-pass-123")
+
+    html = ctx.client.get("/master-data?tab=constituency").text
+
+    assert _current(html) == ["/master-data"]
 
 
 def test_master_data_marks_only_the_selected_tab_current(ctx):
