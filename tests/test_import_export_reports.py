@@ -84,7 +84,7 @@ def test_import_accepts_only_voter_id_and_first_name_columns(ctx):
 
     assert imported.status_code == 200, imported.text
     assert imported.json()["imported"] == 1
-    assert search(ctx, voter_id="ZZZ1000").json()["items"][0]["is_local"] is False
+    assert search(ctx, voter_id="ZZZ1000").json()["items"][0]["is_local"] is True
 
 
 def test_import_accepts_old_headers_and_ignores_dropped_columns(ctx):

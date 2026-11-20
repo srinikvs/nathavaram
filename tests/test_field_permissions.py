@@ -403,7 +403,7 @@ def test_web_admin_post_can_change_locked_fields(ctx):
 # --- New columns: create / list / report / search ------------------------------
 
 
-def test_new_columns_default_to_blank_and_not_local(ctx):
+def test_new_columns_default_to_blank_and_local(ctx):
     bare = voter_payload()
     for key in ("street", "house_no", "village", "panchayath", "mandal", "is_local"):
         del bare[key]
@@ -412,7 +412,7 @@ def test_new_columns_default_to_blank_and_not_local(ctx):
 
     assert created["street"] is None and created["house_no"] is None and created["village"] is None
     assert created["panchayath"] is None and created["mandal"] is None
-    assert created["is_local"] is False
+    assert created["is_local"] is True
 
 
 def test_is_local_accepts_local_and_non_local_and_rejects_other_text(ctx):

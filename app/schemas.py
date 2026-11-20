@@ -8,6 +8,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.constants import SYNC_BATCH_LIMIT
 from app.validation import (
+    DEFAULT_IS_LOCAL,
     canonical_age,
     canonical_gender,
     canonical_local,
@@ -138,7 +139,7 @@ class VoterWrite(BaseModel):
     panchayath: str | None = None
     mandal: str | None = None
     current_city: str | None = None
-    is_local: bool = False
+    is_local: bool = DEFAULT_IS_LOCAL
     party: str | None = None
     constituency: str | None = None
 
