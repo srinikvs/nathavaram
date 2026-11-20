@@ -85,8 +85,9 @@ class Voter(Base):
     panchayath: Mapped[str | None] = mapped_column(String(128))
     mandal: Mapped[str | None] = mapped_column(String(128))
     current_city: Mapped[str | None] = mapped_column(String(128))
-    # Default No (Non-Local): rows that existed before the column was added migrate as not local.
-    is_local: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=false())
+    # New inserts default to Local (Python-side). server_default stays false() so rows that
+    # existed before the column was added keep migrating as Non-Local; no backfill.
+    is_local: Mapped[bool] = mapped_column(nullable=False, default=True, server_default=false())
     party: Mapped[str | None] = mapped_column(String(32))
     constituency: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
