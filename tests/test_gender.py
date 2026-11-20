@@ -23,6 +23,7 @@ from app.constants import (
     USER_EDITABLE_FIELDS,
 )
 from app.validation import canonical_gender
+from app.web.templates import display
 from tests.conftest import csrf_from_page, make_user, search, voter_payload
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -216,16 +217,26 @@ def test_list_headers_are_exactly_the_21_columns_then_actions(ctx):
     assert re.findall(r'<td data-label="([^"]*)"', page) == [*EXPECTED_COLUMNS, "Actions"]
 
 
-def test_list_shows_gender_and_blank_for_a_voter_without_one(ctx):
-    _create(ctx, voter_id="ZZZ2000001", mobile="9000000031", gender="Other")
-    _create(ctx, voter_id="ZZZ2000002", mobile="9000000032")
+def test_list_shows_gender_and_the_placeholder_for_a_voter_without_one(ctx):
+    # Arrange
+    ids = {"Male": "ZZZ2000003", "Female": "ZZZ2000004", "Other": "ZZZ2000001", None: "ZZZ2000002"}
+    for offset, (gender, voter_id) in enumerate(ids.items()):
+        extra = {"gender": gender} if gender else {}
+        _create(ctx, voter_id=voter_id, mobile=f"90000000{31 + offset}", **extra)
     _web_login(ctx)
 
+    # Act
     page = ctx.client.get("/voters").text
 
-    rows = {voter_id: next(r for r in page.split("<tr>") if voter_id in r) for voter_id in ("ZZZ2000001", "ZZZ2000002")}
-    assert '<td data-label="Gender">Other</td>' in rows["ZZZ2000001"]
-    assert '<td data-label="Gender"></td>' in rows["ZZZ2000002"]
+    # Assert
+    rows = {g: next(r for r in page.split("<tr>") if v in r) for g, v in ids.items()}
+    for gender in ("Male", "Female", "Other"):
+        assert f'<td data-label="Gender">{gender}</td>' in rows[gender]
+    placeholder = display(None)
+    assert f'<td data-label="Gender">{placeholder}</td>' in rows[None]
+    assert '<td data-label="Gender"></td>' not in rows[None]
+    # Same placeholder as other empty fields on the row (e.g. HouseNo).
+    assert f'<td data-label="HouseNo" translate="no">{placeholder}</td>' in rows[None]
 
 
 def test_form_has_gender_select_between_house_no_and_age(ctx):
