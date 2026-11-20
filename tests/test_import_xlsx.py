@@ -422,7 +422,9 @@ def test_sample_xlsx_has_expected_header_and_only_fake_data(ctx):
     for row in rows[1:]:
         record = dict(zip(HEADER, row))
         assert str(record["VoterId"]).startswith("ZZZ")
-        assert str(record["Mobile"]).startswith("90000000")
+        mobile = "" if record["Mobile"] is None else str(record["Mobile"])
+        # The sample deliberately mixes formats (+91, leading 0) and one blank.
+        assert mobile == "" or mobile.startswith(("90000000", "+9190000000", "090000000"))
 
 
 def test_sample_xlsx_imports_cleanly(ctx):
