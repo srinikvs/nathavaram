@@ -12,7 +12,7 @@
   </div>
 </div>
 <p class="columns" translate="no">Booth, Booth S.No, Ward, Ward S.No, VoterId, FirstName, LastName, RelativeName, HouseNo, Gender, Age, Street, Mobile, Caste, Village, Panchayath, Mandal, Current City, Local/Non-Local, Party, Constituency</p>
-<p class="lede">Only VoterId and FirstName are required; other columns may be left out. Gender is optional: Male, Female, Other or blank, and a file without a Gender column leaves gender blank. Local/Non-Local is Local or Non-Local. VoterId is the unique key: a VoterId that already exists is skipped. Older files still work: "SurName", "Address", "C_City", "2024 B.S.No", "Ward S No", "Local", "2024 Booth" and "2026 Ward" headers are accepted, and the removed Permanent address and Profession columns are ignored. Only .csv and .xlsx files are accepted (not legacy .xls), up to 5 MB.</p>
+<p class="lede">Only VoterId and FirstName are required; other columns may be left out. Gender is optional: Male, Female, Other or blank, and a file without a Gender column leaves gender blank. Local/Non-Local is Local or Non-Local. VoterId is the unique key: a VoterId that already exists is skipped. Older files still work: "SurName", "Address", "C_City", "B.S.No", "2024 B.S.No", "Ward S No", "Local", "2024 Booth" and "2026 Ward" headers are accepted, and the removed Permanent address and Profession columns are ignored. Only .csv and .xlsx files are accepted (not legacy .xls), up to 5 MB.</p>
 {% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
 <form method="post" action="/import" enctype="multipart/form-data" class="stack">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
