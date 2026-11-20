@@ -22,7 +22,7 @@ from app.deps import require_admin, require_user, source_for
 from app.errors import ServiceError
 from app.models import User
 from app.schemas import VoterPage, VoterPatch, VoterPublic, VoterSearch, VoterWrite
-from app.services.impex import ImportRejected, import_csv, voters_to_csv, voters_to_xlsx
+from app.services.impex import ImportRejected, import_csv, import_upload, voters_to_csv, voters_to_xlsx
 from app.services.voters import (
     create_voter,
     export_voters,
@@ -132,6 +132,21 @@ def post_import(
         raise HTTPException(status_code=413, detail="CSV larger than 5 MB")
     try:
         return import_csv(db, content, source_for(user))
+    except ImportRejected as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+
+
+@router.post("/import.xlsx")
+def post_import_xlsx(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    content = file.file.read(IMPORT_BYTE_LIMIT + 1)
+    if len(content) > IMPORT_BYTE_LIMIT:
+        raise HTTPException(status_code=413, detail="Excel file larger than 5 MB")
+    try:
+        return import_upload(db, file.filename or "", content, source_for(user), only="xlsx")
     except ImportRejected as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc
 

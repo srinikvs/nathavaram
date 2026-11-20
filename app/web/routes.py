@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import ROOT
 from app.constants import (
     DATA_FIELDS,
+    IMPORT_BYTE_LIMIT,
     LABEL_BY_FIELD,
     PARTIES,
     SEARCH_FILTER_FIELDS,
@@ -20,7 +21,14 @@ from app.deps import resolve_user, source_for
 from app.errors import ServiceError
 from app.schemas import PasswordChange, ResetPassword, UserCreate, VoterSearch, VoterWrite
 from app.security import create_access_token
-from app.services.impex import ImportRejected, import_csv, voters_to_csv, voters_to_xlsx
+from app.services.impex import (
+    ImportRejected,
+    import_upload,
+    oversize_message,
+    sample_xlsx_bytes,
+    voters_to_csv,
+    voters_to_xlsx,
+)
 from app.services.login import (
     INVALID_LOGIN_MESSAGE,
     LoginThrottled,
@@ -553,19 +561,20 @@ async def import_submit(request: Request, db: Session = Depends(get_db), user=De
         return render(
             request,
             "import.html",
-            {"user": user, "report": None, "error": "Choose a CSV file"},
+            {"user": user, "report": None, "error": "Choose a CSV or Excel (.xlsx) file"},
             status_code=400,
         )
+    filename = getattr(upload, "filename", "") or ""
     content = await upload.read()
-    if len(content) > 5 * 1024 * 1024:
+    if len(content) > IMPORT_BYTE_LIMIT:
         return render(
             request,
             "import.html",
-            {"user": user, "report": None, "error": "CSV larger than 5 MB"},
+            {"user": user, "report": None, "error": oversize_message(filename)},
             status_code=413,
         )
     try:
-        report = import_csv(db, content, source_for(user))
+        report = import_upload(db, filename, content, source_for(user))
     except ImportRejected as exc:
         return render(
             request,
@@ -582,6 +591,17 @@ def sample_csv(request: Request, user=Depends(web_user)):
         return _forbidden(request, user)
     path = ROOT / "sample" / "voters_sample.csv"
     return FileResponse(path, media_type="text/csv; charset=utf-8", filename="voters_sample.csv")
+
+
+@router.get("/sample.xlsx")
+def sample_xlsx(request: Request, user=Depends(web_user)):
+    if user.role != "admin":
+        return _forbidden(request, user)
+    return Response(
+        content=sample_xlsx_bytes(ROOT / "sample" / "voters_sample.csv"),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="voters_sample.xlsx"'},
+    )
 
 
 SAVED_MESSAGES = {
