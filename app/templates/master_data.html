@@ -9,7 +9,7 @@
 </div>
 <nav class="tabs" aria-label="Master data lists">
   {% for item in tabs %}
-  <a href="/master-data?tab={{ item.entity }}"{% if item.entity == active %} aria-current="page"{% endif %}>{{ item.label }}</a>
+  <a href="/master-data?tab={{ item.entity }}"{% if item.entity == active_tab %} aria-current="page"{% endif %}>{{ item.label }}</a>
   {% endfor %}
 </nav>
 <section>
