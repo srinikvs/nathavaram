@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
-from app.web.nav import COMING_SOON_PAGES
+from app.web.nav import COMING_SOON_PAGES, active_path
 from tests.conftest import csrf_from_page, make_user
 
 SECTION_TITLES = ["Overview", "Voters", "Campaign", "Admin"]
@@ -185,3 +186,110 @@ def test_empty_voter_list_hides_import_hint_from_regular_user(ctx):
     assert page.status_code == 200
     assert "No voters match your search" in page.text
     assert "Import page" not in page.text
+
+
+# --- mobile drawer, polish, active-path ------------------------------------------
+
+STATIC = Path(__file__).resolve().parents[1] / "app" / "static"
+
+
+def _css() -> str:
+    return (STATIC / "styles.css").read_text(encoding="utf-8")
+
+
+def _current(html: str) -> list[str]:
+    return re.findall(r'href="([^"]+)" aria-current="page"', html)
+
+
+def test_mobile_drawer_markup_is_collapsed_with_accessible_toggle(ctx):
+    _web_login(ctx, "admin", "admin-pass-123")
+
+    html = ctx.client.get("/voters").text
+
+    assert 'class="shell has-sidebar nav-collapsed"' in html
+    button = re.search(r"<button[^>]*data-menu-toggle[^>]*>", html).group(0)
+    assert 'aria-expanded="false"' in button
+    assert 'aria-controls="sidebar"' in button
+    assert 'aria-label="Open menu"' in button
+    assert "Menu" in html
+    assert 'id="sidebar"' in _sidebar(html)
+    assert "nav-open" not in html.split("<main", 1)[0]
+    assert "<noscript><style>" in html
+
+
+def test_drawer_css_collapses_on_mobile_and_is_static_on_desktop():
+    css = _css()
+
+    assert re.search(r"\.shell\.has-sidebar \.sidebar \{[^}]*translateX\(-100%\)", css)
+    assert ".shell.has-sidebar.nav-open .sidebar" in css
+    desktop = css.split("@media (min-width: 900px)", 1)[1]
+    assert "position: static" in desktop
+    assert ".menu-toggle" in desktop
+
+
+def test_app_js_toggles_aria_expanded_and_closes_on_backdrop_and_link():
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+
+    assert "aria-expanded" in js
+    assert "data-menu-backdrop" in js
+    assert 'closest("a")' in js
+
+
+def test_logout_left_alignment_is_scoped_to_sidebar():
+    css = _css()
+
+    rule = re.search(r"\.sidebar button\.sidebar-link \{([^}]*)\}", css).group(1)
+    assert "justify-content: flex-start" in rule
+    assert "text-align: left" in rule
+    assert re.search(r"^\.button, button \{[^}]*justify-content: center", css, re.M | re.S)
+
+
+def test_nav_labels_and_badges_do_not_wrap():
+    css = _css()
+
+    assert re.search(r"\.sidebar-label \{[^}]*white-space: nowrap", css)
+    assert re.search(r"\.soon-badge \{[^}]*white-space: nowrap", css)
+
+
+def test_rendered_labels_are_wrapped_for_nowrap(ctx):
+    _web_login(ctx, "admin", "admin-pass-123")
+
+    sidebar = _sidebar(ctx.client.get("/voters").text)
+
+    assert '<span class="sidebar-label">Change password</span>' in sidebar
+    assert 'class="soon-badge">Coming soon</span>' in sidebar
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("/voters", "/voters"),
+        ("/voters/abc123/edit", "/voters"),
+        ("/voters/new", "/voters"),
+        ("/reports", "/reports"),
+        ("/master-data", "/master-data"),
+        ("/master-data/cities", "/master-data"),
+        ("/users", "/users"),
+        ("/import", "/import"),
+        ("/dashboard", "/dashboard"),
+        ("/campaign/sms", "/campaign/sms"),
+        ("/votersX", None),
+        ("/", None),
+        ("/unknown", None),
+    ],
+)
+def test_active_path_uses_longest_prefix_without_loose_matches(path, expected):
+    assert active_path(path) == expected
+
+
+def test_voters_page_highlights_voters_list_only(ctx):
+    _web_login(ctx, "admin", "admin-pass-123")
+
+    assert _current(ctx.client.get("/voters").text) == ["/voters"]
+
+
+@pytest.mark.parametrize("path", ["/import", "/reports", "/master-data", "/users"])
+def test_other_pages_highlight_only_their_own_item(ctx, path):
+    _web_login(ctx, "admin", "admin-pass-123")
+
+    assert _current(ctx.client.get(path).text) == [path]

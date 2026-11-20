@@ -79,6 +79,21 @@ def can_see(user, item: NavItem) -> bool:
     return user.role == "admin" and bool(user.is_owner)
 
 
+def active_path(current_path: str) -> str | None:
+    """Href of the nav item that owns ``current_path``: exact match or a subpath
+    (``/voters/12/edit`` -> ``/voters``). The longest matching href wins, so a more
+    specific item beats a shorter prefix, and unrelated routes match nothing."""
+    best: str | None = None
+    for section in NAV_SECTIONS:
+        for item in section.items:
+            if item.is_logout or item.path == "/":
+                continue
+            owns = current_path == item.path or current_path.startswith(item.path + "/")
+            if owns and (best is None or len(item.path) > len(best)):
+                best = item.path
+    return best
+
+
 def sections_for(user) -> list[NavSection]:
     """Sections visible to this user, with empty sections dropped."""
     if user is None:

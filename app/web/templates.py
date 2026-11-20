@@ -11,7 +11,7 @@ from app.config import ROOT
 from app.constants import GENDERS, PARTIES
 from app.security import csrf_token_for
 from app.validation import parse_dt
-from app.web.nav import sections_for
+from app.web.nav import active_path, sections_for
 
 templates = Jinja2Templates(directory=str(ROOT / "app" / "templates"))
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -19,6 +19,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 templates.env.globals["parties"] = PARTIES
 templates.env.globals["genders"] = GENDERS
 templates.env.globals["nav_sections"] = sections_for
+templates.env.globals["nav_active_path"] = active_path
 
 
 def format_ist(value: str | None) -> str:
