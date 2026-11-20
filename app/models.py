@@ -61,6 +61,10 @@ class Voter(Base):
             ")",
             name="ck_voters_party",
         ),
+        CheckConstraint(
+            "gender IS NULL OR gender IN ('Male', 'Female', 'Other')",
+            name="ck_voters_gender",
+        ),
     )
 
     voter_id: Mapped[str] = mapped_column(String(32), primary_key=True)
@@ -72,6 +76,7 @@ class Voter(Base):
     last_name: Mapped[str | None] = mapped_column(String(128))
     relative_name: Mapped[str | None] = mapped_column(String(128))
     house_no: Mapped[str | None] = mapped_column(String(64))
+    gender: Mapped[str | None] = mapped_column(String(16))
     age: Mapped[int | None] = mapped_column(Integer)
     street: Mapped[str | None] = mapped_column(Text)
     mobile: Mapped[str | None] = mapped_column(String(20))

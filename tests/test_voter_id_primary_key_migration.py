@@ -19,6 +19,7 @@ REQUESTED_COLUMNS = [
     "voter_id", "booth", "booth_s_no", "ward", "ward_s_no", "first_name", "last_name",
     "relative_name", "house_no", "age", "street", "mobile", "caste", "village",
     "panchayath", "mandal", "current_city", "is_local", "party", "constituency",
+    "gender",  # added by 0009; SQLite ADD COLUMN appends, so it is physically last
 ]
 SYNC_COLUMNS = {"created_at", "updated_at", "revision", "deleted_at", "source_id"}
 
@@ -123,11 +124,14 @@ def test_upgrade_keeps_tombstone_under_its_placeholder_key(old_db):
     assert tombstone["street"] is None and tombstone["house_no"] is None
 
 
-def test_upgrade_drops_gender_permanent_address_and_profession(old_db):
+def test_upgrade_drops_permanent_address_and_profession_and_old_gender_values(old_db):
     command.upgrade(_config(old_db), "head")
 
     names = {row[1] for row in _table_info(old_db)}
-    assert not {"gender", "permanent_address", "profession"} & names
+    assert not {"permanent_address", "profession"} & names
+    # 0007 drops the old gender column; 0009 re-adds it empty, never carrying old values over.
+    assert "gender" in names
+    assert all(row["gender"] is None for row in _rows(old_db).values())
 
 
 def test_upgrade_keeps_every_row(old_db):
@@ -202,11 +206,11 @@ def test_upgrade_resumes_after_a_run_that_died_after_the_rename(old_db):
     assert "voters_old" not in tables
 
 
-def test_constituency_is_added_last_and_downgrade_drops_it(old_db):
+def test_constituency_follows_party_and_downgrade_drops_it(old_db):
     command.upgrade(_config(old_db), "head")
 
-    names = [row[1] for row in _table_info(old_db)]
-    assert [n for n in names if n not in SYNC_COLUMNS][-1] == "constituency"
+    names = [n for n in (row[1] for row in _table_info(old_db)) if n not in SYNC_COLUMNS]
+    assert names[-2:] == ["constituency", "gender"]
     assert _rows(old_db)["AAA1000001"]["constituency"] is None
 
     command.downgrade(_config(old_db), "0007_voter_id_primary_key")

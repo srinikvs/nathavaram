@@ -16,7 +16,7 @@ from tests.conftest import csrf_from_page, voter_payload
 NEW_HEADER = ",".join(CSV_HEADERS)
 OLD_HEADER = NEW_HEADER.replace("Booth", "2024 Booth", 1).replace("Ward,", "2026 Ward,", 1)
 ROW = (
-    "7,10,2,1,{vid},Csvperson,Row,Rel,H-1,40,Main St,9000000091,SampleGroupA,"
+    "7,10,2,1,{vid},Csvperson,Row,Rel,H-1,,40,Main St,9000000091,SampleGroupA,"
     "Samplevillage,Pan,Man,Nathavaram,Local,"
 )
 

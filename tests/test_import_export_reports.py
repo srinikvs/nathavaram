@@ -50,9 +50,9 @@ def test_import_reports_row_errors_and_keeps_valid_rows(ctx):
     body = "\n".join(
         [
             header,
-            "1,10,1,1,ZZZ0000100,Good,Row,Rel,H-1,40,Main St,9000000099,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Local,",
-            "1,10,1,1,BAD ID,Nope,Row,Rel,H-1,40,Main St,9000000098,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Non-Local,",
-            "1,10,1,1,ZZZ0000101,Also,Bad,Rel,H-1,nope,Main St,123,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Non-Local,NotAParty",
+            "1,10,1,1,ZZZ0000100,Good,Row,Rel,H-1,,40,Main St,9000000099,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Local,",
+            "1,10,1,1,BAD ID,Nope,Row,Rel,H-1,,40,Main St,9000000098,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Non-Local,",
+            "1,10,1,1,ZZZ0000101,Also,Bad,Rel,H-1,,nope,Main St,123,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Non-Local,NotAParty",
         ]
     )
     imported = ctx.client.post(
@@ -105,7 +105,9 @@ def test_import_accepts_old_headers_and_ignores_dropped_columns(ctx):
     assert voter["street"] == "H.No 9"
     assert voter["current_city"] == "Hyd"
     assert voter["is_local"] is True
-    assert not {"gender", "profession", "permanent_address"} & set(voter)
+    # Gender is a real column again; Permanent address and Profession are still dropped.
+    assert voter["gender"] == "Male"
+    assert not {"profession", "permanent_address"} & set(voter)
 
 
 def test_import_revives_a_soft_deleted_voter_id_in_place(ctx):
@@ -143,9 +145,13 @@ def test_csv_and_excel_round_trip_telugu(ctx):
     assert sheet["A1"].value == "Booth"
     assert sheet["B1"].value == "Booth S.No"
     assert sheet["E1"].value == "VoterId"
-    assert sheet["S1"].value == "Party"
-    assert sheet["T1"].value == "Constituency"
-    assert sheet["R1"].value == "Local/Non-Local"
+    assert sheet["I1"].value == "HouseNo"
+    assert sheet["J1"].value == "Gender"
+    assert sheet["K1"].value == "Age"
+    assert sheet["T1"].value == "Party"
+    assert sheet["U1"].value == "Constituency"
+    assert sheet["S1"].value == "Local/Non-Local"
+    assert [cell.value for cell in sheet[1]] == list(CSV_HEADERS)
 
 
 def test_export_neutralises_formulas_and_keeps_plus91_mobile_round_trip(ctx):
@@ -218,7 +224,7 @@ def test_report_csv_labels_are_formula_safe(ctx):
 def test_plain_leading_quote_text_is_not_altered_on_import(ctx):
     header = ",".join(CSV_HEADERS)
     body = "\n".join(
-        [header, "1,10,1,1,ZZZ0000300,'Quoted,Row,Rel,H-1,40,Main St,9000000091,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Non-Local,"]
+        [header, "1,10,1,1,ZZZ0000300,'Quoted,Row,Rel,H-1,,40,Main St,9000000091,SampleGroupA,Samplevillage,Pan,Man,Nathavaram,Non-Local,"]
     )
     ctx.client.post(
         "/api/voters/import.csv",

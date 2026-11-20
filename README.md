@@ -78,7 +78,7 @@ Both roles can see caste, party, and mobile. Treat every account as access to pe
 
 Import and export use these headers, in this order:
 
-`Booth, Booth S.No, Ward, Ward S.No, VoterId, FirstName, LastName, RelativeName, HouseNo, Age, Street, Mobile, Caste, Village, Panchayath, Mandal, Current City, Local/Non-Local, Party, Constituency`
+`Booth, Booth S.No, Ward, Ward S.No, VoterId, FirstName, LastName, RelativeName, HouseNo, Gender, Age, Street, Mobile, Caste, Village, Panchayath, Mandal, Current City, Local/Non-Local, Party, Constituency`
 
 Only VoterId and FirstName are required. Older files still import: `2024 Booth` / `2026 Ward`, `SurName`, `Address`, `C_City`, `2024 B.S.No`, `Ward S No` and `Local` headers work, and the removed Gender, Permanent address and Profession columns are ignored.
 
@@ -100,7 +100,7 @@ All `/api` routes require a signed-in user except `POST /api/auth/login`.
 | POST | `/api/users` | Owner: create a user |
 | PATCH | `/api/users/{id}` | Owner: change role, active flag, or password (a password reset forces a change at next use) |
 | GET | `/api/voters` | List one page. Query params: `page`, `page_size` only. Search filters in the URL are refused with 422 so personal data stays out of access logs |
-| POST | `/api/voters/search` | Search. JSON body: `q`, `voter_id`, `village`, `panchayath`, `mandal`, `is_local` (`Local` / `Non-Local` / `Any`), `booth`, `ward`, `caste`, `party`, `mobile`, `page`, `page_size` |
+| POST | `/api/voters/search` | Search. JSON body: `q`, `voter_id`, `village`, `panchayath`, `mandal`, `is_local` (`Local` / `Non-Local` / `Any`), `gender` (`Male` / `Female` / `Other` / `Any`), `booth`, `ward`, `caste`, `party`, `mobile`, `page`, `page_size` |
 | POST | `/api/voters` | Create. `voter_id` is the primary key; a soft-deleted `voter_id` is revived in place |
 | GET | `/api/voters/{voter_id}` | One active voter |
 | PATCH | `/api/voters/{voter_id}` | Partial update |
@@ -115,7 +115,7 @@ All `/api` routes require a signed-in user except `POST /api/auth/login`.
 
 Search is partial and case-insensitive for the text fields, including Telugu. `q` matches name, VoterId, house no, street, village, panchayath, mandal, current city, mobile, caste, booth, ward, and party.
 
-Editing: any signed-in user can add a voter. On an existing voter the `user` role may change only Party, Caste, Mobile, HouseNo and Street; owner and admin may change every field except VoterId, which nobody can change after create. See `docs/SCHEMA.md`.
+Editing: any signed-in user can add a voter. On an existing voter the `user` role may change only Party, Caste, Mobile, HouseNo and Street; owner and admin may change every field except VoterId, which nobody can change after create (so Gender, like Age, is admin-only on an existing voter; it may be set when a voter is created). See `docs/SCHEMA.md`.
 
 `GET /healthz` does not require a login. It returns no voter data.
 
