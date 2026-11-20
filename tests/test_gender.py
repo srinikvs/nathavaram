@@ -258,7 +258,7 @@ def test_edit_form_locks_gender_for_a_user_but_not_for_an_admin(ctx):
     assert "disabled" not in new_tag  # a new voter may be created with a gender
 
 
-def _edit_post(ctx, voter_id: str, **fields):
+def _edit_post(ctx, voter_id: str, /, **fields):
     token = csrf_from_page(ctx.client.get(f"/voters/{voter_id}/edit").text)
     return ctx.client.post(
         f"/voters/{voter_id}/edit", data={"csrf_token": token, **fields}, follow_redirects=False
