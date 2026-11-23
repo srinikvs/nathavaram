@@ -12,6 +12,8 @@
   <a href="/master-data?tab={{ item.entity }}"{% if item.entity == active_tab %} aria-current="page"{% endif %}>{{ item.label }}</a>
   {% endfor %}
 </nav>
+{% if notice %}<p class="banner ok">{{ notice }}</p>{% endif %}
+{% if errors %}<div class="banner bad" role="alert">{% for line in errors %}<p>{{ line }}</p>{% endfor %}</div>{% endif %}
 <section>
   <h2>{{ table.label }}</h2>
   {% if not table.available %}
@@ -20,14 +22,27 @@
   <p class="lede">No {{ table.label|lower }} values yet.</p>
   {% else %}
   <p class="lede">{{ table.rows|length }} row{% if table.rows|length != 1 %}s{% endif %}.</p>
+  <div data-bulk>
+  {% if user.role == "admin" %}
+  <label class="bulk-mobile-select"><input type="checkbox" data-select-all> Select all {{ table.rows|length }} rows</label>
+  <form id="bulk-form" method="post" class="bulk-bar" data-bulk-bar hidden>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="tab" value="{{ active_tab }}">
+    <strong class="bulk-count"><span data-bulk-count>0</span> selected</strong>
+    <button type="submit" formaction="/master-data/bulk-edit" class="button">Bulk edit</button>
+    <button type="submit" formaction="/master-data/bulk-delete" class="button danger">Bulk delete</button>
+    <button type="button" class="button ghost" data-bulk-clear>Clear</button>
+  </form>
+  {% endif %}
   <div class="table-scroll" data-top-scroll>
     <table>
       <thead>
-        <tr>{% for col in table.columns %}<th{% if col.numeric %} class="num"{% endif %}>{{ col.label }}</th>{% endfor %}</tr>
+        <tr>{% if user.role == "admin" %}<th class="select-cell"><input type="checkbox" data-select-all aria-label="Select all rows"></th>{% endif %}{% for col in table.columns %}<th{% if col.numeric %} class="num"{% endif %}>{{ col.label }}</th>{% endfor %}</tr>
       </thead>
       <tbody>
         {% for row in table.rows %}
         <tr>
+          {% if user.role == "admin" %}<td class="select-cell"><input type="checkbox" name="rows" value="{{ select_values[loop.index0] }}" form="bulk-form" data-row-select aria-label="Select row {{ loop.index }}"></td>{% endif %}
           {% for col in table.columns %}
           <td{% if col.numeric %} class="num"{% else %} translate="no"{% endif %}>{{ row[col.key] }}</td>
           {% endfor %}
@@ -35,6 +50,7 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
   </div>
   {% endif %}
 </section>

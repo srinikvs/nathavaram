@@ -546,3 +546,38 @@ class MasterTable(BaseModel):
     note: str | None = None
     columns: list[MasterColumn]
     rows: list[dict[str, str | int]]
+
+
+class MasterRows(BaseModel):
+    """Rows chosen on a Master Data tab; each maps the tab's key columns to their values."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[dict[str, str]]
+
+
+class MasterRename(MasterRows):
+    new_value: str
+
+
+class BulkVoterEdit(BaseModel):
+    """Set the same values on every listed voter. `values` is checked by the VoterPatch rules."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    voter_ids: list[str]
+    values: dict[str, object]
+
+
+class BulkVoterDelete(BaseModel):
+    """Soft-delete the listed voters. Nothing happens unless confirm is true."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    voter_ids: list[str]
+    confirm: bool = False
+
+
+class BulkResult(BaseModel):
+    count: int
+    voter_ids: list[str]

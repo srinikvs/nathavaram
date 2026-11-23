@@ -20,6 +20,10 @@
   </div>
 </div>
 {% if request.query_params.get('removed') %}<p class="banner ok">Voter removed from the active list. The row is kept for sync.</p>{% endif %}
+{% set bulk_done = request.query_params.get('bulk') %}
+{% if bulk_done == 'edited' %}<p class="banner ok">Updated {{ request.query_params.get('n') }} voter(s).</p>{% endif %}
+{% if bulk_done == 'deleted' %}<p class="banner ok">Removed {{ request.query_params.get('n') }} voter(s) from the active list. The rows are kept for sync.</p>{% endif %}
+{% if bulk_done == 'none' %}<p class="banner bad" role="alert">Select at least one voter first.</p>{% endif %}
 {% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
 <form class="filters" method="post" action="/voters/search">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -96,10 +100,23 @@
   </div>
 </form>
 {% if voters %}
+{% set is_admin = user.role == "admin" %}
+<div data-bulk>
+{% if is_admin %}
+<label class="bulk-mobile-select"><input type="checkbox" data-select-all> Select all {{ voters|length }} on this page</label>
+<form id="bulk-form" method="post" class="bulk-bar" data-bulk-bar hidden>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <strong class="bulk-count"><span data-bulk-count>0</span> selected</strong>
+  <button type="submit" formaction="/voters/bulk-edit" class="button">Bulk edit</button>
+  <button type="submit" formaction="/voters/bulk-delete" class="button danger">Bulk delete</button>
+  <button type="button" class="button ghost" data-bulk-clear>Clear</button>
+</form>
+{% endif %}
 <div class="table-wrap" data-top-scroll>
   <table class="register">
     <thead>
       <tr>
+        {% if is_admin %}<th class="select-cell"><input type="checkbox" data-select-all aria-label="Select all voters on this page"></th>{% endif %}
         <th>Booth</th>
         <th>Booth S.No</th>
         <th>Ward</th>
@@ -127,6 +144,7 @@
     <tbody>
       {% for voter in voters %}
       <tr>
+        {% if is_admin %}<td data-label="Select" class="select-cell"><input type="checkbox" name="voter_ids" value="{{ voter.voter_id }}" form="bulk-form" data-row-select aria-label="Select voter {{ voter.voter_id }}"></td>{% endif %}
         <td data-label="Booth" translate="no">{{ voter.booth|display }}</td>
         <td data-label="Booth S.No" translate="no">{{ voter.booth_s_no|display }}</td>
         <td data-label="Ward" translate="no">{{ voter.ward|display }}</td>
@@ -156,6 +174,7 @@
       {% endfor %}
     </tbody>
   </table>
+</div>
 </div>
 {% set start = (query.page - 1) * query.page_size + 1 %}
 {% set end = [query.page * query.page_size, total]|min %}

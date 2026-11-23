@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Replace {{ label }} · Nathavaram{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Replace {{ counts|length }} {{ label }} value{% if counts|length != 1 %}s{% endif %}</h1>
+    <p class="lede">This list is derived from voters, so the new value is written to every active voter that currently has a selected value. Other fields are not changed.</p>
+  </div>
+  <a class="button ghost" href="/master-data?tab={{ tab }}">Cancel</a>
+</div>
+{% if errors %}
+<div class="banner bad" role="alert">{% for line in errors %}<p>{{ line }}</p>{% endfor %}</div>
+{% endif %}
+<ul>
+  {% for item, n in counts %}<li translate="no">{{ item.values()|join(" / ") }} — {{ n }} voter{% if n != 1 %}s{% endif %}</li>{% endfor %}
+</ul>
+<form method="post" action="/master-data/bulk-edit" class="grid" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="tab" value="{{ tab }}">
+  <input type="hidden" name="apply" value="1">
+  {% for raw in raw_rows %}<input type="hidden" name="rows" value="{{ raw }}">{% endfor %}
+  <div>
+    <label for="new_value">New value</label>
+    <input id="new_value" name="new_value" value="{{ new_value }}" required translate="no">
+  </div>
+  <div class="actions full">
+    <button type="submit">Replace</button>
+    <a class="button ghost" href="/master-data?tab={{ tab }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

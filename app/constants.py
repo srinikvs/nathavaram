@@ -176,6 +176,11 @@ SEARCH_FILTER_FIELDS: tuple[str, ...] = (
     "mobile",
 )
 
+# Bulk edit/delete: most voter_ids one request may name, and the fields bulk edit may set.
+# voter_id is the key; timestamps, revision, deleted_at and source_id are not data fields.
+BULK_ID_LIMIT = 1000
+BULK_EDIT_FIELDS: tuple[str, ...] = tuple(name for name, _ in VOTER_COLUMNS if name != "voter_id")
+
 SYNC_BATCH_LIMIT = 500
 IMPORT_ROW_LIMIT = 20_000
 IMPORT_BYTE_LIMIT = 5 * 1024 * 1024

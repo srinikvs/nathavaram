@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import ValidationError
@@ -9,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import ROOT
 from app.constants import (
+    BULK_EDIT_FIELDS,
     DATA_FIELDS,
     IMPORT_BYTE_LIMIT,
     LABEL_BY_FIELD,
@@ -35,6 +38,8 @@ from app.services.login import (
     attempt_login,
     guarded_change_password,
 )
+from app.services.bulk import bulk_delete_voters, bulk_edit_voters, normalize_ids
+from app.services.master_bulk import check_delete, key_names, rename_values, usage_counts
 from app.services.master_data import ENTITIES, build_master_table, tab_list
 from app.services.reports import build_report
 from app.services.users import create_user, delete_user, list_users, reset_user_password
@@ -506,6 +511,70 @@ def delete_submit(
     return RedirectResponse("/voters?removed=1", status_code=303)
 
 
+def _selected_ids(form) -> list[str]:
+    return [str(v) for v in form.getlist("voter_ids")]
+
+
+def _bulk_edit_page(request: Request, user, ids, values, errors, status_code=200):
+    return render(
+        request,
+        "voters/bulk_edit.html",
+        {
+            "user": user,
+            "voter_ids": ids,
+            "fields": [(f, LABEL_BY_FIELD[f]) for f in BULK_EDIT_FIELDS],
+            "values": values,
+            "errors": errors,
+        },
+        status_code=status_code,
+    )
+
+
+@router.post("/voters/bulk-edit")
+async def bulk_edit_submit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
+    """Step 1 (no `apply`): show the field chooser. Step 2 (`apply=1`): validate and save."""
+    if user.role != "admin":
+        return _forbidden(request, user)
+    form = await request.form()
+    ids = _selected_ids(form)
+    try:
+        ids = normalize_ids(ids)
+    except ServiceError as exc:
+        return RedirectResponse("/voters?bulk=none", status_code=303)
+    if form.get("apply") != "1":
+        return _bulk_edit_page(request, user, ids, {}, [])
+    chosen = {f: str(form.get(f"value_{f}") or "") for f in BULK_EDIT_FIELDS if form.get(f"use_{f}")}
+    try:
+        voters = bulk_edit_voters(db, ids, chosen, source_for(user))
+    except ServiceError as exc:
+        return _bulk_edit_page(request, user, ids, chosen, [exc.message], exc.status_code)
+    return RedirectResponse(f"/voters?bulk=edited&n={len(voters)}", status_code=303)
+
+
+@router.post("/voters/bulk-delete")
+async def bulk_delete_submit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
+    """Step 1 shows the count and asks; only a second post with confirm=yes deletes."""
+    if user.role != "admin":
+        return _forbidden(request, user)
+    form = await request.form()
+    try:
+        ids = normalize_ids(_selected_ids(form))
+    except ServiceError:
+        return RedirectResponse("/voters?bulk=none", status_code=303)
+    if form.get("confirm") != "yes":
+        return render(request, "voters/bulk_delete.html", {"user": user, "voter_ids": ids, "error": None})
+    try:
+        count = bulk_delete_voters(db, ids, source_for(user), confirm=True)
+    except ServiceError as exc:
+        return render(
+            request,
+            "voters/bulk_delete.html",
+            {"user": user, "voter_ids": ids, "error": exc.message},
+            status_code=exc.status_code,
+        )
+    return RedirectResponse(f"/voters?bulk=deleted&n={count}", status_code=303)
+
+
 def _register_coming_soon_pages() -> None:
     """Stub pages for sidebar entries whose features are not built yet."""
     for path, item in COMING_SOON_PAGES.items():
@@ -537,11 +606,94 @@ def master_data_page(
         return _forbidden(request, user)
     if tab not in ENTITIES:
         tab = DEFAULT_MASTER_TAB
+    notice = MASTER_NOTICES.get(request.query_params.get("done", ""), "")
+    return _master_page(request, db, user, tab, notice=notice)
+
+
+MASTER_NOTICES = {
+    "renamed": "Value replaced on the matching voters.",
+    "unused": "Those values are not used by any active voter, so there is nothing to remove.",
+}
+
+
+def _master_page(request, db, user, tab, errors=None, notice="", status_code=200):
+    table = build_master_table(db, tab)
+    names = key_names(tab) if table.available else ()
+    select_values = [json.dumps({k: row[k] for k in names}, sort_keys=True) for row in table.rows]
     return render(
         request,
         "master_data.html",
-        {"user": user, "tabs": tab_list(), "active_tab": tab, "table": build_master_table(db, tab)},
+        {
+            "user": user,
+            "tabs": tab_list(),
+            "active_tab": tab,
+            "table": table,
+            "select_values": select_values,
+            "errors": errors or [],
+            "notice": notice,
+        },
+        status_code=status_code,
     )
+
+
+def _master_selection(form) -> tuple[str, list]:
+    tab = str(form.get("tab") or "")
+    items = []
+    for raw in form.getlist("rows"):
+        try:
+            items.append(json.loads(str(raw)))
+        except ValueError:
+            items.append(None)
+    return tab, items
+
+
+@router.post("/master-data/bulk-edit")
+async def master_bulk_edit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
+    """Step 1 asks for the new value; `apply=1` replaces it on the matching voters."""
+    if user.role != "admin":
+        return _forbidden(request, user)
+    form = await request.form()
+    tab, items = _master_selection(form)
+    if tab not in ENTITIES:
+        return RedirectResponse(f"/master-data?tab={DEFAULT_MASTER_TAB}", status_code=303)
+    try:
+        counts = usage_counts(db, tab, items)
+    except ServiceError as exc:
+        return _master_page(request, db, user, tab, [exc.message], status_code=exc.status_code)
+    new_value = str(form.get("new_value") or "")
+    page = {
+        "user": user,
+        "tab": tab,
+        "label": build_master_table(db, tab).label,
+        "counts": [(item, n) for item, n in counts],
+        "raw_rows": [json.dumps(item, sort_keys=True) for item, _ in counts],
+        "new_value": new_value,
+        "errors": [],
+    }
+    if form.get("apply") != "1":
+        return render(request, "master_bulk_edit.html", page)
+    try:
+        rename_values(db, tab, items, new_value, source_for(user))
+    except ServiceError as exc:
+        page["errors"] = [exc.message]
+        return render(request, "master_bulk_edit.html", page, status_code=exc.status_code)
+    return RedirectResponse(f"/master-data?tab={tab}&done=renamed", status_code=303)
+
+
+@router.post("/master-data/bulk-delete")
+async def master_bulk_delete(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
+    """Refused with a count while any active voter still uses a selected value."""
+    if user.role != "admin":
+        return _forbidden(request, user)
+    form = await request.form()
+    tab, items = _master_selection(form)
+    if tab not in ENTITIES:
+        return RedirectResponse(f"/master-data?tab={DEFAULT_MASTER_TAB}", status_code=303)
+    try:
+        check_delete(db, tab, items)
+    except ServiceError as exc:
+        return _master_page(request, db, user, tab, [exc.message], status_code=exc.status_code)
+    return RedirectResponse(f"/master-data?tab={tab}&done=unused", status_code=303)
 
 
 @router.get("/import")

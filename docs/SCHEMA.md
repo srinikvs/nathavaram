@@ -132,6 +132,25 @@ No new tables and no migration. `GET /api/master-data` and `GET /api/master-data
 
 An unknown entity returns 404; a non-admin gets 403. Voter sync is unaffected.
 
+### Bulk edit and delete of master values (admin)
+
+There is still no catalog, so a row is just "the value(s) active voters currently carry".
+
+- `POST /api/master-data/{entity}/rename` with `{"items": [{<key columns>: value}, ...], "new_value": "..."}` writes `new_value` to the tab's **primary** column (the first column in the table above) on every active voter that matches a selected row, bumping `revision`, `updated_at` and `source_id` like a single edit. The new value goes through the same text rules as the voter field (trimmed, length limit, not blank). Several selected rows are merged into the one new value.
+- Composite rows (`mandalam`, `panchayathi`, `street`) match on **all** their key columns, but only the first column is rewritten. Renaming street `Main` in ward `3` leaves street `Main` in ward `4` alone, and ward is never touched.
+- A `(blank)` key matches only voters whose value is actually empty. Real values are never overwritten by it.
+- A selected row that no active voter has returns 404 and nothing is applied (all-or-nothing). `profession` returns 409 (unavailable).
+- `POST /api/master-data/{entity}/delete` with `{"items": [...]}` is a guard, not a delete: if any active voter still uses a selected value it answers 409 with the in-use count and changes nothing. If every value is unused it answers 200 `{"in_use": 0, "unused": N}`; there is nothing to remove from a derived list. Voter fields are never cleared to make a row disappear.
+- Both endpoints are admin-only (401 anonymous, 403 for the `user` role). The `/master-data` page offers them as two-step forms (`POST /master-data/bulk-edit`, `POST /master-data/bulk-delete`).
+
+## Bulk voter edit and delete (admin)
+
+`POST /api/voters/bulk-edit` takes `{"voter_ids": [...], "values": {<field>: value}}` and applies the one set of values to every named active voter. Fields come from the voter columns except `voter_id`; `created_at`, `updated_at`, `revision`, `deleted_at` and `source_id` are not data fields and are refused with 422, as is `voter_id`. Values are validated by the same `VoterPatch` rules as `PATCH /api/voters/{voter_id}` (party and gender lists, age 1-130, mobile, text limits). `is_local` blank or null becomes Local; an explicit `false` / `Non-Local` stays false; if `is_local` is not in `values` the stored value is unchanged. At most 1000 ids per request. The whole request is one transaction: an invalid value or an unknown/removed voter fails it with nothing applied, and only the named ids change.
+
+`POST /api/voters/bulk-delete` takes `{"voter_ids": [...], "confirm": true}`. Without `confirm: true` it answers 400 and deletes nothing. With it, each voter is soft-deleted exactly like `DELETE /api/voters/{voter_id}` (tombstone, new revision). The web list does this in two steps: `POST /voters/bulk-delete` shows the count, and only a second post with `confirm=yes` deletes.
+
+Both endpoints use `require_admin`; the checkboxes and action bar are rendered only for admins, but the server enforces the role.
+
 ## Age bands used by reports
 
 These are derived. They are not stored.
