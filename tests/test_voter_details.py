@@ -158,11 +158,11 @@ def test_regular_user_changing_local_from_edit_is_refused_with_403(ctx):
 
 
 def test_admin_can_change_local_from_the_edit_form_opened_from_details(ctx):
-    _create(ctx)
+    voter = _create(ctx)
     _web_login(ctx, "admin", "admin-pass-123")
     assert ctx.client.get(f"/voters/{VOTER_ID}").status_code == 200
 
-    saved = _edit_post(ctx, VOTER_ID, is_local="Non-Local")
+    saved = _edit_post(ctx, VOTER_ID, is_local="Non-Local", first_name=voter["first_name"])
 
     assert saved.status_code == 303, saved.text
     assert _get(ctx)["is_local"] is False
