@@ -33,21 +33,28 @@ def clean_text(value: object) -> str | None:
     return text
 
 
+DEFAULT_IS_LOCAL = True  # a new voter with nothing said about it is Local
+
 _YES = frozenset({"yes", "y", "true", "1", "local"})
 _NO = frozenset({"no", "n", "false", "0", "non-local", "non local", "nonlocal"})
 
 
 def canonical_local(value: object) -> bool:
-    """Local/Non-Local as a boolean. Yes/Local is true; blank, No and Non-Local are false."""
+    """Local/Non-Local as a boolean.
+
+    Blank or missing means the default, Local (True). Yes/Local is true; No/Non-Local is false.
+    """
     if value is None:
-        return False
+        return DEFAULT_IS_LOCAL
     if isinstance(value, bool):
         return value
     if isinstance(value, int) and value in (0, 1):
         return bool(value)
     if isinstance(value, str):
         key = value.strip().casefold()
-        if key == "" or key in _NO:
+        if key == "":
+            return DEFAULT_IS_LOCAL
+        if key in _NO:
             return False
         if key in _YES:
             return True

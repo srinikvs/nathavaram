@@ -111,8 +111,8 @@
   <div>
     <label for="is_local">Local/Non-Local</label>
     <select id="is_local" name="is_local" {{ lock_select }}>
-      <option value="Non-Local" {% if values.get('is_local') != 'Local' %}selected{% endif %}>Non-Local</option>
-      <option value="Local" {% if values.get('is_local') == 'Local' %}selected{% endif %}>Local</option>
+      <option value="Non-Local" {% if values.get('is_local') == 'Non-Local' %}selected{% endif %}>Non-Local</option>
+      <option value="Local" {% if values.get('is_local') != 'Non-Local' %}selected{% endif %}>Local</option>
     </select>
   </div>
   <div>

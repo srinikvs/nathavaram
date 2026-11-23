@@ -403,7 +403,7 @@ def test_web_admin_post_can_change_locked_fields(ctx):
 # --- New columns: create / list / report / search ------------------------------
 
 
-def test_new_columns_default_to_blank_and_not_local(ctx):
+def test_new_columns_default_to_blank_and_local(ctx):
     bare = voter_payload()
     for key in ("street", "house_no", "village", "panchayath", "mandal", "is_local"):
         del bare[key]
@@ -412,7 +412,7 @@ def test_new_columns_default_to_blank_and_not_local(ctx):
 
     assert created["street"] is None and created["house_no"] is None and created["village"] is None
     assert created["panchayath"] is None and created["mandal"] is None
-    assert created["is_local"] is False
+    assert created["is_local"] is True
 
 
 def test_is_local_accepts_local_and_non_local_and_rejects_other_text(ctx):
@@ -573,7 +573,7 @@ def test_csv_import_accepts_local_and_non_local_values(ctx):
 
     assert imported.json()["imported"] == 4, imported.text
     flags = {i["voter_id"]: i["is_local"] for i in search(ctx).json()["items"]}
-    assert flags == {"ZZZ0000601": True, "ZZZ0000602": False, "ZZZ0000603": False, "ZZZ0000609": True}
+    assert flags == {"ZZZ0000601": True, "ZZZ0000602": False, "ZZZ0000603": True, "ZZZ0000609": True}
 
 
 def test_csv_import_reports_a_bad_local_value_for_that_row(ctx):
@@ -602,7 +602,7 @@ def test_csv_import_accepts_old_headers_and_keeps_house_no_as_its_own_column(ctx
     assert stored["house_no"] == "12" and stored["street"] is None
     assert (stored["booth"], stored["ward"], stored["booth_s_no"]) == ("7", "2", "10")
     assert (stored["last_name"], stored["current_city"]) == ("Row", "Nathavaram")
-    assert stored["village"] is None and stored["is_local"] is False
+    assert stored["village"] is None and stored["is_local"] is True
 
 
 def test_csv_import_maps_the_old_address_header_to_street(ctx):
@@ -651,7 +651,7 @@ def test_duplicate_voter_id_on_add_returns_a_clear_error(ctx):
     ("raw", "expected"),
     [
         ("Yes", True), ("yes", True), ("Y", True), ("Local", True), ("local", True), (True, True),
-        ("No", False), ("Non-Local", False), ("non local", False), ("", False), (None, False), (False, False),
+        ("No", False), ("Non-Local", False), ("non local", False), ("", True), (None, True), (False, False),
     ],
 )
 def test_canonical_local(raw, expected):

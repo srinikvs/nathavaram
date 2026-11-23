@@ -313,7 +313,7 @@ def test_report_tables_sit_inside_a_horizontal_scroll_box(ctx):
     blocks = re.findall(r'<section class="report-block">(.*?)</section>', html, re.S)
     assert len(blocks) == 9
     for block in blocks:
-        assert re.search(r'<div class="table-wrap[^"]*">\s*<table>', block)
+        assert re.search(r'<div class="table-wrap[^"]*"[^>]*>\s*<table>', block)
     assert re.search(r"\.table-wrap \{[^}]*overflow-x: auto", _css())
 
 

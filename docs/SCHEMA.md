@@ -26,7 +26,7 @@ Display names below are the exact labels in the web form and the exact CSV/Excel
 | Panchayath | `panchayath` | text, null | Up to 128 characters |
 | Mandal | `mandal` | text, null | Up to 128 characters |
 | Current City | `current_city` | text, null | Up to 128 characters. Formerly "C_City" / `c_city` |
-| Local/Non-Local | `is_local` | boolean, required, default `false` | Shown as **Local** or **Non-Local** in the web form, list, CSV and Excel. The JSON API uses `true` / `false`. Import accepts Local / Non-Local (also Yes/No, Y/N, true/false, 1/0); blank means Non-Local |
+| Local/Non-Local | `is_local` | boolean, required, default `true` (Local) for new voters | Shown as **Local** or **Non-Local** in the web form, list, CSV and Excel. The JSON API uses `true` / `false`. Import accepts Local / Non-Local (also Yes/No, Y/N, true/false, 1/0); a blank cell or a missing column means Local, and an explicit Non-Local stays Non-Local. The database `server_default` is still `false` and nothing is backfilled, so rows saved before this change keep their stored value |
 | Party | `party` | text, null | Empty means no answer. Otherwise one of: `TDP`, `YSRCP`, `Jana Sena`, `BJP`, `INC`, `CPI`, `Independent`, `Unknown`, `Prefer not to say`. Matching is case-insensitive and stored in this canonical form |
 | Constituency | `constituency` | text, null | Up to 128 characters. Last column. Only owner/admin can change it on an existing voter |
 
