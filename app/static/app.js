@@ -104,3 +104,48 @@ document.addEventListener("click", (event) => {
   }
   document.querySelectorAll("[data-top-scroll]").forEach(setup);
 })();
+
+// Bulk row selection (admin pages only; the server renders the markup for admins).
+// Select-all acts only on the rows rendered in this table. Filtering or paging reloads the
+// page, so a selection never carries over to rows that are not on screen.
+(function () {
+  function setup(root) {
+    const rows = Array.from(root.querySelectorAll("[data-row-select]"));
+    const selectAlls = Array.from(root.querySelectorAll("[data-select-all]"));
+    const bar = root.querySelector("[data-bulk-bar]");
+    const count = root.querySelector("[data-bulk-count]");
+    const clear = root.querySelector("[data-bulk-clear]");
+    if (!bar || rows.length === 0) {
+      return;
+    }
+    function selectable(box) {
+      const row = box.closest("tr");
+      return !box.disabled && !(row && row.hidden);
+    }
+    function update() {
+      const usable = rows.filter(selectable);
+      const picked = usable.filter((box) => box.checked).length;
+      bar.hidden = picked === 0;
+      if (count) {
+        count.textContent = String(picked);
+      }
+      selectAlls.forEach((box) => {
+        box.checked = usable.length > 0 && picked === usable.length;
+        box.indeterminate = picked > 0 && picked < usable.length;
+      });
+    }
+    function setAll(checked) {
+      rows.filter(selectable).forEach((box) => {
+        box.checked = checked;
+      });
+      update();
+    }
+    rows.forEach((box) => box.addEventListener("change", update));
+    selectAlls.forEach((box) => box.addEventListener("change", () => setAll(box.checked)));
+    if (clear) {
+      clear.addEventListener("click", () => setAll(false));
+    }
+    setAll(false);
+  }
+  document.querySelectorAll("[data-bulk]").forEach(setup);
+})();

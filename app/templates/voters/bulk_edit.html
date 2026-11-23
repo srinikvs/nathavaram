@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Bulk edit voters · Nathavaram{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Bulk edit {{ voter_ids|length }} voter{% if voter_ids|length != 1 %}s{% endif %}</h1>
+    <p class="lede">Tick each field you want to change and give one value. It is applied to every selected voter; unticked fields stay as they are. VoterId cannot be changed.</p>
+  </div>
+  <a class="button ghost" href="/voters">Cancel</a>
+</div>
+{% if errors %}
+<div class="banner bad" role="alert">{% for line in errors %}<p>{{ line }}</p>{% endfor %}</div>
+{% endif %}
+<form method="post" action="/voters/bulk-edit" class="grid" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="apply" value="1">
+  {% for voter_id in voter_ids %}<input type="hidden" name="voter_ids" value="{{ voter_id }}">{% endfor %}
+  {% for name, label in fields %}
+  <div>
+    <label><input type="checkbox" name="use_{{ name }}" value="1" {% if name in values %}checked{% endif %}> Change {{ label }}</label>
+    {% if name == "party" %}
+    <select name="value_party" aria-label="New {{ label }}">
+      <option value="">(blank)</option>
+      {% for party in parties %}<option value="{{ party }}" {% if values.get(name) == party %}selected{% endif %}>{{ party }}</option>{% endfor %}
+    </select>
+    {% elif name == "gender" %}
+    <select name="value_gender" aria-label="New {{ label }}">
+      <option value="">(blank)</option>
+      {% for gender in genders %}<option value="{{ gender }}" {% if values.get(name) == gender %}selected{% endif %}>{{ gender }}</option>{% endfor %}
+    </select>
+    {% elif name == "is_local" %}
+    <select name="value_is_local" aria-label="New {{ label }}">
+      <option value="">Local (default)</option>
+      <option value="Local" {% if values.get(name) == "Local" %}selected{% endif %}>Local</option>
+      <option value="Non-Local" {% if values.get(name) == "Non-Local" %}selected{% endif %}>Non-Local</option>
+    </select>
+    {% else %}
+    <input name="value_{{ name }}" value="{{ values.get(name, '') }}" aria-label="New {{ label }}" translate="no">
+    {% endif %}
+  </div>
+  {% endfor %}
+  <div class="actions full">
+    <button type="submit">Apply to {{ voter_ids|length }} voter{% if voter_ids|length != 1 %}s{% endif %}</button>
+    <a class="button ghost" href="/voters">Cancel</a>
+  </div>
+</form>
+{% endblock %}

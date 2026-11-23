@@ -291,7 +291,22 @@ abbr { text-decoration: none; color: var(--chili); }
     font-weight: 600;
   }
 }
+/* Bulk selection */
+.select-cell { width: 2.4rem; text-align: center; }
+.select-cell input { width: 1.2rem; height: 1.2rem; }
+.bulk-bar {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  margin: 0 0 10px; padding: 8px 12px;
+  background: var(--paper-2); border: 1px solid var(--line); border-radius: 6px;
+}
+.bulk-bar[hidden] { display: none; }
+.bulk-mobile-select { display: none; margin: 0 0 8px; }
+@media (max-width: 760px) {
+  .bulk-mobile-select { display: block; }
+  .register td.select-cell { text-align: left; width: auto; }
+}
 @media print {
+  .bulk-bar, .bulk-mobile-select, .select-cell { display: none !important; }
   .no-print, .site-header, .skip, .actions { display: none !important; }
   body { background: white; }
   main { max-width: none; padding: 0; }

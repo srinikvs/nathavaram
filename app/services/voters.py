@@ -199,14 +199,18 @@ def strip_to_tombstone(voter: Voter) -> None:
     voter.first_name = ""
 
 
-def soft_delete(db: Session, voter_id: str, source_id: str) -> Voter:
-    voter = get_active(db, voter_id)
-    now = _now()
+def tombstone_voter(db: Session, voter: Voter, source_id: str, now: str) -> None:
+    """Soft-delete one loaded row without committing (shared by single and bulk delete)."""
     strip_to_tombstone(voter)
     voter.deleted_at = now
     voter.updated_at = now
     voter.source_id = source_id
     voter.revision = allocate_revision(db)
+
+
+def soft_delete(db: Session, voter_id: str, source_id: str) -> Voter:
+    voter = get_active(db, voter_id)
+    tombstone_voter(db, voter, source_id, _now())
     db.commit()
     db.refresh(voter)
     return voter

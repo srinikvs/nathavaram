@@ -3,7 +3,7 @@
 Roles: any signed-in user may search, create, and view records. On an existing voter a
 regular user may edit only Party, Caste, Mobile, HouseNo and Street (403 otherwise); an owner or
 admin may edit every field except VoterId, which nobody can change after create.
-Bulk operations (export, import, delete) need an admin.
+Bulk operations (export, import, bulk edit, bulk delete) need an admin.
 
 Search filters can carry personal data (mobile, VoterId, caste, free text), so they are
 accepted only in a POST body. GET /api/voters takes pagination only.
@@ -21,7 +21,17 @@ from app.database import get_db
 from app.deps import require_admin, require_user, source_for
 from app.errors import ServiceError
 from app.models import User
-from app.schemas import VoterPage, VoterPatch, VoterPublic, VoterSearch, VoterWrite
+from app.schemas import (
+    BulkResult,
+    BulkVoterDelete,
+    BulkVoterEdit,
+    VoterPage,
+    VoterPatch,
+    VoterPublic,
+    VoterSearch,
+    VoterWrite,
+)
+from app.services.bulk import bulk_delete_voters, bulk_edit_voters, normalize_ids
 from app.services.impex import ImportRejected, import_csv, import_upload, voters_to_csv, voters_to_xlsx
 from app.services.voters import (
     create_voter,
@@ -91,6 +101,33 @@ def post_voter(
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return voter_to_public(voter)
+
+
+@router.post("/bulk-edit", response_model=BulkResult)
+def post_bulk_edit(
+    body: BulkVoterEdit,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+) -> BulkResult:
+    try:
+        voters = bulk_edit_voters(db, body.voter_ids, body.values, source_for(user))
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return BulkResult(count=len(voters), voter_ids=[v.voter_id for v in voters])
+
+
+@router.post("/bulk-delete", response_model=BulkResult)
+def post_bulk_delete(
+    body: BulkVoterDelete,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+) -> BulkResult:
+    try:
+        ids = normalize_ids(body.voter_ids)
+        count = bulk_delete_voters(db, ids, source_for(user), confirm=body.confirm)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return BulkResult(count=count, voter_ids=ids)
 
 
 @router.post("/export.csv")

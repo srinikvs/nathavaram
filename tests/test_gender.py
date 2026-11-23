@@ -214,7 +214,8 @@ def test_list_headers_are_exactly_the_21_columns_then_actions(ctx):
 
     thead = re.search(r"<thead>(.*?)</thead>", page, re.S).group(1)
     assert re.findall(r"<th>([^<]*)</th>", thead) == [*EXPECTED_COLUMNS, ""]
-    assert re.findall(r'<td data-label="([^"]*)"', page) == [*EXPECTED_COLUMNS, "Actions"]
+    # Admins get a leading bulk-select cell ahead of the data columns.
+    assert re.findall(r'<td data-label="([^"]*)"', page) == ["Select", *EXPECTED_COLUMNS, "Actions"]
 
 
 def test_list_shows_gender_and_the_placeholder_for_a_voter_without_one(ctx):
