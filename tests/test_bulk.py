@@ -551,8 +551,41 @@ def test_web_master_delete_shows_in_use_warning_with_count(ctx):
     )
 
     assert response.status_code == 409
-    assert "Cannot delete: 1 active voter still use" in response.text
+    assert "Cannot delete: 1 active voter still uses this value" in response.text
     assert _get(ctx, voter_id)["caste"] == "Used"
+
+
+def test_master_delete_message_uses_singular_verb_for_one_voter(ctx):
+    _add(ctx, 29, caste="Solo")
+
+    response = _master_delete(ctx, "caste", [{"caste": "Solo"}])
+
+    assert response.status_code == 409
+    assert "1 active voter still uses this value" in response.text
+    assert "still use this" not in response.text
+    assert "still use these" not in response.text
+
+
+def test_master_delete_message_uses_plural_verb_for_several_voters(ctx):
+    _add(ctx, 30, caste="Shared")
+    _add(ctx, 31, caste="Shared")
+
+    response = _master_delete(ctx, "caste", [{"caste": "Shared"}])
+
+    assert response.status_code == 409
+    assert "2 active voters still use this value" in response.text
+    assert "still uses" not in response.text
+
+
+def test_master_delete_message_pluralises_several_values_in_use(ctx):
+    _add(ctx, 32, caste="Alpha")
+    _add(ctx, 33, caste="Beta")
+
+    response = _master_delete(ctx, "caste", [{"caste": "Alpha"}, {"caste": "Beta"}])
+
+    assert response.status_code == 409
+    assert "2 active voters still use these values" in response.text
+    assert "still uses" not in response.text
 
 
 def test_web_master_rename_two_step(ctx):
