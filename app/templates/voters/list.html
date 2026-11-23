@@ -101,7 +101,7 @@
 </form>
 {% if voters %}
 {% set is_admin = user.role == "admin" %}
-<div data-bulk>
+<div{% if is_admin %} data-bulk{% endif %}>
 {% if is_admin %}
 <label class="bulk-mobile-select"><input type="checkbox" data-select-all> Select all {{ voters|length }} on this page</label>
 <form id="bulk-form" method="post" class="bulk-bar" data-bulk-bar hidden>
