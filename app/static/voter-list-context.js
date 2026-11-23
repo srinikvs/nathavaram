@@ -113,6 +113,9 @@
     return filtersFromEntries(Array.from(new FormData(form)));
   }
 
+  // True while a saved search is re-posted, so leaving the page does not overwrite it.
+  let restoring = false;
+
   function postFilters(form, plan) {
     Object.entries(plan.filters).forEach(([name, value]) => {
       const field = form.elements.namedItem(name);
@@ -127,6 +130,7 @@
       page.value = String(plan.page);
       form.appendChild(page);
     }
+    restoring = true;
     form.submit();
   }
 
@@ -151,27 +155,73 @@
     }
   }
 
-  function markLeaving(event) {
-    const stored = load() || newContext({}, FIRST_PAGE, 0);
-    if (event.target.closest("[data-voter-link]")) {
-      save({ ...stored, pending: true, scrollY: window.scrollY });
-    } else {
-      save({ ...stored, pending: true });
+  const listForm = document.querySelector("form[data-voter-filters]");
+
+  // The stored filters are the ones the list was rendered with (saved when it loaded or was
+  // searched), so typing that was never submitted is not carried into Back.
+  function markLeaving() {
+    const base = load() || (listForm ? snapshotOf(listForm) : newContext({}, FIRST_PAGE, 0));
+    const scrollY = listForm ? window.scrollY : base.scrollY;
+    save({ ...base, pending: true, scrollY: scrollY });
+  }
+
+  function snapshotOf(form) {
+    return newContext(currentFilters(form), Number(form.dataset.page) || FIRST_PAGE, window.scrollY);
+  }
+
+  // Only an ordinary click leaves this tab. Ctrl/Cmd/Shift/Alt or a middle click opens elsewhere.
+  function isPlainClick(event) {
+    return event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey;
+  }
+
+  // Registered in the capture phase: the VoterId link stops bubbling in app.js, so a bubble
+  // listener on document would never see its click.
+  function onClick(event) {
+    const target = event.target;
+    if (!target || !target.closest) {
+      return;
+    }
+    if (target.closest("[data-voter-link], [data-voter-list-return]")) {
+      if (isPlainClick(event)) {
+        markLeaving();
+      }
+    } else if (target.closest("[data-clear-filters]")) {
+      forget();
     }
   }
 
-  document.addEventListener("click", (event) => {
-    if (!event.target.closest) {
+  function onSubmit(event) {
+    if (listForm && event.target === listForm) {
+      save(newContext(currentFilters(listForm), FIRST_PAGE, window.scrollY));
+    }
+  }
+
+  // Keeps the latest scroll position when the page is left by any route (including keyboard
+  // navigation and bfcache). Pending is left as it is, so only a details link sets it.
+  function onPageHide() {
+    const stored = load();
+    if (!listForm || restoring || !stored) {
       return;
     }
-    if (event.target.closest("[data-voter-link], [data-voter-list-return]")) {
-      markLeaving(event);
-    } else if (event.target.closest("[data-clear-filters]")) {
-      forget();
-    }
-  });
+    save({ ...stored, scrollY: window.scrollY });
+  }
 
-  const listForm = document.querySelector("form[data-voter-filters]");
+  // Back/forward cache: the list comes back with its filters still in the form and no reload.
+  // Only clear pending and keep the view. Re-posting here would reset the page.
+  function onPageShow(event) {
+    const stored = load();
+    if (!event.persisted || !listForm || !stored || !stored.pending) {
+      return;
+    }
+    save({ ...stored, pending: false, restoreScrollY: null });
+    window.scrollTo(0, stored.scrollY);
+  }
+
+  document.addEventListener("click", onClick, true);
+  document.addEventListener("submit", onSubmit, true);
+  window.addEventListener("pagehide", onPageHide);
+  window.addEventListener("pageshow", onPageShow);
+
   if (listForm) {
     initList(listForm);
   }
