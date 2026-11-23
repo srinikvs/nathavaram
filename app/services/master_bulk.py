@@ -92,7 +92,8 @@ def check_delete(db: Session, entity: str, items: Any) -> dict[str, int]:
         total = sum(n for _, n in used)
         detail = "; ".join(f"{_describe(item)}: {n}" for item, n in used)
         raise ServiceError(
-            f"Cannot delete: {total} active voter{'s' if total != 1 else ''} still use "
+            f"Cannot delete: {total} active voter{'s' if total != 1 else ''} still "
+            f"{'uses' if total == 1 else 'use'} "
             f"{'these values' if len(used) != 1 else 'this value'} ({detail}). "
             "Rename the value instead, or change or remove those voters first. No voters were changed.",
             409,

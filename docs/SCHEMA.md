@@ -63,6 +63,12 @@ Search filters (`q`, `voter_id`, `caste`, `mobile`, and the other filters) are s
 
 Because `voter_id` is the primary key, two rows can never share a VoterId. Creating one that belongs to an active voter returns 409 (the service checks first so the API answers before any database error): `A voter with VoterId <id> already exists. Each VoterId must be unique; search for the existing voter or use a different VoterId.` CSV import skips such a row and reports `VoterId <id> already exists`. Excel (.xlsx) import goes through the same code path (`app/services/impex.py`, `_import_table`) and gives the same skip, message and report; it reads the first sheet only and stringifies numeric cells without a trailing `.0`.
 
+The web list remembers the last search so that Back returns to it. The filters and scroll position are kept in the browser's sessionStorage (`app/static/voter-list-context.js`), not in the URL or the server logs. The list entry is rewritten to `GET /voters`, and a return from a voter's details page re-posts the saved filters once. Clear forgets them. A fresh visit to `/voters` is unfiltered.
+
+### Voter details (web)
+
+`GET /voters/{voter_id}` shows every voter field, read-only. Its Edit button opens the existing `/voters/{voter_id}/edit` form, which keeps the role rules in "Who may edit which field". A missing or soft-deleted VoterId returns 404 with the "not on the active list" page; the details URL has no query string.
+
 ### VoterId is fixed after create
 
 VoterId is the primary key, so it cannot be edited once a voter exists. The web edit page shows it as plain text and does not post it. A web edit post or `PATCH /api/voters/{voter_id}` that carries a different `voter_id` is refused and nothing is written: the web form answers 400 and `PATCH` answers 422. Sending the same value is accepted. In sync a different `voter_id` is simply a different record (see `docs/SYNC.md`). This holds for every role, including owner and admin. Who may change the other columns is described next.

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}VoterId {{ voter.voter_id }} · Nathavaram{% endblock %}
+{% block content %}
+{# Display only. Edit opens the existing edit form, which enforces the role rules. #}
+<div class="page-head">
+  <div>
+    <h1>Voter details</h1>
+    <p class="lede" translate="no">VoterId {{ voter.voter_id }}</p>
+  </div>
+  <div class="actions">
+    <a class="button ghost" href="/voters" data-voter-list-return>Back to list</a>
+    <a class="button" href="/voters/{{ voter.voter_id|urlencode }}/edit">Edit</a>
+  </div>
+</div>
+<dl class="voter-details">
+  {% for label, value in rows %}
+  <div>
+    <dt>{{ label }}</dt>
+    <dd translate="no">{{ value|display }}</dd>
+  </div>
+  {% endfor %}
+</dl>
+<p class="meta">Revision {{ voter.revision }} · Updated {{ voter.updated_at|ist }}{% if voter.source_id %} · {{ voter.source_id }}{% endif %}</p>
+{% endblock %}
+{% block scripts %}<script src="/static/voter-list-context.js"></script>{% endblock %}

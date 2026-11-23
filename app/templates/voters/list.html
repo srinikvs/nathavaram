@@ -25,7 +25,7 @@
 {% if bulk_done == 'deleted' %}<p class="banner ok">Removed {{ request.query_params.get('n') }} voter(s) from the active list. The rows are kept for sync.</p>{% endif %}
 {% if bulk_done == 'none' %}<p class="banner bad" role="alert">Select at least one voter first.</p>{% endif %}
 {% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
-<form class="filters" method="post" action="/voters/search">
+<form class="filters" method="post" action="/voters/search" data-voter-filters data-page="{{ query.page }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div>
     <label for="q">Search</label>
@@ -96,7 +96,7 @@
   </details>
   <div class="actions">
     <button type="submit">Apply</button>
-    <a class="button ghost" href="/voters">Clear</a>
+    <a class="button ghost" href="/voters" data-clear-filters>Clear</a>
   </div>
 </form>
 {% if voters %}
@@ -149,7 +149,7 @@
         <td data-label="Booth S.No" translate="no">{{ voter.booth_s_no|display }}</td>
         <td data-label="Ward" translate="no">{{ voter.ward|display }}</td>
         <td data-label="Ward S.No" translate="no">{{ voter.ward_s_no|display }}</td>
-        <td data-label="VoterId" translate="no">{{ voter.voter_id }}</td>
+        <td data-label="VoterId" translate="no"><a href="/voters/{{ voter.voter_id|urlencode }}" data-voter-link>{{ voter.voter_id }}</a></td>
         <td data-label="FirstName" translate="no">{{ voter.first_name }}</td>
         <td data-label="LastName" translate="no">{{ voter.last_name|display }}</td>
         <td data-label="RelativeName" translate="no">{{ voter.relative_name|display }}</td>
@@ -200,3 +200,4 @@
 {% endif %}
 {% endif %}
 {% endblock %}
+{% block scripts %}<script src="/static/voter-list-context.js"></script>{% endblock %}

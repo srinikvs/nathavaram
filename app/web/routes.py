@@ -18,6 +18,7 @@ from app.constants import (
     PARTIES,
     SEARCH_FILTER_FIELDS,
     USER_EDITABLE_FIELDS,
+    VOTER_COLUMNS,
 )
 from app.database import get_db
 from app.deps import resolve_user, source_for
@@ -358,6 +359,33 @@ def new_voter_form(request: Request, user=Depends(web_user)):
         request,
         "voters/form.html",
         {"user": user, "voter": None, "errors": [], "values": {}},
+    )
+
+
+def _detail_rows(voter) -> list[tuple[str, object]]:
+    """Every voter field as (label, value), in the same order as the list and edit form."""
+    return [
+        (label, local_label(voter.is_local) if field == "is_local" else getattr(voter, field))
+        for field, label in VOTER_COLUMNS
+    ]
+
+
+# Registered after /voters/new so that "new" is never read as a VoterId.
+@router.get("/voters/{voter_id}")
+def voter_details(
+    voter_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(web_user),
+):
+    try:
+        voter = get_active(db, voter_id)
+    except ServiceError:
+        return render(request, "404.html", {"user": user}, status_code=404)
+    return render(
+        request,
+        "voters/details.html",
+        {"user": user, "voter": voter, "rows": _detail_rows(voter)},
     )
 
 

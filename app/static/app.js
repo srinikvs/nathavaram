@@ -105,6 +105,12 @@ document.addEventListener("click", (event) => {
   document.querySelectorAll("[data-top-scroll]").forEach(setup);
 })();
 
+// VoterId links sit in the row but are not a selection control. Stop their clicks here so
+// that nothing above them treats the click as a row or select-all action.
+document.querySelectorAll("[data-voter-link]").forEach((link) => {
+  link.addEventListener("click", (event) => event.stopPropagation());
+});
+
 // Bulk row selection (admin pages only; the server renders the markup for admins).
 // Select-all acts only on the rows rendered in this table. Filtering or paging reloads the
 // page, so a selection never carries over to rows that are not on screen.
