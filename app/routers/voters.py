@@ -106,7 +106,7 @@ def post_voter(
     user: User = Depends(require_user),
 ) -> VoterPublic:
     try:
-        voter = create_voter(db, body, source_for(user))
+        voter = create_voter(db, body, source_for(user), user)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return voter_to_public(voter)

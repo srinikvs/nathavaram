@@ -88,7 +88,7 @@ FirstName, LastName, Gender, Caste, Mandal and Constituency are admin-only on an
 
 - A `user` request that changes any other column is refused and nothing is written: `PATCH` answers **403** (`Your role cannot change: <labels>. Users and managers may edit only <the 14 labels>; ask an admin to change other fields.`), the web form re-renders with the same message and status 403, and sync answers that change with `status: "forbidden"` (see `docs/SYNC.md`). The check compares against the stored value, so a client that sends the whole row back with the restricted fields unchanged is not refused.
 - The web edit form shows the restricted fields read-only for a `user` (inputs are `readonly`, drop-downs `disabled`). The server does not rely on that: a posted value that differs is refused, and a field that was not posted counts as unchanged.
-- Creating a voter is unchanged: any signed-in user can create one and may set every column, including Village, Panchayath, Mandal and Local/Non-Local. Soft delete is open to every role (user, manager, admin). Restore and hard delete are manager and admin only. See the roles table in `app/permissions.py`.
+- Creating a voter is unchanged for a new VoterId: any signed-in user can create one and may set every column, including Village, Panchayath, Mandal and Local/Non-Local. Re-using the VoterId of a soft-deleted voter is a restore and needs a manager or admin (see "Deleting a voter" above). Soft delete is open to every role (user, manager, admin). Restore and hard delete are manager and admin only. See the roles table in `app/permissions.py`.
 
 ### History of the column names
 

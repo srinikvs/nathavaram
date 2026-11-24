@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.constants import DATA_FIELDS, EXPORT_ROW_LIMIT, LABEL_BY_FIELD, USER_EDITABLE_FIELDS
 from app.errors import ServiceError
-from app.models import Voter
+from app.models import User, Voter
+from app.permissions import can_restore
 from app.schemas import VoterPatch, VoterPublic, VoterSearch, VoterWrite
 from app.services.revision import allocate_revision
 from app.validation import dump_dt
@@ -24,6 +25,9 @@ DUPLICATE_VOTER_ID_MESSAGE = (
 VOTER_ID_LOCKED_MESSAGE = "VoterId cannot be changed after the voter is created"
 HARD_DELETED_MESSAGE = (
     "This voter was permanently deleted. Its personal data is gone and it cannot be restored."
+)
+SOFT_DELETED_VOTER_ID_MESSAGE = (
+    "VoterId belongs to a deleted record; ask a manager to restore it"
 )
 HARD_DELETE_NEEDS_SOFT_DELETE_MESSAGE = (
     "Soft delete the voter first. Only deleted voters can be permanently deleted."
@@ -109,18 +113,22 @@ def get_active(db: Session, voter_id: str) -> Voter:
     return voter
 
 
-def create_voter(db: Session, data: VoterWrite, source_id: str) -> Voter:
-    """Insert a voter. A soft-deleted row with the same voter_id is revived in place."""
+def create_voter(db: Session, data: VoterWrite, source_id: str, user: User) -> Voter:
+    """Insert a voter. A soft-deleted row with the same voter_id is revived in place, but only
+    by a role that may restore; anyone else gets a 409 and nothing changes."""
     existing = db.get(Voter, data.voter_id)
     if existing is not None and existing.deleted_at is None:
         raise duplicate_voter_id_error(data.voter_id)
+    if existing is not None and existing.hard_deleted_at is None and not can_restore(user):
+        raise ServiceError(SOFT_DELETED_VOTER_ID_MESSAGE, 409, "voter_id")
     now = _now()
     if existing is None:
         voter = Voter(voter_id=data.voter_id, created_at=now, source_id=source_id, revision=0)
         db.add(voter)
     else:
-        # Reusing the VoterId of a soft-deleted row (or a hard-deleted one) is a new record:
-        # the payload replaces every field and the old row is not restored.
+        # Reusing the VoterId of a hard-deleted row is a new record: the payload replaces every
+        # field and the old data is not restored. A soft-deleted row is restored only by a
+        # manager or admin, who may reuse it here as well.
         voter = existing
         voter.created_at = now
         voter.deleted_at = None

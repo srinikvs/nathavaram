@@ -28,13 +28,14 @@ from sqlalchemy.orm import Session
 from app.constants import DATA_FIELDS, SYNC_BATCH_LIMIT
 from app.errors import ServiceError
 from app.models import User, Voter
-from app.permissions import can_edit_all_fields, can_restore
+from app.permissions import can_edit_all_fields, can_restore, can_review_deleted
 from app.schemas import (
     SyncChange,
     SyncPullResponse,
     SyncPushRequest,
     SyncPushResponse,
     SyncResult,
+    VoterPublic,
     VoterWrite,
 )
 from app.services.revision import allocate_revision, current_revision
@@ -55,7 +56,26 @@ def _server_time() -> str:
     return dump_dt(datetime.now(timezone.utc))
 
 
-def pull_changes(db: Session, since: int, limit: int) -> SyncPullResponse:
+def _tombstone(public: VoterPublic) -> VoterPublic:
+    """Strip personal fields, keeping only the key, timestamps, revision and delete markers."""
+    cleared = {
+        field: None
+        for field in DATA_FIELDS
+        if field not in {"voter_id", "first_name", "is_local"}
+    }
+    return public.model_copy(update={**cleared, "first_name": "", "is_local": False})
+
+
+def _visible_record(voter: Voter, user: User) -> VoterPublic:
+    """The row as `user` may see it. A soft-deleted row is a tombstone unless the user can review
+    deleted voters (manager and admin). Hard-deleted rows are already stripped in storage."""
+    public = voter_to_public(voter)
+    if voter.deleted_at is None or can_review_deleted(user):
+        return public
+    return _tombstone(public)
+
+
+def pull_changes(db: Session, since: int, limit: int, user: User) -> SyncPullResponse:
     if since < 0:
         since = 0
     if limit < 1:
@@ -77,7 +97,7 @@ def pull_changes(db: Session, since: int, limit: int) -> SyncPullResponse:
         server_revision=current_revision(db),
         since=since,
         has_more=has_more,
-        changes=[voter_to_public(row) for row in page],
+        changes=[_visible_record(row, user) for row in page],
     )
 
 
@@ -110,7 +130,7 @@ def _apply_guarded(db: Session, change: SyncChange, device_id: str, user: User) 
             status="conflict",
             message="Another change for this VoterId was stored first",
             server_revision=winner.revision if winner is not None else None,
-            server_record=voter_to_public(winner) if winner is not None else None,
+            server_record=_visible_record(winner, user) if winner is not None else None,
         )
 
 
@@ -118,14 +138,14 @@ def _stale_base(existing: Voter, base_revision: int | None) -> bool:
     return base_revision is not None and existing.revision > base_revision
 
 
-def _forbidden(existing: Voter, message: str) -> SyncResult:
+def _forbidden(existing: Voter, user: User, message: str) -> SyncResult:
     """Sync analogue of HTTP 403: this change is refused and nothing is written."""
     return SyncResult(
         voter_id=existing.voter_id,
         status="forbidden",
         message=message,
         server_revision=existing.revision,
-        server_record=voter_to_public(existing),
+        server_record=_visible_record(existing, user),
     )
 
 
@@ -145,7 +165,9 @@ def _apply_one(db: Session, change: SyncChange, device_id: str, user: User) -> S
 
     existing = db.get(Voter, voter_key)
     if change.deleted:
-        return _apply_delete(db, voter_key, existing, incoming, device_id, change.base_revision)
+        return _apply_delete(
+            db, voter_key, existing, incoming, device_id, change.base_revision, user
+        )
 
     try:
         snapshot = VoterWrite.model_validate(
@@ -184,7 +206,7 @@ def _apply_one(db: Session, change: SyncChange, device_id: str, user: User) -> S
             voter_id=voter_key,
             status="applied",
             server_revision=voter.revision,
-            server_record=voter_to_public(voter),
+            server_record=_visible_record(voter, user),
         )
 
     return _merge_existing(db, existing, snapshot, incoming, device_id, change.base_revision, user)
@@ -197,6 +219,7 @@ def _apply_delete(
     incoming: datetime,
     device_id: str,
     base_revision: int | None,
+    user: User,
 ) -> SyncResult:
     """Soft delete: keep every field, set deleted_at. Any role may do this."""
     if existing is None:
@@ -213,23 +236,23 @@ def _apply_delete(
             status="applied",
             message="Already permanently deleted",
             server_revision=existing.revision,
-            server_record=voter_to_public(existing),
+            server_record=_visible_record(existing, user),
         )
     stored = parse_dt(existing.updated_at)
     if incoming < stored:
-        return _conflict(existing, "Server record is newer")
+        return _conflict(existing, user, "Server record is newer")
     if incoming == stored and existing.deleted_at is not None:
         return SyncResult(
             voter_id=record_id,
             status="applied",
             message="Already deleted",
             server_revision=existing.revision,
-            server_record=voter_to_public(existing),
+            server_record=_visible_record(existing, user),
         )
     if incoming == stored and existing.deleted_at is None:
-        return _conflict(existing, "Server record has the same updated_at and is still active")
+        return _conflict(existing, user, "Server record has the same updated_at and is still active")
     if existing.deleted_at is None and _stale_base(existing, base_revision):
-        return _conflict(existing, "Server record changed after base_revision")
+        return _conflict(existing, user, "Server record changed after base_revision")
     stamp = dump_dt(incoming)
     existing.deleted_at = stamp
     existing.updated_at = stamp
@@ -240,7 +263,7 @@ def _apply_delete(
         voter_id=record_id,
         status="applied",
         server_revision=existing.revision,
-        server_record=voter_to_public(existing),
+        server_record=_visible_record(existing, user),
     )
 
 
@@ -255,7 +278,7 @@ def _merge_existing(
 ) -> SyncResult:
     stored = parse_dt(existing.updated_at)
     if incoming < stored:
-        return _conflict(existing, "Server record is newer")
+        return _conflict(existing, user, "Server record is newer")
     if incoming == stored:
         if _same_content(existing, snapshot, deleted=False):
             return SyncResult(
@@ -263,11 +286,11 @@ def _merge_existing(
                 status="applied",
                 message="Already stored",
                 server_revision=existing.revision,
-                server_record=voter_to_public(existing),
+                server_record=_visible_record(existing, user),
             )
-        return _conflict(existing, "Server record has the same updated_at and different content")
+        return _conflict(existing, user, "Server record has the same updated_at and different content")
     if _stale_base(existing, base_revision):
-        return _conflict(existing, "Server record changed after base_revision")
+        return _conflict(existing, user, "Server record changed after base_revision")
 
     # Stale and replayed changes were handled above, so only a genuine edit reaches this point.
     if existing.hard_deleted_at is not None:
@@ -276,13 +299,13 @@ def _merge_existing(
     else:
         if existing.deleted_at is not None:
             if not can_restore(user):
-                return _forbidden(existing, RESTORE_FORBIDDEN_MESSAGE)
+                return _forbidden(existing, user, RESTORE_FORBIDDEN_MESSAGE)
             existing.created_at = dump_dt(incoming)  # a restored row is a new voter, as on create
         if not can_edit_all_fields(user):
             # Values equal to the stored ones are ignored: only real changes are refused.
             blocked = disallowed_changes(existing, {f: getattr(snapshot, f) for f in DATA_FIELDS})
             if blocked:
-                return _forbidden(existing, forbidden_fields_message(blocked))
+                return _forbidden(existing, user, forbidden_fields_message(blocked))
     _write_snapshot(existing, snapshot)
     existing.deleted_at = None
     existing.hard_deleted_at = None
@@ -294,7 +317,7 @@ def _merge_existing(
         voter_id=existing.voter_id,
         status="applied",
         server_revision=existing.revision,
-        server_record=voter_to_public(existing),
+        server_record=_visible_record(existing, user),
     )
 
 
@@ -312,11 +335,11 @@ def _same_content(voter: Voter, snapshot: VoterWrite, *, deleted: bool) -> bool:
     return True
 
 
-def _conflict(existing: Voter, message: str) -> SyncResult:
+def _conflict(existing: Voter, user: User, message: str) -> SyncResult:
     return SyncResult(
         voter_id=existing.voter_id,
         status="conflict",
         message=message,
         server_revision=existing.revision,
-        server_record=voter_to_public(existing),
+        server_record=_visible_record(existing, user),
     )

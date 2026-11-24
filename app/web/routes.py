@@ -554,7 +554,7 @@ async def new_voter_submit(request: Request, db: Session = Depends(get_db), user
             status_code=400,
         )
     try:
-        voter = create_voter(db, data, source_for(user))
+        voter = create_voter(db, data, source_for(user), user)
     except ServiceError as exc:
         return render(
             request,

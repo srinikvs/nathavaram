@@ -20,9 +20,9 @@ def pull(
     since: int = Query(default=0, ge=0),
     limit: int = Query(default=500, ge=1, le=1000),
     db: Session = Depends(get_db),
-    _: User = Depends(require_user),
+    user: User = Depends(require_user),
 ) -> SyncPullResponse:
-    return pull_changes(db, since=since, limit=limit)
+    return pull_changes(db, since=since, limit=limit, user=user)
 
 
 @router.post("/push", response_model=SyncPushResponse)

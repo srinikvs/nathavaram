@@ -527,7 +527,10 @@ def test_sync_user_soft_delete_applies_and_keeps_fields(ctx):
     results = _push(ctx, roles["user"], [{"voter_id": voter["voter_id"], "updated_at": _later(), "deleted": True}])
 
     assert results[0]["status"] == "applied", results
-    assert results[0]["server_record"]["first_name"] == "Testperson"
+    # A user's device gets the stripped tombstone back, not the personal fields it just deleted.
+    assert results[0]["server_record"]["deleted_at"] is not None
+    assert results[0]["server_record"]["first_name"] == ""
+    assert results[0]["server_record"]["mobile"] is None
 
 
 def test_sync_user_cannot_restore_a_soft_deleted_voter(ctx):
@@ -553,6 +556,119 @@ def test_sync_manager_can_restore_a_soft_deleted_voter(ctx):
 
     assert results[0]["status"] == "applied", results
     assert _get(ctx, voter["voter_id"]).status_code == 200
+
+
+def test_sync_forbidden_restore_returns_no_personal_fields_to_a_user(ctx):
+    roles = _roles(ctx)
+    voter = _create(ctx)
+    _soft_delete(ctx, voter["voter_id"], ctx.auth)
+    snapshot = {field: voter[field] for field in DATA_FIELDS}
+
+    results = _push(ctx, roles["user"], [{**snapshot, "updated_at": _later(), "deleted": False}])
+
+    record = results[0]["server_record"]
+    assert results[0]["status"] == "forbidden", results
+    assert record["voter_id"] == voter["voter_id"]
+    assert record["first_name"] == "" and record["mobile"] is None and record["caste"] is None
+
+
+def test_sync_pull_for_a_user_strips_soft_deleted_personal_fields(ctx):
+    roles = _roles(ctx)
+    voter = _create(ctx)
+    _soft_delete(ctx, voter["voter_id"], ctx.auth)
+
+    changes = ctx.client.get("/api/sync/pull?since=0", headers=roles["user"]).json()["changes"]
+
+    row = next(item for item in changes if item["voter_id"] == voter["voter_id"])
+    assert row["deleted_at"] is not None and row["revision"] > 0
+    assert row["updated_at"] and row["created_at"]
+    assert row["first_name"] == "" and row["is_local"] is False
+    for field in DATA_FIELDS:
+        if field not in {"voter_id", "first_name", "is_local"}:
+            assert row[field] is None, field
+
+
+@pytest.mark.parametrize("role", ["manager", "admin"])
+def test_sync_pull_for_a_reviewer_keeps_the_soft_deleted_fields(ctx, role):
+    roles = _roles(ctx)
+    voter = _create(ctx)
+    _soft_delete(ctx, voter["voter_id"], ctx.auth)
+
+    changes = ctx.client.get("/api/sync/pull?since=0", headers=roles[role]).json()["changes"]
+
+    row = next(item for item in changes if item["voter_id"] == voter["voter_id"])
+    assert row["deleted_at"] is not None
+    assert row["first_name"] == "Testperson" and row["mobile"] == voter["mobile"]
+
+
+def test_sync_pull_for_a_user_still_shows_active_voters_in_full(ctx):
+    roles = _roles(ctx)
+    voter = _create(ctx)
+
+    changes = ctx.client.get("/api/sync/pull?since=0", headers=roles["user"]).json()["changes"]
+
+    row = next(item for item in changes if item["voter_id"] == voter["voter_id"])
+    assert row["first_name"] == "Testperson" and row["mobile"] == voter["mobile"]
+
+
+# --- Create cannot revive a soft-deleted VoterId for a user --------------------------------------
+
+SOFT_DELETED_CREATE_MESSAGE = "VoterId belongs to a deleted record; ask a manager to restore it"
+
+
+def _deleted_row(ctx, voter_id: str) -> dict:
+    items = ctx.client.get("/api/voters/deleted", headers=ctx.auth).json()["items"]
+    return next(item for item in items if item["voter_id"] == voter_id)
+
+
+def test_user_create_with_a_soft_deleted_voter_id_is_409_and_changes_nothing(ctx):
+    roles = _roles(ctx)
+    voter = _create(ctx, caste="SampleGroupA", constituency="Sampleconstituency", gender="Female")
+    _soft_delete(ctx, voter["voter_id"], ctx.auth)
+    before = _deleted_row(ctx, voter["voter_id"])
+
+    attempt = ctx.client.post(
+        "/api/voters",
+        headers=roles["user"],
+        json=voter_payload(
+            first_name="Intruder", caste="OtherGroup", constituency="Otherconstituency", gender="Male"
+        ),
+    )
+
+    assert attempt.status_code == 409, attempt.text
+    assert attempt.json()["detail"] == SOFT_DELETED_CREATE_MESSAGE
+    after = _deleted_row(ctx, voter["voter_id"])
+    assert after == before
+    assert after["deleted_at"] is not None and after["first_name"] == "Testperson"
+    assert after["caste"] == "SampleGroupA" and after["constituency"] == "Sampleconstituency"
+    assert after["gender"] == "Female"
+    assert _get(ctx, voter["voter_id"]).status_code == 404
+
+
+@pytest.mark.parametrize("role", ["manager", "admin"])
+def test_manager_and_admin_create_with_a_soft_deleted_voter_id_revives_it(ctx, role):
+    roles = _roles(ctx)
+    voter = _create(ctx)
+    _soft_delete(ctx, voter["voter_id"], ctx.auth)
+
+    revived = ctx.client.post("/api/voters", headers=roles[role], json=voter_payload(first_name="Revived"))
+
+    assert revived.status_code == 201, revived.text
+    assert revived.json()["deleted_at"] is None and revived.json()["first_name"] == "Revived"
+    assert _get(ctx, voter["voter_id"]).status_code == 200
+
+
+def test_user_create_with_a_hard_deleted_voter_id_is_a_new_record_not_a_restore(ctx):
+    roles = _roles(ctx)
+    voter = _create(ctx)
+    _soft_delete(ctx, voter["voter_id"], ctx.auth)
+    ctx.client.post(f"/api/voters/{voter['voter_id']}/hard-delete", headers=ctx.auth)
+
+    created = ctx.client.post("/api/voters", headers=roles["user"], json=voter_payload(first_name="Fresh"))
+
+    assert created.status_code == 201, created.text
+    assert created.json()["first_name"] == "Fresh"
+    assert created.json()["hard_deleted_at"] is None and created.json()["deleted_at"] is None
 
 
 def test_sync_change_after_hard_delete_creates_a_new_record_not_a_restore(ctx):

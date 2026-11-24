@@ -19,7 +19,7 @@ All timestamps are UTC in the form `YYYY-MM-DDTHH:MM:SS.ffffffZ`. A value withou
 
 `GET /api/sync/pull?since=<revision>&limit=<1-1000>`
 
-Returns every voter, including soft-deleted rows, whose `revision` is greater than `since`, ordered by `revision` ascending. `limit` defaults to 500.
+Returns every voter, including soft-deleted rows, whose `revision` is greater than `since`, ordered by `revision` ascending. `limit` defaults to 500. The personal fields returned for a soft-deleted row depend on the caller's role (see below); a `user` never receives the personal fields of a soft-deleted voter.
 
 ```json
 {
@@ -41,7 +41,7 @@ Returns every voter, including soft-deleted rows, whose `revision` is greater th
 
 Two kinds of deleted row come back on pull:
 
-- **Soft delete** (`deleted_at` set, `hard_deleted_at` null): every field is kept, exactly as it was when the voter was removed. The device should hide or remove its active row. A manager or admin can restore the voter, and the restore arrives as an ordinary active row with a new `revision`.
+- **Soft delete** (`deleted_at` set, `hard_deleted_at` null): for a manager or admin, every field is kept, exactly as it was when the voter was removed. For a `user`, who cannot review deleted voters, the row is a **stripped tombstone** on pull and in every `server_record`: `voter_id`, `revision`, `created_at`, `updated_at`, `deleted_at`, `source_id` and `hard_deleted_at` are sent, `first_name` is `""`, `is_local` is `false`, and every other personal field is null. The device should hide or remove its active row. A manager or admin can restore the voter, and the restore arrives as an ordinary active row with a new `revision`.
 - **Hard delete** (`hard_deleted_at` set): the personal data is gone. Every voter field is null, `first_name` is `""` and `is_local` is `false`. Only `voter_id`, `revision`, `created_at`, `updated_at`, `deleted_at`, `hard_deleted_at` and `source_id` are meaningful. The device should delete its local copy. A hard-deleted row cannot be restored; a later non-delete change for the same `voter_id` is a new record. Tombstones that were written before the voter_id-key change hold an inert placeholder `voter_id` (the old row id without dashes) because their real VoterId had already been erased; a device will not find a local row for those. When `has_more` is true, call again with `since` set to the `revision` of the last change in this page. Stop when `has_more` is false. An empty `changes` list with `server_revision` equal to the device cursor means the device is caught up.
 
 ## Push
@@ -121,7 +121,7 @@ The old `voter_id_conflict` status no longer exists: the same `voter_id` is the 
 
 ### Roles and sync
 
-`forbidden` is the sync form of HTTP 403: it is reported per change, with HTTP 200 for the batch, like `validation_error` and `conflict`, so one refused change never blocks the others. The comparison is against the stored values, so a full snapshot whose restricted fields are unchanged is **not** a violation; only a real difference is. Stale and replayed changes are decided first (`conflict`, "Already stored"), so a device that is merely behind is told `conflict`, not `forbidden`. Every role may create a new voter (a change for a `voter_id` the server has no active row for) and may set every column on it. `manager` has the same field rules as `user`, plus restore. `admin` accounts, including the owner, may change every column except `voter_id`.
+`forbidden` is the sync form of HTTP 403: it is reported per change, with HTTP 200 for the batch, like `validation_error` and `conflict`, so one refused change never blocks the others. The `server_record` in every result (`applied`, `conflict`, `forbidden`) is the same view as pull: a `user` who cannot review deleted voters gets the stripped tombstone for a soft-deleted row, never its personal fields. The comparison is against the stored values, so a full snapshot whose restricted fields are unchanged is **not** a violation; only a real difference is. Stale and replayed changes are decided first (`conflict`, "Already stored"), so a device that is merely behind is told `conflict`, not `forbidden`. Every role may create a new voter (a change for a `voter_id` the server has no active row for) and may set every column on it. `manager` has the same field rules as `user`, plus restore. `admin` accounts, including the owner, may change every column except `voter_id`.
 
 ### Bulk edits and deletes
 
