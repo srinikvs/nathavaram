@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
-from app.constants import SYNC_BATCH_LIMIT
+from app.constants import ROLES, SYNC_BATCH_LIMIT
 from app.validation import (
     DEFAULT_IS_LOCAL,
     canonical_age,
@@ -64,8 +64,8 @@ class UserCreate(BaseModel):
     @field_validator("role")
     @classmethod
     def _role(cls, value: str) -> str:
-        if value not in {"admin", "user"}:
-            raise ValueError("Role must be admin or user")
+        if value not in ROLES:
+            raise ValueError("Role must be admin, manager or user")
         return value
 
 
@@ -89,8 +89,8 @@ class UserUpdate(BaseModel):
     def _role(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        if value not in {"admin", "user"}:
-            raise ValueError("Role must be admin or user")
+        if value not in ROLES:
+            raise ValueError("Role must be admin, manager or user")
         return value
 
 
@@ -322,6 +322,8 @@ class VoterPublic(BaseModel):
     updated_at: str
     revision: int
     deleted_at: str | None
+    # Set only after a hard delete: the personal fields are gone and the row can't be restored.
+    hard_deleted_at: str | None = None
     source_id: str | None
 
 
@@ -571,6 +573,15 @@ class BulkVoterEdit(BaseModel):
 
 class BulkVoterDelete(BaseModel):
     """Soft-delete the listed voters. Nothing happens unless confirm is true."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    voter_ids: list[str]
+    confirm: bool = False
+
+
+class BulkVoterHardDelete(BaseModel):
+    """Permanently remove the listed soft-deleted voters. Nothing happens unless confirm is true."""
 
     model_config = ConfigDict(extra="forbid")
 

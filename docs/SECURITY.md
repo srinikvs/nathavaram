@@ -49,11 +49,35 @@ Every signed-in user (any role) has a "Change password" link in the web sidebar 
 
 ## Sidebar navigation
 
-The web UI has no top nav links; navigation lives in the left sidebar (`app/web/nav.py`). Master Data, Survey Report and Import are shown to admins only, Users to the owner admin only. Hiding a link is cosmetic: each route still enforces its role on the server (403 for non-admins). "Coming soon" stub pages require login, and the admin ones (Survey Report) are admin-only too.
+The web UI has no top nav links; navigation lives in the left sidebar (`app/web/nav.py`). Master Data, Survey Report, Import and Users are shown to admins only; Deleted voters to managers and admins. Hiding a link is cosmetic: each route still enforces its role on the server (403 for non-admins). "Coming soon" stub pages require login, and the admin ones (Survey Report) are admin-only too.
 
-## Owner user management
+## Roles
 
-Owner only (non-owner admins and users get 403). Cookie-authenticated mutations need the CSRF token; Bearer requests are exempt.
+Three roles on `users.role`, enforced in `app/permissions.py` and on every route and sync push (navigation links are cosmetic):
+
+| Capability | `user` | `manager` | `admin` (owner included) |
+|---|---|---|---|
+| Sign in, search, view, create voters | yes | yes | yes |
+| Edit `USER_EDITABLE_FIELDS` on a voter (14 fields: Booth, Ward, Booth S.No, Ward S.No, RelativeName, HouseNo, Age, Street, Mobile, Village, Panchayath, Current City, Local/Non-Local, Party) | yes | yes | yes |
+| Edit FirstName, LastName, Gender, Caste, Mandal, Constituency | no | no | yes |
+| Soft delete (single and bulk) | yes | yes | yes |
+| Deleted voters page, restore | no | yes | yes |
+| Hard delete (permanent, strips personal data) | no | yes | yes |
+| Import, export, Master Data | no | no | yes |
+| User accounts | no | no | yes (owner protections below) |
+
+Hard delete is never reachable through sync. A `user` cannot restore through sync either.
+
+## Account management (admin)
+
+Admins (owner included) manage accounts. Cookie-authenticated mutations need the CSRF token; Bearer requests are exempt. Non-admins (`user`, `manager`) get 403.
+
+Owner protections (enforced in `app/services/users.py`):
+
+- Only the owner can change, reset the password of, deactivate or delete the owner account. Another admin gets 403.
+- The owner account must stay `admin`; a role change to `manager` or `user` answers 400.
+- The owner cannot be deleted, and nobody can deactivate or delete themself.
+- At least one active admin must remain.
 
 | Endpoint | Purpose |
 |---|---|
@@ -76,9 +100,9 @@ Choices:
 
 ## Owner
 
-`users.is_owner` marks who may create and manage users (`/users`, `/api/users`: list, create, patch, password reset). It is a stored flag, not a username check.
+`users.is_owner` marks the owner account. Only the owner may change or reset that account; admins manage every other account (`/users`, `/api/users`). It is a stored flag, not a username check.
 
 - It is set only on the admin created from `ADMIN_USERNAME`. If that user already exists at startup (a database from before the flag), startup marks it as owner and leaves its password unchanged.
 - It cannot be set through the API. Admins created later are not owners.
-- Other admins keep bulk export, import and delete, and get 403 on the user-management routes.
+- Other admins manage user accounts too, except the owner account (see Account management above). Non-admins get 403 on the user-management routes.
 - Pointing `ADMIN_USERNAME` at a different name later adds a second owner; the earlier owner keeps the flag.

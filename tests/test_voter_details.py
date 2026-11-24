@@ -80,7 +80,9 @@ def test_regular_user_list_also_links_voter_id(ctx):
     html = ctx.client.get("/voters").text
 
     assert f'<a href="/voters/{VOTER_ID}" data-voter-link>{VOTER_ID}</a>' in html
-    assert "data-row-select" not in html
+    # Every role selects rows; a user's bulk bar offers edit and soft delete only.
+    assert "data-row-select" in html
+    assert "Soft delete selected" in html
 
 
 def test_link_click_is_stopped_before_the_selection_handlers(ctx):
@@ -143,18 +145,19 @@ def test_regular_user_can_open_details_and_edit_stays_locked(ctx):
     assert details.status_code == 200
     assert f'href="/voters/{VOTER_ID}/edit"' in details.text
     assert edit.status_code == 200
-    assert re.search(r'<select id="is_local"[^>]*disabled', edit.text)
+    assert re.search(r'<select id="is_local"(?![^>]*disabled)[^>]*>', edit.text)  # user-editable now
+    assert re.search(r'<input id="first_name"[^>]*readonly', edit.text)  # admin-only
 
 
-def test_regular_user_changing_local_from_edit_is_refused_with_403(ctx):
+def test_regular_user_changing_a_locked_field_from_edit_is_refused_with_403(ctx):
     voter = _create(ctx)
     make_user(ctx, USER_NAME, USER_PASSWORD)
     _web_login(ctx, USER_NAME, USER_PASSWORD)
 
-    refused = _edit_post(ctx, VOTER_ID, is_local="Non-Local", first_name=voter["first_name"])
+    refused = _edit_post(ctx, VOTER_ID, gender="Female", first_name=voter["first_name"])
 
     assert refused.status_code == 403, refused.text
-    assert _get(ctx)["is_local"] is True
+    assert _get(ctx)["gender"] is None
 
 
 def test_admin_can_change_local_from_the_edit_form_opened_from_details(ctx):

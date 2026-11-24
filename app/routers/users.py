@@ -1,4 +1,8 @@
-"""Owner-only user management (see docs/SECURITY.md)."""
+"""Account management for admins, owner included (see docs/SECURITY.md).
+
+Route-level checks use require_admin. Owner-only protections (the owner account cannot be
+changed or deleted by another admin) are enforced in app.services.users.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import require_owner
+from app.deps import require_admin
 from app.errors import ServiceError
 from app.models import User
 from app.schemas import ResetPassword, UserCreate, UserPublic, UserUpdate
@@ -22,7 +26,7 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 @router.get("", response_model=list[UserPublic])
-def get_users(db: Session = Depends(get_db), _: User = Depends(require_owner)) -> list[User]:
+def get_users(db: Session = Depends(get_db), _: User = Depends(require_admin)) -> list[User]:
     return list_users(db)
 
 
@@ -31,7 +35,7 @@ def post_user(
     body: UserCreate,
     request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require_owner),
+    _: User = Depends(require_admin),
 ) -> User:
     try:
         return create_user(db, body, request.app.state.settings)
@@ -45,7 +49,7 @@ def reset_password(
     body: ResetPassword,
     request: Request,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_owner),
+    actor: User = Depends(require_admin),
 ) -> User:
     try:
         return reset_user_password(
@@ -64,7 +68,7 @@ def reset_password(
 def remove_user(
     user_id: str,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_owner),
+    actor: User = Depends(require_admin),
 ) -> User:
     try:
         return delete_user(db, actor, user_id)
@@ -78,7 +82,7 @@ def patch_user(
     body: UserUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    actor: User = Depends(require_owner),
+    actor: User = Depends(require_admin),
 ) -> User:
     try:
         return update_user(db, user_id, body, request.app.state.settings, actor)

@@ -102,12 +102,26 @@ OPTIONAL_IMPORT_FIELDS: frozenset[str] = frozenset(
     {name for name, _ in VOTER_COLUMNS} - {"voter_id", "first_name"}
 )
 
-# Gender is deliberately absent: only owner/admin may set it on an existing voter (like Age).
-# The only fields the regular "user" role may change on an existing voter.
+# Fields the "user" and "manager" roles may change on an existing voter (product list, 2026-11-24).
 # Owner/admin may change every field except voter_id, which nobody can change.
-# HouseNo is included because it used to be part of Address, which users could edit.
+# FirstName, LastName, Gender, Caste, Mandal and Constituency are admin-only on edit.
 USER_EDITABLE_FIELDS: frozenset[str] = frozenset(
-    {"party", "caste", "mobile", "street", "house_no"}
+    {
+        "booth",
+        "ward",
+        "booth_s_no",
+        "ward_s_no",
+        "relative_name",
+        "house_no",
+        "age",
+        "street",
+        "mobile",
+        "village",
+        "panchayath",
+        "current_city",
+        "is_local",
+        "party",
+    }
 )
 
 # Exact dropdown values. Blank / null is allowed and is not one of these.
@@ -136,7 +150,10 @@ AGE_BANDS: tuple[str, ...] = (
     "Unknown",
 )
 
-ROLES: tuple[str, ...] = ("admin", "user")
+ROLE_ADMIN = "admin"
+ROLE_MANAGER = "manager"
+ROLE_USER = "user"
+ROLES: tuple[str, ...] = (ROLE_ADMIN, ROLE_MANAGER, ROLE_USER)
 
 TEXT_LIMITS: dict[str, int] = {
     "booth": 64,

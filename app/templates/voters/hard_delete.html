@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Permanently delete voter · Nathavaram{% endblock %}
+{% block content %}
+<section class="login-card">
+  <h1>Permanently delete this voter?</h1>
+  {% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
+  {% if voter and not error %}
+  <p class="lede" translate="no">{{ voter.voter_id }}</p>
+  <p class="banner bad" role="alert">This permanently removes the voter's personal data: name, relative, address, mobile, caste, party and every other field. It cannot be undone and the voter cannot be restored.</p>
+  <form method="post" action="/voters/{{ voter.voter_id|urlencode }}/hard-delete" class="actions" data-confirm="Permanently delete {{ voter.voter_id }}? This removes the personal data and cannot be undone.">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="confirm" value="yes">
+    <button type="submit" class="danger">Permanently delete</button>
+    <a class="button ghost" href="/voters/deleted">Cancel</a>
+  </form>
+  {% else %}
+  <a class="button ghost" href="/voters/deleted">Back to deleted voters</a>
+  {% endif %}
+</section>
+{% endblock %}

@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.permissions import can_review_deleted, is_admin
+
 ALL = "all"
+MANAGER = "manager"  # manager or admin
 ADMIN = "admin"
-OWNER = "owner"  # an admin who is also the owner account
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,7 @@ NAV_SECTIONS: tuple[NavSection, ...] = (
         "Voters",
         (
             NavItem("Voters List", "/voters"),
+            NavItem("Deleted voters", "/voters/deleted", MANAGER),
             _soon("Generate Slips", "/slips"),
             NavItem("Reports", "/reports"),
         ),
@@ -59,7 +62,7 @@ NAV_SECTIONS: tuple[NavSection, ...] = (
             NavItem("Master Data", "/master-data", ADMIN),
             _soon("Survey Report", "/survey-report", ADMIN),
             NavItem("Import CSV / Excel", "/import", ADMIN),
-            NavItem("Users", "/users", OWNER),
+            NavItem("Users", "/users", ADMIN),
             NavItem("Change password", "/change-password"),
             NavItem("Log out", "/logout", is_logout=True),
         ),
@@ -74,9 +77,9 @@ COMING_SOON_PAGES: dict[str, NavItem] = {
 def can_see(user, item: NavItem) -> bool:
     if item.audience == ALL:
         return True
-    if item.audience == ADMIN:
-        return user.role == "admin"
-    return user.role == "admin" and bool(user.is_owner)
+    if item.audience == MANAGER:
+        return can_review_deleted(user)
+    return is_admin(user)
 
 
 def active_path(current_path: str) -> str | None:

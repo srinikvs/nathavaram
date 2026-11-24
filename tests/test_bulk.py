@@ -207,8 +207,9 @@ def test_bulk_delete_soft_deletes_only_selected_rows(ctx, three):
     assert _get(ctx, third)["first_name"] == "Testperson"
     pulled = ctx.client.get("/api/sync/pull?since=0", headers=ctx.auth).json()["changes"]
     tombstones = {c["voter_id"]: c for c in pulled if c["deleted_at"]}
-    assert set(tombstones) == {first, second}  # soft delete: tombstone kept, not hard-deleted
-    assert tombstones[first]["first_name"] == "" and tombstones[first]["mobile"] is None
+    assert set(tombstones) == {first, second}  # soft delete: row kept, not hard-deleted
+    assert tombstones[first]["first_name"] == "Testperson"  # every field is kept
+    assert tombstones[first]["hard_deleted_at"] is None
 
 
 def test_bulk_delete_with_a_missing_voter_deletes_nothing(ctx, three):
@@ -224,8 +225,6 @@ def test_bulk_delete_with_a_missing_voter_deletes_nothing(ctx, three):
 @pytest.mark.parametrize(
     ("path", "body"),
     [
-        ("/api/voters/bulk-edit", {"voter_ids": ["ZZZ4000001"], "values": {"party": "BJP"}}),
-        ("/api/voters/bulk-delete", {"voter_ids": ["ZZZ4000001"], "confirm": True}),
         (
             "/api/master-data/caste/rename",
             {"items": [{"caste": "SampleGroupA"}], "new_value": "Other"},
@@ -251,9 +250,8 @@ def test_regular_user_web_bulk_posts_are_forbidden(ctx, three):
     token = _web_login(ctx, "plain.user", "plain-pass-123")
 
     for path, data in (
-        ("/voters/bulk-edit", {"voter_ids": three, "apply": "1", "use_party": "1", "value_party": "BJP"}),
-        ("/voters/bulk-delete", {"voter_ids": three, "confirm": "yes"}),
         ("/master-data/bulk-delete", {"tab": "caste", "rows": ['{"caste": "SampleGroupA"}']}),
+        ("/master-data/bulk-edit", {"tab": "caste", "rows": ['{"caste": "SampleGroupA"}'], "apply": "1", "new_value": "Other"}),
     ):
         response = ctx.client.post(path, data={"csrf_token": token, **data})
         assert response.status_code == 403, path
@@ -280,22 +278,24 @@ def test_admin_voters_page_has_checkbox_column_and_action_bar(ctx, three):
     assert html.count("data-row-select") == 3
     assert "data-select-all" in html
     assert "data-bulk-bar hidden" in html  # hidden until something is checked
-    for text in ("selected", "Bulk edit", "Bulk delete", "Clear"):
+    for text in ("selected", "Bulk edit", "Soft delete selected", "Clear"):
         assert text in html
     # select-all column is first in the header and each row, ahead of Booth
     assert re.search(r'<tr>\s*<th class="select-cell">.*?</th>\s*<th>Booth</th>', html, re.S)
     assert '<div class="table-wrap" data-top-scroll>' in html
 
 
-def test_regular_user_voters_page_has_no_checkboxes_or_action_bar(ctx, three):
+def test_regular_user_voters_page_has_checkboxes_and_soft_delete_bar(ctx, three):
     make_user(ctx, "plain.user", "plain-pass-123")
     _web_login(ctx, "plain.user", "plain-pass-123")
 
     html = ctx.client.get("/voters").text
 
     assert "Testperson" in html
-    for marker in ("data-row-select", "data-select-all", "data-bulk", "Bulk edit", "Bulk delete"):
-        assert marker not in html
+    assert html.count("data-row-select") == 3
+    assert "Bulk edit" in html and "Soft delete selected" in html
+    assert "Bulk delete" not in html  # the action is soft delete for every role
+    assert "Permanently" not in html
 
 
 def test_admin_master_data_tables_have_checkboxes_but_profession_does_not(ctx, three):
@@ -342,7 +342,7 @@ def test_web_bulk_delete_shows_count_first_and_cancel_deletes_nothing(ctx, three
     )
 
     assert confirm_page.status_code == 200
-    assert "Remove 2 voters?" in confirm_page.text
+    assert "Soft delete 2 voters?" in confirm_page.text
     assert 'name="confirm" value="yes"' in confirm_page.text
     assert 'href="/voters">Cancel' in confirm_page.text  # cancel is a plain link: no write
     for voter_id in three:

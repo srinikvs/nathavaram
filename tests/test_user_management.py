@@ -297,18 +297,27 @@ def test_owner_cannot_delete_self_or_other_owner(ctx):
     assert ctx.client.delete(f"/api/users/{other['id']}", headers=ctx.auth).status_code == 400
 
 
-def test_non_owner_and_non_owner_admin_get_403(ctx):
+def test_user_and_manager_get_403_and_a_non_owner_admin_manages_accounts(ctx):
     target = _create(ctx, "qa_user14")
-    callers = (
+    denied = (
         make_user(ctx, "qa_user15", TEMP_PW),
-        make_user(ctx, "qa_admin2", TEMP_PW, role="admin"),
+        make_user(ctx, "qa_manager1", TEMP_PW, role="manager"),
     )
-    for headers in callers:
+    for headers in denied:
         reset = ctx.client.post(
             f"/api/users/{target['id']}/reset-password", headers=headers, json={"new_password": OTHER_PW}
         )
         assert reset.status_code == 403
         assert ctx.client.delete(f"/api/users/{target['id']}", headers=headers).status_code == 403
+        assert ctx.client.get("/api/users", headers=headers).status_code == 403
+    admin2 = make_user(ctx, "qa_admin2", TEMP_PW, role="admin")
+
+    reset = ctx.client.post(
+        f"/api/users/{target['id']}/reset-password", headers=admin2, json={"new_password": OTHER_PW}
+    )
+
+    assert reset.status_code == 200, reset.text
+    assert ctx.client.delete(f"/api/users/{target['id']}", headers=admin2).status_code == 200
 
 
 def test_cookie_post_and_delete_require_csrf(ctx):
@@ -352,11 +361,12 @@ def test_web_reset_and_delete_forms(ctx):
     assert _api_login(ctx, "qa_user17", OTHER_PW).status_code == 401
 
 
-def test_web_user_management_forbidden_for_non_owner(ctx):
+def test_web_user_management_forbidden_for_manager_and_user(ctx):
     target = _create(ctx, "qa_user18")
-    make_user(ctx, "qa_admin3", TEMP_PW, role="admin")
-    _web_login(ctx, "qa_admin3", TEMP_PW)
-    csrf = _web_csrf(ctx)
+    make_user(ctx, "qa_manager2", TEMP_PW, role="manager")
+    _web_login(ctx, "qa_manager2", TEMP_PW)
+    csrf = _web_csrf(ctx, "/voters")
+    assert ctx.client.get("/users").status_code == 403
     for path, data in (
         (f"/users/{target['id']}/reset-password", {"new_password": OTHER_PW}),
         (f"/users/{target['id']}/delete", {"confirm": "yes"}),

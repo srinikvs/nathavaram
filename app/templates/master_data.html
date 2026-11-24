@@ -23,7 +23,7 @@
   {% else %}
   <p class="lede">{{ table.rows|length }} row{% if table.rows|length != 1 %}s{% endif %}.</p>
   <div data-bulk>
-  {% if user.role == "admin" %}
+  {% if perms.master_data %}
   <label class="bulk-mobile-select"><input type="checkbox" data-select-all> Select all {{ table.rows|length }} rows</label>
   <form id="bulk-form" method="post" class="bulk-bar" data-bulk-bar hidden>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -42,7 +42,7 @@
       <tbody>
         {% for row in table.rows %}
         <tr>
-          {% if user.role == "admin" %}<td class="select-cell"><input type="checkbox" name="rows" value="{{ select_values[loop.index0] }}" form="bulk-form" data-row-select aria-label="Select row {{ loop.index }}"></td>{% endif %}
+          {% if perms.master_data %}<td class="select-cell"><input type="checkbox" name="rows" value="{{ select_values[loop.index0] }}" form="bulk-form" data-row-select aria-label="Select row {{ loop.index }}"></td>{% endif %}
           {% for col in table.columns %}
           <td{% if col.numeric %} class="num"{% else %} translate="no"{% endif %}>{{ row[col.key] }}</td>
           {% endfor %}

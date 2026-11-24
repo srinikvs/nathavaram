@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Deleted voters · Nathavaram{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Deleted voters</h1>
+    <p class="lede">{{ total }} soft-deleted record{% if total != 1 %}s{% endif %}. Restore brings a voter back to the active list exactly as it was. Permanent delete removes the personal data and cannot be undone.</p>
+  </div>
+  <div class="actions">
+    <a class="button ghost" href="/voters">Back to voters</a>
+  </div>
+</div>
+{% if notice %}<p class="banner ok" role="status">{{ notice }}</p>{% endif %}
+{% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
+{% if request.query_params.get('done') == 'none' %}<p class="banner bad" role="alert">Select at least one voter first.</p>{% endif %}
+{% if voters %}
+{% set can_bulk = perms.hard_delete %}
+<div{% if can_bulk %} data-bulk{% endif %}>
+{% if can_bulk %}
+<label class="bulk-mobile-select"><input type="checkbox" data-select-all> Select all {{ voters|length }} on this page</label>
+<form id="bulk-form" method="post" action="/voters/deleted/bulk-hard-delete" class="bulk-bar" data-bulk-bar hidden>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <strong class="bulk-count"><span data-bulk-count>0</span> selected</strong>
+  <button type="submit" class="button danger">Permanently delete selected</button>
+  <button type="button" class="button ghost" data-bulk-clear>Clear</button>
+</form>
+{% endif %}
+<div class="table-wrap" data-top-scroll>
+  <table class="register">
+    <thead>
+      <tr>
+        {% if can_bulk %}<th class="select-cell"><input type="checkbox" data-select-all aria-label="Select all deleted voters on this page"></th>{% endif %}
+        <th>VoterId</th>
+        <th>FirstName</th>
+        <th>LastName</th>
+        <th>Booth</th>
+        <th>Ward</th>
+        <th>Village</th>
+        <th>Mobile</th>
+        <th>Party</th>
+        <th>Deleted</th>
+        <th>Deleted by</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for voter in voters %}
+      <tr>
+        {% if can_bulk %}<td data-label="Select" class="select-cell"><input type="checkbox" name="voter_ids" value="{{ voter.voter_id }}" form="bulk-form" data-row-select aria-label="Select voter {{ voter.voter_id }}"></td>{% endif %}
+        <td data-label="VoterId" translate="no">{{ voter.voter_id }}</td>
+        <td data-label="FirstName" translate="no">{{ voter.first_name|display }}</td>
+        <td data-label="LastName" translate="no">{{ voter.last_name|display }}</td>
+        <td data-label="Booth" translate="no">{{ voter.booth|display }}</td>
+        <td data-label="Ward" translate="no">{{ voter.ward|display }}</td>
+        <td data-label="Village" translate="no">{{ voter.village|display }}</td>
+        <td data-label="Mobile" translate="no">{{ voter.mobile|display }}</td>
+        <td data-label="Party">{{ voter.party|display }}</td>
+        <td data-label="Deleted">{{ voter.deleted_at|ist }}</td>
+        <td data-label="Deleted by" translate="no">{{ voter.source_id|display }}</td>
+        <td data-label="Actions" class="row-actions">
+          {% if perms.restore %}
+          <form method="post" action="/voters/{{ voter.voter_id|urlencode }}/restore" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit">Restore</button>
+          </form>
+          {% endif %}
+          {% if perms.hard_delete %}<a href="/voters/{{ voter.voter_id|urlencode }}/hard-delete">Permanently delete</a>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+</div>
+{% set start = (query.page - 1) * query.page_size + 1 %}
+{% set end = [query.page * query.page_size, total]|min %}
+<p class="pager">
+  <span>Showing {{ start }}–{{ end }} of {{ total }}</span>
+  {% if query.page > 1 %}<a href="/voters/deleted?page={{ query.page - 1 }}&amp;page_size={{ query.page_size }}">Previous</a>{% endif %}
+  {% if end < total %}<a href="/voters/deleted?page={{ query.page + 1 }}&amp;page_size={{ query.page_size }}">Next</a>{% endif %}
+</p>
+{% else %}
+<p class="empty">No deleted voters.</p>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="/static/voter-list-context.js"></script>{% endblock %}

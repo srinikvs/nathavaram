@@ -199,7 +199,7 @@ def test_stale_base_revision_blocks_a_delete(ctx):
     assert ctx.client.get(f"/api/voters/{key}", headers=ctx.auth).status_code == 404
 
 
-def test_sync_delete_leaves_a_stripped_tombstone_that_keeps_its_key(ctx):
+def test_sync_soft_delete_keeps_every_field_and_its_key(ctx):
     created = ctx.client.post("/api/voters", headers=ctx.auth, json=voter_payload()).json()
 
     applied = _push(ctx, [{"voter_id": created["voter_id"], "updated_at": _now(2), "deleted": True}])
@@ -207,15 +207,15 @@ def test_sync_delete_leaves_a_stripped_tombstone_that_keeps_its_key(ctx):
     result = applied["results"][0]
     assert result["status"] == "applied"
     assert result["server_record"]["deleted_at"] is not None
+    assert result["server_record"]["hard_deleted_at"] is None
     pulled = ctx.client.get("/api/sync/pull", headers=ctx.auth, params={"since": created["revision"]}).json()
     match = next(item for item in pulled["changes"] if item["voter_id"] == created["voter_id"])
     for field in (
-        "mobile", "caste", "party", "last_name", "relative_name", "house_no", "street",
+        "first_name", "mobile", "caste", "party", "last_name", "relative_name", "house_no", "street",
         "village", "panchayath", "mandal", "current_city",
     ):
-        assert match[field] is None, field
-    assert match["first_name"] == ""
-    assert "Testperson" not in str(pulled) and "9000000021" not in str(pulled)
+        assert match[field] == created[field], field
+    assert "Testperson" in str(pulled)
 
 
 def test_a_newer_push_revives_a_tombstone_and_an_older_one_does_not(ctx):

@@ -17,7 +17,7 @@ Display names below are the exact labels in the web form and the exact CSV/Excel
 | LastName | `last_name` | text, null | Up to 128 characters. Formerly "SurName" / `surname` |
 | RelativeName | `relative_name` | text, null | Up to 128 characters |
 | HouseNo | `house_no` | text, null | Up to 64 characters |
-| Gender | `gender` | text, null | Empty means unknown or not recorded. Otherwise exactly one of `Male`, `Female`, `Other` (column is `VARCHAR(16)` with a `CHECK`). Matching is case-insensitive (`male`, `MALE`) and stored in this canonical form; any other value is refused with 422. Existing voters stay empty: nothing is guessed or backfilled. Only owner/admin can change it on an existing voter (like Age) |
+| Gender | `gender` | text, null | Empty means unknown or not recorded. Otherwise exactly one of `Male`, `Female`, `Other` (column is `VARCHAR(16)` with a `CHECK`). Matching is case-insensitive (`male`, `MALE`) and stored in this canonical form; any other value is refused with 422. Existing voters stay empty: nothing is guessed or backfilled. Only owner/admin can change it on an existing voter |
 | Age | `age` | integer, null | Whole number from 1 to 130, or null when unknown |
 | Street | `street` | text, null | Up to 1000 characters. Formerly "Address" / `address` |
 | Mobile | `mobile` | text, null | Stored exactly as entered (trimmed), including a leading `0` or `+91`. Validation is loose: after removing spaces, hyphens, and an optional `+91`, `91`, or `0` prefix, the remaining value must be a 10-digit Indian mobile starting with 6–9 |
@@ -45,7 +45,8 @@ These columns are not part of the paper list. They exist so an offline Android c
 | `created_at` | text | UTC timestamp `YYYY-MM-DDTHH:MM:SS.ffffffZ`. Text, not a database datetime, so SQLite and PostgreSQL keep the same precision |
 | `updated_at` | text | Same format. Last-write-wins compares this value. API and web edits stamp the server clock. A winning sync push keeps the device timestamp |
 | `revision` | integer, indexed | Server revision copied from `sync_state` when this row last changed. Pull asks for `revision > since` |
-| `deleted_at` | text, null | Soft delete. Null means the voter is active. Reports, search, and export skip rows where this is set. Sync pull includes them as stripped tombstones |
+| `deleted_at` | text, null | Soft delete. Null means the voter is active. Reports, search, and export skip rows where this is set. The soft-deleted row keeps every field, so a manager or admin can restore it exactly as it was. Sync pull includes it with its fields |
+| `hard_deleted_at` | text, null | Set only by hard delete (manager or admin, from the Deleted voters page). Hard delete strips every personal field (`first_name` becomes `""`, `is_local` false, the rest null), keeps `deleted_at`, and keeps the row so sync propagates the wipe. A row with this set can never be restored. Added by migration `0010_manager_role`; existing rows stay null (see Migrations below) |
 | `source_id` | text, null | Who wrote the row last. Web saves use `web:<username>`. Sync push stores the device id |
 
 There is no separate row id: `voter_id` identifies the row in the REST paths (`/api/voters/{voter_id}`, matched case-insensitively), in sync, and in the web URLs.
@@ -79,13 +80,15 @@ The rule applies to an **existing** voter and is enforced on the server in `PATC
 
 | Role | May change |
 | --- | --- |
-| `user` | **Party, Caste, Mobile, HouseNo, Street** only |
+| `user` and `manager` | `USER_EDITABLE_FIELDS` (14 fields): **Booth, Ward, Booth S.No, Ward S.No, RelativeName, HouseNo, Age, Street, Mobile, Village, Panchayath, Current City, Local/Non-Local, Party** |
 | `admin` / owner | every column except VoterId |
-| nobody | VoterId |
+| nobody | VoterId (the key) |
 
-- A `user` request that changes any other column is refused and nothing is written: `PATCH` answers **403** (`Your role cannot change: <labels>. Regular users may edit only Party, Caste, Mobile, HouseNo, Street; ask an owner or admin to change other fields.`), the web form re-renders with the same message and status 403, and sync answers that change with `status: "forbidden"` (see `docs/SYNC.md`). The check compares against the stored value, so a client that sends the whole row back with the restricted fields unchanged is not refused.
+FirstName, LastName, Gender, Caste, Mandal and Constituency are admin-only on an existing voter.
+
+- A `user` request that changes any other column is refused and nothing is written: `PATCH` answers **403** (`Your role cannot change: <labels>. Users and managers may edit only <the 14 labels>; ask an admin to change other fields.`), the web form re-renders with the same message and status 403, and sync answers that change with `status: "forbidden"` (see `docs/SYNC.md`). The check compares against the stored value, so a client that sends the whole row back with the restricted fields unchanged is not refused.
 - The web edit form shows the restricted fields read-only for a `user` (inputs are `readonly`, drop-downs `disabled`). The server does not rely on that: a posted value that differs is refused, and a field that was not posted counts as unchanged.
-- Creating a voter is unchanged: any signed-in user can create one and may set every column, including Village, Panchayath, Mandal and Local/Non-Local. Deleting stays admin-only on the web and REST API, and a `user` also cannot delete through sync (otherwise delete-then-recreate would sidestep the rule).
+- Creating a voter is unchanged for a new VoterId: any signed-in user can create one and may set every column, including Village, Panchayath, Mandal and Local/Non-Local. Re-using the VoterId of a soft-deleted voter is a restore and needs a manager or admin (see "Deleting a voter" above). Soft delete is open to every role (user, manager, admin). Restore and hard delete are manager and admin only. See the roles table in `app/permissions.py`.
 
 ### History of the column names
 
@@ -102,10 +105,10 @@ Accounts are server-managed in phase 1. They are not part of voter sync.
 | `id` | text UUID | Primary key |
 | `username` | text, unique | 3–32 characters: letters, digits, `.`, `_`, `-` |
 | `password_hash` | text | bcrypt hash. The plaintext password is never stored or returned |
-| `role` | text | `admin` or `user` |
+| `role` | text | `admin`, `manager` or `user` (`ck_users_role`). `manager` was added by migration `0010_manager_role` |
 | `is_active` | boolean | Inactive users cannot sign in |
 | `must_change_password` | boolean, default true | Set for new users, the seeded admin, and after an admin password reset. Until cleared, every route except change-password and logout returns 403 `password_change_required`. See `docs/SECURITY.md` |
-| `is_owner` | boolean, default false | Only an owner can create or manage users. Set only on the admin from `ADMIN_USERNAME`; never settable through the API |
+| `is_owner` | boolean, default false | Admins manage user accounts. Only an owner can change or delete the owner account. Set only on the admin from `ADMIN_USERNAME`; never settable through the API |
 | `created_at`, `updated_at` | text | UTC timestamps in the same format as voters |
 
 There is no default account in the repository. On startup the app inserts one admin (`is_owner` and `must_change_password` both true) when both `ADMIN_USERNAME` and `ADMIN_PASSWORD` are set and that username does not already exist. If that username already exists, the app sets `is_owner` on it (for databases created before the flag) and leaves the password alone. Restarting does not reset the password.
@@ -155,7 +158,23 @@ There is still no catalog, so a row is just "the value(s) active voters currentl
 
 `POST /api/voters/bulk-delete` takes `{"voter_ids": [...], "confirm": true}`. Without `confirm: true` it answers 400 and deletes nothing. With it, each voter is soft-deleted exactly like `DELETE /api/voters/{voter_id}` (tombstone, new revision). The web list does this in two steps: `POST /voters/bulk-delete` shows the count, and only a second post with `confirm=yes` deletes.
 
-Both endpoints use `require_admin`; the checkboxes and action bar are rendered only for admins, but the server enforces the role.
+Both endpoints are open to every signed-in role and are soft delete. Bulk edit is limited per role on the server: a `user` or `manager` may set only `USER_EDITABLE_FIELDS` (a 403 names any other field), an admin may set any field except VoterId. Checkboxes and the action bar are shown to every role.
+
+### Bulk hard delete (manager and admin)
+
+`POST /api/voters/bulk-hard-delete` takes `{"voter_ids": [...], "confirm": true}` and is only offered on the Deleted voters page. Every id must name a soft-deleted voter that has not been hard-deleted; any active or already-hard-deleted id stops the whole batch with nothing applied. Without `confirm: true` it answers 400.
+
+## Deleted voters and restore (manager and admin)
+
+`GET /voters/deleted` (page) and `GET /api/voters/deleted` (JSON, paged) list soft-deleted rows with `hard_deleted_at` null. `POST /api/voters/{voter_id}/restore` clears `deleted_at` and writes a new `revision`, `updated_at` and `source_id`; every field is left exactly as it was. Restoring an active voter answers 409; restoring a hard-deleted voter answers 409 with "cannot be restored". `POST /api/voters/{voter_id}/hard-delete` (also a confirm page at `GET /voters/{voter_id}/hard-delete`) works only on a soft-deleted voter and strips the personal data. Users get 403 on all of these.
+
+Existing rows: voters that were already tombstoned before this change have their fields null. The migration does not touch them and does not flag them as hard-deleted. Restoring one clears `deleted_at` only; its personal data was already gone, and nothing is invented to fill it. Such a row can be hard-deleted from the Deleted voters page.
+
+Re-using a VoterId after a hard delete: the key is the primary key, so the same VoterId can be created again (the create path revives the row in place with the new payload and clears both markers). That is a new record, never a restore of the old data.
+
+## Migrations
+
+- `0010_manager_role`: widens `users.role` to allow `manager` (SQLite rebuilds the table and copies every row; PostgreSQL replaces the named check), and adds nullable `voters.hard_deleted_at`. No existing user or voter row is changed. Downgrade refuses while a manager account exists.
 
 ## Age bands used by reports
 

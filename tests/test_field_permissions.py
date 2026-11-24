@@ -23,29 +23,32 @@ from tests.conftest import csrf_from_page, make_user, search, voter_payload
 ROOT = Path(__file__).resolve().parents[1]
 USER_NAME, USER_PASSWORD = "field.user", "field-pass-123"
 
-# One different value per field a regular user must not change (defaults in voter_payload differ).
+# One different value per field a user or manager must not change (defaults in voter_payload differ).
+# Admin-only on edit: every field except VoterId and the USER_EDITABLE_FIELDS (14 fields).
 LOCKED_CHANGES = {
     "first_name": "Changedname",
     "last_name": "Changed",
-    "relative_name": "Changed Relative",
-    "booth": "99",
-    "booth_s_no": "999",
-    "ward": "9",
-    "ward_s_no": "99",
-    "village": "Othervillage",
-    "panchayath": "Otherpanchayath",
-    "mandal": "Othermandal",
-    "is_local": False,
-    "age": 50,
     "gender": "Female",
-    "current_city": "Elsewhere",
+    "caste": "SampleGroupB",
+    "mandal": "Othermandal",
+    "constituency": "Otherconstituency",
 }
+# USER_EDITABLE_FIELDS (the 14-field product list), one changed value each.
 ALLOWED_CHANGES = {
-    "party": "BJP",
-    "caste": "SampleGroupZ",
-    "mobile": "9000000077",
-    "street": "New Street 5",
+    "booth": "99",
+    "ward": "9",
+    "booth_s_no": "999",
+    "ward_s_no": "99",
+    "relative_name": "Changed Relative",
     "house_no": "99-Z",
+    "age": 50,
+    "street": "New Street 5",
+    "mobile": "9000000077",
+    "village": "Newvillage",
+    "panchayath": "Newpanchayath",
+    "current_city": "Elsewhere",
+    "is_local": False,
+    "party": "BJP",
 }
 
 
@@ -82,7 +85,7 @@ def _push(ctx, headers, changes) -> dict:
 # --- Edit API ---------------------------------------------------------------
 
 
-def test_user_can_update_party_caste_mobile_house_no_and_street(ctx):
+def test_user_can_update_every_user_editable_field(ctx):
     user = make_user(ctx)
     voter = _create(ctx)
 
@@ -93,8 +96,14 @@ def test_user_can_update_party_caste_mobile_house_no_and_street(ctx):
         assert patched.json()[field] == value
 
 
-def test_user_editable_fields_are_exactly_party_caste_mobile_house_no_street():
-    assert USER_EDITABLE_FIELDS == {"party", "caste", "mobile", "house_no", "street"}
+def test_user_editable_fields_are_exactly_the_fourteen_listed_fields():
+    assert USER_EDITABLE_FIELDS == set(ALLOWED_CHANGES)
+    assert USER_EDITABLE_FIELDS == {
+        "booth", "ward", "booth_s_no", "ward_s_no", "relative_name", "house_no", "age",
+        "street", "mobile", "village", "panchayath", "current_city", "is_local", "party",
+    }
+    assert "voter_id" not in USER_EDITABLE_FIELDS and "gender" not in USER_EDITABLE_FIELDS
+    assert "caste" not in USER_EDITABLE_FIELDS
 
 
 @pytest.mark.parametrize("field", sorted(LOCKED_CHANGES))
@@ -118,7 +127,7 @@ def test_user_patch_mixing_allowed_and_locked_applies_nothing(ctx):
     denied = ctx.client.patch(
         f"/api/voters/{voter['voter_id']}",
         headers=user,
-        json={"caste": "SampleGroupZ", "ward": "9"},
+        json={"ward": "9", "caste": "SampleGroupZ"},
     )
 
     assert denied.status_code == 403
@@ -128,14 +137,12 @@ def test_user_patch_mixing_allowed_and_locked_applies_nothing(ctx):
 def test_user_may_echo_unchanged_locked_fields(ctx):
     user = make_user(ctx)
     voter = _create(ctx)
-    echo = {field: voter[field] for field in ("first_name", "ward", "village", "is_local", "age")}
+    echo = {field: voter[field] for field in ("first_name", "mandal", "gender", "constituency", "village")}
 
-    patched = ctx.client.patch(
-        f"/api/voters/{voter['voter_id']}", headers=user, json={**echo, "caste": "SampleGroupZ"}
-    )
+    patched = ctx.client.patch(f"/api/voters/{voter['voter_id']}", headers=user, json={**echo, "party": "BJP"})
 
     assert patched.status_code == 200, patched.text
-    assert patched.json()["caste"] == "SampleGroupZ"
+    assert patched.json()["party"] == "BJP"
     assert patched.json()["first_name"] == voter["first_name"]
 
 
@@ -224,12 +231,12 @@ def test_sync_batch_rejects_only_the_forbidden_change(ctx):
     results = _push(
         ctx,
         user,
-        [_snapshot(first, ward="9"), _snapshot(second, caste="SampleGroupZ")],
+        [_snapshot(first, first_name="Changedname"), _snapshot(second, party="BJP")],
     )["results"]
 
     assert [item["status"] for item in results] == ["forbidden", "applied"]
-    assert _get(ctx, first["voter_id"])["ward"] == first["ward"]
-    assert _get(ctx, second["voter_id"])["caste"] == "SampleGroupZ"
+    assert _get(ctx, first["voter_id"])["first_name"] == first["first_name"]
+    assert _get(ctx, second["voter_id"])["party"] == "BJP"
 
 
 def test_sync_unchanged_locked_fields_are_not_a_violation(ctx):
@@ -265,7 +272,7 @@ def test_sync_with_another_voter_id_creates_a_separate_record_for_any_role(ctx, 
     assert _get(ctx, voter["voter_id"]) == voter  # the original is untouched
 
 
-def test_sync_user_cannot_delete_a_voter(ctx):
+def test_sync_user_soft_delete_is_applied_and_a_user_gets_a_stripped_tombstone(ctx):
     user = make_user(ctx)
     voter = _create(ctx)
 
@@ -273,8 +280,20 @@ def test_sync_user_cannot_delete_a_voter(ctx):
         "results"
     ][0]
 
-    assert result["status"] == "forbidden"
-    assert _get(ctx, voter["voter_id"])["deleted_at"] is None
+    assert result["status"] == "applied", result
+    tombstone = result["server_record"]
+    assert tombstone["deleted_at"] is not None
+    for field in DATA_FIELDS:
+        if field in {"voter_id", "first_name", "is_local"}:
+            continue
+        assert tombstone[field] is None, field  # a user never receives a deleted voter's personal fields
+
+    # The row itself keeps every field: a manager or admin pull still sees them.
+    pulled = ctx.client.get("/api/sync/pull?since=0", headers=ctx.auth).json()["changes"]
+    kept = next(row for row in pulled if row["voter_id"] == voter["voter_id"])
+    assert kept["deleted_at"] is not None
+    for field in DATA_FIELDS:
+        assert kept[field] == voter[field], field
 
 
 def test_sync_user_can_still_create_a_new_voter(ctx):
@@ -314,11 +333,13 @@ def test_web_edit_form_shows_locked_fields_read_only_for_a_user(ctx):
 
     page = ctx.client.get(f"/voters/{voter['voter_id']}/edit").text
 
-    for field in ("booth", "ward", "first_name", "last_name", "village", "panchayath", "mandal", "current_city"):
+    for field in ("first_name", "last_name", "mandal", "constituency", "caste"):
         assert "readonly" in _tag(page, "input", field), field
-    assert "disabled" in _tag(page, "select", "is_local")
-    for field in ("house_no", "street", "caste", "mobile"):
+    assert "disabled" in _tag(page, "select", "gender")
+    for field in ("booth", "booth_s_no", "ward", "ward_s_no", "relative_name", "house_no", "age",
+                  "street", "mobile", "village", "panchayath", "current_city"):
         assert "readonly" not in _tag(page, "input", field), field
+    assert "disabled" not in _tag(page, "select", "is_local")
     assert "disabled" not in _tag(page, "select", "party")
     assert 'id="voter_id"' not in page  # VoterId stays plain text
 
@@ -343,29 +364,22 @@ def _edit_post(ctx, voter: dict, **fields) -> object:
     )
 
 
-def test_web_user_post_changes_only_the_five_allowed_fields(ctx):
+def test_web_user_post_changes_every_user_editable_field(ctx):
     voter = _create(ctx)
     make_user(ctx)
     _web_login(ctx, USER_NAME, USER_PASSWORD)
     # What a browser sends: read-only text inputs are posted unchanged, disabled selects are not.
-    posted = {
-        "booth": voter["booth"],
-        "ward": voter["ward"],
-        "first_name": voter["first_name"],
-        "village": voter["village"],
-        "panchayath": voter["panchayath"],
-        "age": str(voter["age"]),
-        **ALLOWED_CHANGES,
-    }
+    read_only = {field: voter[field] for field in ("first_name", "last_name", "mandal", "constituency", "caste")}
+    # The web form posts is_local as its label, not as a boolean.
+    web_changes = {**ALLOWED_CHANGES, "is_local": "Non-Local"}
 
-    saved = _edit_post(ctx, voter, **posted)
+    saved = _edit_post(ctx, voter, **read_only, **web_changes)
 
     assert saved.status_code == 303, saved.text
     stored = _get(ctx, voter["voter_id"])
     for field, value in ALLOWED_CHANGES.items():
-        assert stored[field] == value
-    assert stored["is_local"] is True and stored["panchayath"] == voter["panchayath"]
-    assert stored["first_name"] == voter["first_name"]
+        assert stored[field] == value, field
+    assert stored["first_name"] == voter["first_name"] and stored["caste"] == voter["caste"]
 
 
 def test_web_user_post_with_a_tampered_locked_field_is_refused(ctx):
@@ -373,7 +387,7 @@ def test_web_user_post_with_a_tampered_locked_field_is_refused(ctx):
     make_user(ctx)
     _web_login(ctx, USER_NAME, USER_PASSWORD)
 
-    refused = _edit_post(ctx, voter, first_name="Hacked", caste="SampleGroupZ")
+    refused = _edit_post(ctx, voter, first_name="Hacked", caste="Hacked")
 
     assert refused.status_code == 403
     assert "cannot change" in refused.text

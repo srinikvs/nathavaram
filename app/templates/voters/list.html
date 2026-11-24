@@ -8,7 +8,7 @@
   </div>
   <div class="actions">
     <a class="button" href="/voters/new">Add voter</a>
-    {% if user.role == "admin" %}
+    {% if perms.admin %}
     {% for kind, label in (("csv", "Export CSV"), ("xlsx", "Export Excel")) %}
     <form method="post" action="/voters/export.{{ kind }}" class="inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -19,10 +19,10 @@
     {% endif %}
   </div>
 </div>
-{% if request.query_params.get('removed') %}<p class="banner ok">Voter removed from the active list. The row is kept for sync.</p>{% endif %}
+{% if request.query_params.get('removed') %}<p class="banner ok">Voter soft deleted: removed from the active list. Every field is kept and a manager or admin can restore it.</p>{% endif %}
 {% set bulk_done = request.query_params.get('bulk') %}
 {% if bulk_done == 'edited' %}<p class="banner ok">Updated {{ request.query_params.get('n') }} voter(s).</p>{% endif %}
-{% if bulk_done == 'deleted' %}<p class="banner ok">Removed {{ request.query_params.get('n') }} voter(s) from the active list. The rows are kept for sync.</p>{% endif %}
+{% if bulk_done == 'deleted' %}<p class="banner ok">Soft deleted {{ request.query_params.get('n') }} voter(s): removed from the active list. Every field is kept and a manager or admin can restore them.</p>{% endif %}
 {% if bulk_done == 'none' %}<p class="banner bad" role="alert">Select at least one voter first.</p>{% endif %}
 {% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
 <form class="filters" method="post" action="/voters/search" data-voter-filters data-page="{{ query.page }}">
@@ -100,15 +100,16 @@
   </div>
 </form>
 {% if voters %}
-{% set is_admin = user.role == "admin" %}
-<div{% if is_admin %} data-bulk{% endif %}>
-{% if is_admin %}
+{# Every signed-in role can select rows: bulk edit is limited per role by the server; bulk delete is soft delete. #}
+{% set can_bulk = perms.soft_delete %}
+<div{% if can_bulk %} data-bulk{% endif %}>
+{% if can_bulk %}
 <label class="bulk-mobile-select"><input type="checkbox" data-select-all> Select all {{ voters|length }} on this page</label>
 <form id="bulk-form" method="post" class="bulk-bar" data-bulk-bar hidden>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <strong class="bulk-count"><span data-bulk-count>0</span> selected</strong>
   <button type="submit" formaction="/voters/bulk-edit" class="button">Bulk edit</button>
-  <button type="submit" formaction="/voters/bulk-delete" class="button danger">Bulk delete</button>
+  <button type="submit" formaction="/voters/bulk-delete" class="button danger">Soft delete selected</button>
   <button type="button" class="button ghost" data-bulk-clear>Clear</button>
 </form>
 {% endif %}
@@ -116,7 +117,7 @@
   <table class="register">
     <thead>
       <tr>
-        {% if is_admin %}<th class="select-cell"><input type="checkbox" data-select-all aria-label="Select all voters on this page"></th>{% endif %}
+        {% if can_bulk %}<th class="select-cell"><input type="checkbox" data-select-all aria-label="Select all voters on this page"></th>{% endif %}
         <th>Booth</th>
         <th>Booth S.No</th>
         <th>Ward</th>
@@ -144,7 +145,7 @@
     <tbody>
       {% for voter in voters %}
       <tr>
-        {% if is_admin %}<td data-label="Select" class="select-cell"><input type="checkbox" name="voter_ids" value="{{ voter.voter_id }}" form="bulk-form" data-row-select aria-label="Select voter {{ voter.voter_id }}"></td>{% endif %}
+        {% if can_bulk %}<td data-label="Select" class="select-cell"><input type="checkbox" name="voter_ids" value="{{ voter.voter_id }}" form="bulk-form" data-row-select aria-label="Select voter {{ voter.voter_id }}"></td>{% endif %}
         <td data-label="Booth" translate="no">{{ voter.booth|display }}</td>
         <td data-label="Booth S.No" translate="no">{{ voter.booth_s_no|display }}</td>
         <td data-label="Ward" translate="no">{{ voter.ward|display }}</td>
@@ -168,7 +169,7 @@
         <td data-label="Constituency" translate="no">{{ voter.constituency|display }}</td>
         <td data-label="Actions" class="row-actions">
           <a href="/voters/{{ voter.voter_id }}/edit">Edit</a>
-          {% if user.role == "admin" %}<a href="/voters/{{ voter.voter_id }}/delete">Delete</a>{% endif %}
+          {% if perms.soft_delete %}<a href="/voters/{{ voter.voter_id }}/delete">Soft delete</a>{% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -193,7 +194,7 @@
   {% endfor %}
 </p>
 {% else %}
-{% if user.role == "admin" %}
+{% if perms.admin %}
 <p class="empty">No voters yet. Add one, or import the sample CSV from the Import page.</p>
 {% else %}
 <p class="empty">No voters match your search.</p>

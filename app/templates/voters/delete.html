@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Delete voter · Nathavaram{% endblock %}
+{% block title %}Soft delete voter · Nathavaram{% endblock %}
 {% block content %}
 <section class="login-card">
-  <h1>Remove this voter?</h1>
+  <h1>Soft delete this voter?</h1>
   <p class="lede" translate="no">{{ voter.first_name }} {{ voter.last_name or '' }} · {{ voter.voter_id }}</p>
-  <p>The row stays in the database as a soft delete so other devices can sync the removal. It leaves the active list, search, and reports.</p>
+  <p>The voter leaves the active list, search, and reports. Every field is kept, so a manager or admin can restore the voter exactly as it is. The row also stays in the database so other devices can sync the removal.</p>
   <form method="post" action="/voters/{{ voter.voter_id }}/delete" class="actions">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit" class="danger">Delete</button>
+    <button type="submit" class="danger">Soft delete</button>
     <a class="button ghost" href="/voters/{{ voter.voter_id }}/edit">Keep</a>
   </form>
 </section>

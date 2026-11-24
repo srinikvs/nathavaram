@@ -1,9 +1,9 @@
 """Voter CRUD, search, CSV import, and CSV/Excel export.
 
-Roles: any signed-in user may search, create, and view records. On an existing voter a
-regular user may edit only Party, Caste, Mobile, HouseNo and Street (403 otherwise); an owner or
-admin may edit every field except VoterId, which nobody can change after create.
-Bulk operations (export, import, bulk edit, bulk delete) need an admin.
+Roles (see app/permissions.py): any signed-in user may search, create, view, edit
+USER_EDITABLE_FIELDS (403 otherwise) and soft delete. A manager also sees and restores deleted
+voters and may hard delete them. An admin may edit every field except VoterId. Import, export
+and Master Data stay admin-only.
 
 Search filters can carry personal data (mobile, VoterId, caste, free text), so they are
 accepted only in a POST body. GET /api/voters takes pagination only.
@@ -18,26 +18,35 @@ from sqlalchemy.orm import Session
 
 from app.constants import IMPORT_BYTE_LIMIT, SEARCH_FILTER_FIELDS
 from app.database import get_db
-from app.deps import require_admin, require_user, source_for
+from app.deps import require_admin, require_manager, require_user, source_for
 from app.errors import ServiceError
 from app.models import User
+from app.permissions import can_edit_all_fields, can_soft_delete
 from app.schemas import (
     BulkResult,
     BulkVoterDelete,
     BulkVoterEdit,
+    BulkVoterHardDelete,
     VoterPage,
     VoterPatch,
     VoterPublic,
     VoterSearch,
     VoterWrite,
 )
-from app.services.bulk import bulk_delete_voters, bulk_edit_voters, normalize_ids
+from app.services.bulk import (
+    bulk_delete_voters,
+    bulk_edit_voters,
+    bulk_hard_delete_voters,
+    normalize_ids,
+)
 from app.services.impex import ImportRejected, import_csv, import_upload, voters_to_csv, voters_to_xlsx
 from app.services.voters import (
     create_voter,
     export_voters,
     get_active,
-    is_privileged,
+    hard_delete,
+    list_deleted,
+    restore,
     search_voters,
     soft_delete,
     update_voter,
@@ -97,20 +106,43 @@ def post_voter(
     user: User = Depends(require_user),
 ) -> VoterPublic:
     try:
-        voter = create_voter(db, body, source_for(user))
+        voter = create_voter(db, body, source_for(user), user)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return voter_to_public(voter)
+
+
+@router.get("/deleted", response_model=VoterPage)
+def list_deleted_voters(
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_manager),
+) -> VoterPage:
+    """Soft-deleted voters that are not hard-deleted yet. Manager and admin only."""
+    query = _page_only(request)
+    rows, total = list_deleted(db, query)
+    return VoterPage(
+        items=[voter_to_public(row) for row in rows],
+        total=total,
+        page=query.page,
+        page_size=query.page_size,
+    )
 
 
 @router.post("/bulk-edit", response_model=BulkResult)
 def post_bulk_edit(
     body: BulkVoterEdit,
     db: Session = Depends(get_db),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_user),
 ) -> BulkResult:
     try:
-        voters = bulk_edit_voters(db, body.voter_ids, body.values, source_for(user))
+        voters = bulk_edit_voters(
+            db,
+            body.voter_ids,
+            body.values,
+            source_for(user),
+            all_fields=can_edit_all_fields(user),
+        )
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return BulkResult(count=len(voters), voter_ids=[v.voter_id for v in voters])
@@ -120,11 +152,29 @@ def post_bulk_edit(
 def post_bulk_delete(
     body: BulkVoterDelete,
     db: Session = Depends(get_db),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_user),
 ) -> BulkResult:
+    """Soft delete for every role that may soft delete. Nothing is removed from the database."""
+    if not can_soft_delete(user):
+        raise HTTPException(status_code=403, detail="Your role cannot delete voters")
     try:
         ids = normalize_ids(body.voter_ids)
         count = bulk_delete_voters(db, ids, source_for(user), confirm=body.confirm)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return BulkResult(count=count, voter_ids=ids)
+
+
+@router.post("/bulk-hard-delete", response_model=BulkResult)
+def post_bulk_hard_delete(
+    body: BulkVoterHardDelete,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_manager),
+) -> BulkResult:
+    """Permanently remove personal data from soft-deleted voters. Manager and admin only."""
+    try:
+        ids = normalize_ids(body.voter_ids)
+        count = bulk_hard_delete_voters(db, ids, source_for(user), confirm=body.confirm)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return BulkResult(count=count, voter_ids=ids)
@@ -208,7 +258,9 @@ def patch_voter(
     user: User = Depends(require_user),
 ) -> VoterPublic:
     try:
-        updated = update_voter(db, voter_id, body, source_for(user), privileged=is_privileged(user))
+        updated = update_voter(
+            db, voter_id, body, source_for(user), all_fields=can_edit_all_fields(user)
+        )
         return voter_to_public(updated)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -218,9 +270,37 @@ def patch_voter(
 def delete_voter(
     voter_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_user),
 ) -> VoterPublic:
+    """Soft delete (any role). Every field is kept; a manager or admin can restore it."""
+    if not can_soft_delete(user):
+        raise HTTPException(status_code=403, detail="Your role cannot delete voters")
     try:
         return voter_to_public(soft_delete(db, voter_id, source_for(user)))
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/{voter_id}/restore", response_model=VoterPublic)
+def restore_voter(
+    voter_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_manager),
+) -> VoterPublic:
+    try:
+        return voter_to_public(restore(db, voter_id, source_for(user)))
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.post("/{voter_id}/hard-delete", response_model=VoterPublic)
+def hard_delete_voter_route(
+    voter_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_manager),
+) -> VoterPublic:
+    """Permanently remove personal data. Only for soft-deleted voters; the row stays for sync."""
+    try:
+        return voter_to_public(hard_delete(db, voter_id, source_for(user)))
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

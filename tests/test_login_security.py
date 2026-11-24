@@ -437,23 +437,19 @@ def test_owner_can_create_a_user_and_the_new_user_is_not_an_owner(ctx):
     assert listed == {"admin": True, "rateuser1": False}
 
 
-def test_regular_admin_cannot_manage_users(ctx):
+def test_regular_admin_manages_accounts_but_not_the_owner(ctx):
     plain = make_user(ctx, "plainadmin", GOOD, role="admin")
-    other_id = _user_row("plainadmin").id
+    owner_id = _user_row("admin").id
 
-    assert ctx.client.get("/api/users", headers=plain).status_code == 403
-    assert (
-        ctx.client.post(
-            "/api/users",
-            headers=plain,
-            json={"username": "rateuser2", "password": GOOD, "role": "user"},
-        ).status_code
-        == 403
+    assert ctx.client.get("/api/users", headers=plain).status_code == 200
+    created = ctx.client.post(
+        "/api/users",
+        headers=plain,
+        json={"username": "rateuser2", "password": GOOD, "role": "user"},
     )
-    assert (
-        ctx.client.patch(f"/api/users/{other_id}", headers=plain, json={"password": GOOD + "x"}).status_code
-        == 403
-    )
+    assert created.status_code == 201, created.text
+    denied = ctx.client.patch(f"/api/users/{owner_id}", headers=plain, json={"password": GOOD + "x"})
+    assert denied.status_code == 403
 
 
 def test_regular_admin_keeps_export_import_and_delete(ctx):
@@ -485,24 +481,22 @@ def test_regular_user_cannot_manage_users(ctx):
     )
 
 
-def test_web_users_page_is_owner_only(ctx, peer):
+def test_web_users_page_is_open_to_every_admin(ctx, peer):
     make_user(ctx, "plainadmin", GOOD, role="admin")
     ctx.client.cookies.clear()
     ctx.client.post("/login", data={"username": "plainadmin", "password": GOOD}, follow_redirects=False)
 
     page = ctx.client.get("/voters")
-    assert 'href="/users"' not in page.text
-    assert ctx.client.get("/users").status_code == 403
+    assert 'href="/users"' in page.text
+    assert ctx.client.get("/users").status_code == 200
 
     token = csrf_from_page(page.text)
     posted = ctx.client.post(
-        "/users", data={"csrf_token": token, "username": "rateuser2", "password": GOOD, "role": "user"}
+        "/users",
+        data={"csrf_token": token, "username": "rateuser2", "password": GOOD, "role": "user"},
+        follow_redirects=False,
     )
-    assert posted.status_code == 403
-
-    ctx.client.post("/logout", data={"csrf_token": token}, follow_redirects=False)
-    ctx.client.post("/login", data={"username": "admin", "password": "admin-pass-123"}, follow_redirects=False)
-    assert ctx.client.get("/users").status_code == 200
+    assert posted.status_code == 303, posted.text
 
 
 def test_startup_marks_an_existing_env_admin_as_owner(ctx):

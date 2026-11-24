@@ -247,7 +247,6 @@ def test_regular_user_cannot_export_import_or_delete_but_can_search_and_edit(ctx
         files={"file": ("voters_sample.csv", SAMPLE.read_bytes(), "text/csv")},
     )
     assert denied_import.status_code == 403
-    assert ctx.client.delete(f"/api/voters/{created['voter_id']}", headers=user).status_code == 403
     assert ctx.client.get("/api/users", headers=user).status_code == 403
     assert (
         ctx.client.post(
@@ -262,11 +261,13 @@ def test_regular_user_cannot_export_import_or_delete_but_can_search_and_edit(ctx
     assert found.status_code == 200
     assert found.json()["total"] == 1
     assert ctx.client.get(f"/api/voters/{created['voter_id']}", headers=user).status_code == 200
-    edited = ctx.client.patch(f"/api/voters/{created['voter_id']}", headers=user, json={"caste": "SampleGroupZ"})
+    edited = ctx.client.patch(f"/api/voters/{created['voter_id']}", headers=user, json={"party": "BJP"})
     assert edited.status_code == 200
-    assert edited.json()["caste"] == "SampleGroupZ"
-    # Nothing the user attempted removed or imported rows.
-    assert search(ctx).json()["total"] == 1
+    assert edited.json()["party"] == "BJP"
+
+    assert ctx.client.delete(f"/api/voters/{created['voter_id']}", headers=user).status_code == 200  # soft delete
+    # A soft-deleted voter leaves search, so the active list is empty again.
+    assert search(ctx).json()["total"] == 0
 
 
 def test_admin_can_export_import_delete_and_manage_users(ctx):
