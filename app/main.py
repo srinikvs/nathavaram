@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app import __version__
 from app.config import ROOT, load_settings
 from app import database
-from app.database import dispose_db, get_db, init_db
+from app.database import dispose_db, ensure_sqlite_parent, get_db, init_db
 from app.deps import csrf_guard
 from app.migrate import run_migrations
 from app.routers import auth, issues, master_data, reports, sync, users, voters
@@ -36,6 +36,8 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         logging.basicConfig(level=logging.INFO)
+        # Migrations open the SQLite file before init_db runs, so create its directory first.
+        ensure_sqlite_parent(settings.database_url)
         run_migrations(settings.database_url)
         init_db(settings.database_url)
         # Create the photo root so a fresh service-owned directory appears without a host change.
