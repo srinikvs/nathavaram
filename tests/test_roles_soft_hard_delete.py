@@ -74,7 +74,11 @@ def test_permission_flags_expose_the_same_rules_for_templates():
 
 
 def test_user_editable_fields_match_the_product_list():
-    assert USER_EDITABLE_FIELDS == {"party", "caste", "mobile", "street", "house_no"}
+    assert USER_EDITABLE_FIELDS == {
+        "booth", "ward", "booth_s_no", "ward_s_no", "relative_name", "house_no", "age",
+        "street", "mobile", "village", "panchayath", "current_city", "is_local", "party",
+    }
+    assert "caste" not in USER_EDITABLE_FIELDS
 
 
 # --- Helpers ----------------------------------------------------------------------------------
@@ -341,7 +345,7 @@ def test_bulk_hard_delete_needs_confirm_and_refuses_a_batch_with_an_active_voter
     )
 
     assert without_confirm.status_code == 400
-    assert mixed.status_code == 404
+    assert mixed.status_code == 409  # a batch that includes an active voter is refused as a whole
     assert _get(ctx, kept["voter_id"]).status_code == 200  # nothing applied to the batch
     assert _get(ctx, gone["voter_id"]).status_code == 404
 
@@ -574,8 +578,8 @@ def test_sync_field_forbidden_message_lists_the_new_editable_set(ctx):
     assert results[0]["status"] == "forbidden"
     assert "Gender" in results[0]["message"]
     allowed = results[0]["message"].split("may edit only ", 1)[1]
-    assert "Party" in allowed and "Caste" in allowed
-    assert "Booth" not in allowed and "FirstName" not in allowed
+    assert "Party" in allowed and "Booth" in allowed and "Age" in allowed
+    assert "Caste" not in allowed and "FirstName" not in allowed
 
 
 # --- Migration 0010 ------------------------------------------------------------------------------

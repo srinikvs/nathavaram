@@ -58,8 +58,8 @@ Three roles on `users.role`, enforced in `app/permissions.py` and on every route
 | Capability | `user` | `manager` | `admin` (owner included) |
 |---|---|---|---|
 | Sign in, search, view, create voters | yes | yes | yes |
-| Edit `USER_EDITABLE_FIELDS` on a voter | yes | yes | yes |
-| Edit Caste, FirstName, LastName, Gender, Mandal, Constituency | no | no | yes |
+| Edit `USER_EDITABLE_FIELDS` on a voter (14 fields: Booth, Ward, Booth S.No, Ward S.No, RelativeName, HouseNo, Age, Street, Mobile, Village, Panchayath, Current City, Local/Non-Local, Party) | yes | yes | yes |
+| Edit FirstName, LastName, Gender, Caste, Mandal, Constituency | no | no | yes |
 | Soft delete (single and bulk) | yes | yes | yes |
 | Deleted voters page, restore | no | yes | yes |
 | Hard delete (permanent, strips personal data) | no | yes | yes |

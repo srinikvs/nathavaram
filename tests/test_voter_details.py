@@ -145,7 +145,8 @@ def test_regular_user_can_open_details_and_edit_stays_locked(ctx):
     assert details.status_code == 200
     assert f'href="/voters/{VOTER_ID}/edit"' in details.text
     assert edit.status_code == 200
-    assert re.search(r'<select id="is_local"[^>]*disabled', edit.text)
+    assert re.search(r'<select id="is_local"(?![^>]*disabled)[^>]*>', edit.text)  # user-editable now
+    assert re.search(r'<input id="first_name"[^>]*readonly', edit.text)  # admin-only
 
 
 def test_regular_user_changing_a_locked_field_from_edit_is_refused_with_403(ctx):

@@ -24,31 +24,31 @@ ROOT = Path(__file__).resolve().parents[1]
 USER_NAME, USER_PASSWORD = "field.user", "field-pass-123"
 
 # One different value per field a user or manager must not change (defaults in voter_payload differ).
-# Admin-only on edit: every field except VoterId and the five USER_EDITABLE_FIELDS.
+# Admin-only on edit: every field except VoterId and the USER_EDITABLE_FIELDS (14 fields).
 LOCKED_CHANGES = {
     "first_name": "Changedname",
     "last_name": "Changed",
-    "relative_name": "Changed Relative",
     "gender": "Female",
-    "booth": "99",
-    "booth_s_no": "999",
-    "ward": "9",
-    "ward_s_no": "99",
-    "age": 50,
-    "village": "Newvillage",
-    "panchayath": "Newpanchayath",
+    "caste": "SampleGroupB",
     "mandal": "Othermandal",
-    "current_city": "Elsewhere",
-    "is_local": False,
     "constituency": "Otherconstituency",
 }
-# USER_EDITABLE_FIELDS (party, caste, mobile, street, house_no), one changed value each.
+# USER_EDITABLE_FIELDS (the 14-field product list), one changed value each.
 ALLOWED_CHANGES = {
-    "party": "BJP",
-    "caste": "SampleGroupB",
-    "mobile": "9000000077",
-    "street": "New Street 5",
+    "booth": "99",
+    "ward": "9",
+    "booth_s_no": "999",
+    "ward_s_no": "99",
+    "relative_name": "Changed Relative",
     "house_no": "99-Z",
+    "age": 50,
+    "street": "New Street 5",
+    "mobile": "9000000077",
+    "village": "Newvillage",
+    "panchayath": "Newpanchayath",
+    "current_city": "Elsewhere",
+    "is_local": False,
+    "party": "BJP",
 }
 
 
@@ -96,9 +96,14 @@ def test_user_can_update_every_user_editable_field(ctx):
         assert patched.json()[field] == value
 
 
-def test_user_editable_fields_are_exactly_the_five_listed_fields():
-    assert USER_EDITABLE_FIELDS == {"party", "caste", "mobile", "street", "house_no"}
+def test_user_editable_fields_are_exactly_the_fourteen_listed_fields():
+    assert USER_EDITABLE_FIELDS == set(ALLOWED_CHANGES)
+    assert USER_EDITABLE_FIELDS == {
+        "booth", "ward", "booth_s_no", "ward_s_no", "relative_name", "house_no", "age",
+        "street", "mobile", "village", "panchayath", "current_city", "is_local", "party",
+    }
     assert "voter_id" not in USER_EDITABLE_FIELDS and "gender" not in USER_EDITABLE_FIELDS
+    assert "caste" not in USER_EDITABLE_FIELDS
 
 
 @pytest.mark.parametrize("field", sorted(LOCKED_CHANGES))
@@ -319,12 +324,13 @@ def test_web_edit_form_shows_locked_fields_read_only_for_a_user(ctx):
 
     page = ctx.client.get(f"/voters/{voter['voter_id']}/edit").text
 
-    for field in ("first_name", "last_name", "relative_name", "mandal", "constituency", "booth", "ward", "village", "age"):
+    for field in ("first_name", "last_name", "mandal", "constituency", "caste"):
         assert "readonly" in _tag(page, "input", field), field
     assert "disabled" in _tag(page, "select", "gender")
-    assert "disabled" in _tag(page, "select", "is_local")
-    for field in ("house_no", "street", "mobile", "caste"):
+    for field in ("booth", "booth_s_no", "ward", "ward_s_no", "relative_name", "house_no", "age",
+                  "street", "mobile", "village", "panchayath", "current_city"):
         assert "readonly" not in _tag(page, "input", field), field
+    assert "disabled" not in _tag(page, "select", "is_local")
     assert "disabled" not in _tag(page, "select", "party")
     assert 'id="voter_id"' not in page  # VoterId stays plain text
 
@@ -354,19 +360,17 @@ def test_web_user_post_changes_every_user_editable_field(ctx):
     make_user(ctx)
     _web_login(ctx, USER_NAME, USER_PASSWORD)
     # What a browser sends: read-only text inputs are posted unchanged, disabled selects are not.
-    read_only = {
-        field: voter[field]
-        for field in ("booth", "booth_s_no", "ward", "ward_s_no", "first_name", "last_name", "relative_name",
-                      "age", "village", "panchayath", "mandal", "current_city", "constituency")
-    }
+    read_only = {field: voter[field] for field in ("first_name", "last_name", "mandal", "constituency", "caste")}
+    # The web form posts is_local as its label, not as a boolean.
+    web_changes = {**ALLOWED_CHANGES, "is_local": "Non-Local"}
 
-    saved = _edit_post(ctx, voter, **read_only, **ALLOWED_CHANGES)
+    saved = _edit_post(ctx, voter, **read_only, **web_changes)
 
     assert saved.status_code == 303, saved.text
     stored = _get(ctx, voter["voter_id"])
     for field, value in ALLOWED_CHANGES.items():
         assert stored[field] == value, field
-    assert stored["first_name"] == voter["first_name"] and stored["village"] == voter["village"]
+    assert stored["first_name"] == voter["first_name"] and stored["caste"] == voter["caste"]
 
 
 def test_web_user_post_with_a_tampered_locked_field_is_refused(ctx):
@@ -374,7 +378,7 @@ def test_web_user_post_with_a_tampered_locked_field_is_refused(ctx):
     make_user(ctx)
     _web_login(ctx, USER_NAME, USER_PASSWORD)
 
-    refused = _edit_post(ctx, voter, first_name="Hacked", village="Hacked")
+    refused = _edit_post(ctx, voter, first_name="Hacked", caste="Hacked")
 
     assert refused.status_code == 403
     assert "cannot change" in refused.text

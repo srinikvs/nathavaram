@@ -304,7 +304,7 @@ def test_admin_master_data_tables_have_checkboxes_but_profession_does_not(ctx, t
     caste = ctx.client.get("/master-data?tab=caste").text
     profession = ctx.client.get("/master-data?tab=profession").text
 
-    assert "data-row-select" in caste and "Bulk edit" in caste and "Soft delete selected" in caste
+    assert "data-row-select" in caste and "Bulk edit" in caste and "Bulk delete" in caste
     assert '<div class="table-scroll" data-top-scroll>' in caste
     for marker in ("data-row-select", "data-select-all", "data-bulk-bar", "Bulk edit"):
         assert marker not in profession

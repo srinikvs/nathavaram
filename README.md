@@ -118,7 +118,7 @@ All `/api` routes require a signed-in user except `POST /api/auth/login`.
 
 Search is partial and case-insensitive for the text fields, including Telugu. `q` matches name, VoterId, house no, street, village, panchayath, mandal, current city, mobile, caste, booth, ward, and party.
 
-Editing: any signed-in user can add a voter. On an existing voter the `user` role may change only Party, Caste, Mobile, HouseNo and Street; owner and admin may change every field except VoterId, which nobody can change after create (so Gender, like Age, is admin-only on an existing voter; it may be set when a voter is created). See `docs/SCHEMA.md`.
+Editing: any signed-in user can add a voter. On an existing voter the `user` and `manager` roles may change only the 14 product-list fields (Booth, Ward, Booth S.No, Ward S.No, RelativeName, HouseNo, Age, Street, Mobile, Village, Panchayath, Current City, Local/Non-Local, Party); owner and admin may change every field except VoterId, which nobody can change after create (so FirstName, LastName, Gender, Caste, Mandal and Constituency are admin-only on an existing voter; they may be set when a voter is created). See `docs/SCHEMA.md`.
 
 `GET /healthz` does not require a login. It returns no voter data.
 

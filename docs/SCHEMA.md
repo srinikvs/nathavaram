@@ -17,7 +17,7 @@ Display names below are the exact labels in the web form and the exact CSV/Excel
 | LastName | `last_name` | text, null | Up to 128 characters. Formerly "SurName" / `surname` |
 | RelativeName | `relative_name` | text, null | Up to 128 characters |
 | HouseNo | `house_no` | text, null | Up to 64 characters |
-| Gender | `gender` | text, null | Empty means unknown or not recorded. Otherwise exactly one of `Male`, `Female`, `Other` (column is `VARCHAR(16)` with a `CHECK`). Matching is case-insensitive (`male`, `MALE`) and stored in this canonical form; any other value is refused with 422. Existing voters stay empty: nothing is guessed or backfilled. Only owner/admin can change it on an existing voter (like Age) |
+| Gender | `gender` | text, null | Empty means unknown or not recorded. Otherwise exactly one of `Male`, `Female`, `Other` (column is `VARCHAR(16)` with a `CHECK`). Matching is case-insensitive (`male`, `MALE`) and stored in this canonical form; any other value is refused with 422. Existing voters stay empty: nothing is guessed or backfilled. Only owner/admin can change it on an existing voter |
 | Age | `age` | integer, null | Whole number from 1 to 130, or null when unknown |
 | Street | `street` | text, null | Up to 1000 characters. Formerly "Address" / `address` |
 | Mobile | `mobile` | text, null | Stored exactly as entered (trimmed), including a leading `0` or `+91`. Validation is loose: after removing spaces, hyphens, and an optional `+91`, `91`, or `0` prefix, the remaining value must be a 10-digit Indian mobile starting with 6–9 |
@@ -80,14 +80,13 @@ The rule applies to an **existing** voter and is enforced on the server in `PATC
 
 | Role | May change |
 | --- | --- |
-| `user` and `manager` | `USER_EDITABLE_FIELDS`: **Party, Caste, Mobile, Street, HouseNo** |
+| `user` and `manager` | `USER_EDITABLE_FIELDS` (14 fields): **Booth, Ward, Booth S.No, Ward S.No, RelativeName, HouseNo, Age, Street, Mobile, Village, Panchayath, Current City, Local/Non-Local, Party** |
 | `admin` / owner | every column except VoterId |
 | nobody | VoterId (the key) |
 
-Caste, FirstName, LastName, Gender, Mandal and Constituency are admin-only on an existing voter.
-| nobody | VoterId |
+FirstName, LastName, Gender, Caste, Mandal and Constituency are admin-only on an existing voter.
 
-- A `user` request that changes any other column is refused and nothing is written: `PATCH` answers **403** (`Your role cannot change: <labels>. Regular users may edit only Party, Caste, Mobile, HouseNo, Street; ask an owner or admin to change other fields.`), the web form re-renders with the same message and status 403, and sync answers that change with `status: "forbidden"` (see `docs/SYNC.md`). The check compares against the stored value, so a client that sends the whole row back with the restricted fields unchanged is not refused.
+- A `user` request that changes any other column is refused and nothing is written: `PATCH` answers **403** (`Your role cannot change: <labels>. Users and managers may edit only <the 14 labels>; ask an admin to change other fields.`), the web form re-renders with the same message and status 403, and sync answers that change with `status: "forbidden"` (see `docs/SYNC.md`). The check compares against the stored value, so a client that sends the whole row back with the restricted fields unchanged is not refused.
 - The web edit form shows the restricted fields read-only for a `user` (inputs are `readonly`, drop-downs `disabled`). The server does not rely on that: a posted value that differs is refused, and a field that was not posted counts as unchanged.
 - Creating a voter is unchanged: any signed-in user can create one and may set every column, including Village, Panchayath, Mandal and Local/Non-Local. Soft delete is open to every role (user, manager, admin). Restore and hard delete are manager and admin only. See the roles table in `app/permissions.py`.
 
