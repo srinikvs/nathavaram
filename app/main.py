@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -37,6 +38,8 @@ def create_app() -> FastAPI:
         logging.basicConfig(level=logging.INFO)
         run_migrations(settings.database_url)
         init_db(settings.database_url)
+        # Create the photo root so a fresh service-owned directory appears without a host change.
+        Path(settings.issue_photo_dir).mkdir(parents=True, exist_ok=True)
         if database.SessionLocal is None:
             raise RuntimeError("Database session factory was not created")
         db = database.SessionLocal()

@@ -50,7 +50,12 @@ Each change appends a history row and a notes system line, for example `Initiate
 - Up to 5 per issue. The 6th upload is 409.
 - Accepted: JPG, PNG, HEIC. HEIC needs `pillow-heif`; without it HEIC is refused with 415 and JPG/PNG still work.
 - Every upload is re-encoded as JPEG: the long edge is capped at 1600 px (smaller images are not enlarged), and EXIF, GPS and other metadata are dropped.
-- Files live under `ISSUE_PHOTO_DIR` (default `data/issue-photos`, which is gitignored). They are never under `app/static`. The only way to fetch one is `GET /api/issues/photos/{id}/file`, which requires sign-in (401 otherwise).
+- Where photos go, in order:
+  1. An explicit `ISSUE_PHOTO_DIR` (env or `.env`) always wins. A relative path resolves against the project root; an absolute path is used as-is.
+  2. Otherwise, if `DATABASE_URL` is a file-based SQLite database (for example `sqlite:////var/lib/nathavaram/nathavaram.db`), photos go in `issue-photos` beside the database file (for example `/var/lib/nathavaram/issue-photos`). This keeps photos in the service-owned data directory, outside a root-owned app tree.
+  3. Otherwise (Postgres, `sqlite:///:memory:`, or other non-file URLs), the default is `data/issue-photos` under the project root, which is gitignored.
+- The photo directory is created at startup, so the service user needs write access to its parent.
+- Files are never under `app/static`. The only way to fetch one is `GET /api/issues/photos/{id}/file`, which requires sign-in (401 otherwise).
 
 ## Endpoints
 

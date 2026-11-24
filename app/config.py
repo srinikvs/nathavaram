@@ -57,11 +57,48 @@ def normalize_database_url(url: str) -> str:
     return prefix + absolute.as_posix()
 
 
+DEFAULT_ISSUE_PHOTO_DIR = Path("data/issue-photos")
+_ISSUE_PHOTO_SUBDIR = "issue-photos"
+_SQLITE_FILE_PREFIX = "sqlite:///"
+
+
+def _sqlite_file_path(database_url: str) -> Path | None:
+    """Path of a file-based SQLite database, or None for memory, empty, URI and non-SQLite URLs."""
+    if not database_url.startswith(_SQLITE_FILE_PREFIX):
+        return None
+    path = database_url[len(_SQLITE_FILE_PREFIX) :]
+    if path in {":memory:", ""} or path.startswith("file:"):
+        return None
+    return Path(path)
+
+
+def resolve_issue_photo_dir(explicit: str | None, database_url: str) -> Path:
+    """Pick the photo directory. Pure: never touches the disk.
+
+    1. An explicit ISSUE_PHOTO_DIR (blank counts as unset) wins.
+    2. Otherwise, a file-based SQLite database puts photos in ``issue-photos`` beside the file.
+    3. Otherwise the relative default ``data/issue-photos`` is used.
+    Relative results are resolved against ROOT by ``load_settings``.
+    """
+    if explicit is not None and explicit.strip():
+        return Path(explicit.strip())
+    db_file = _sqlite_file_path(database_url)
+    if db_file is not None:
+        return db_file.parent / _ISSUE_PHOTO_SUBDIR
+    return DEFAULT_ISSUE_PHOTO_DIR
+
+
 def load_settings() -> Settings:
     settings = Settings()
+    # Read before normalize_database_url assigns a field: only values the operator set count.
+    explicit_photo_dir = (
+        settings.issue_photo_dir if "issue_photo_dir" in settings.model_fields_set else None
+    )
     settings.database_url = normalize_database_url(settings.database_url)
-    photo_path = Path(settings.issue_photo_dir)
-    if not photo_path.is_absolute():
+    photo_path = resolve_issue_photo_dir(explicit_photo_dir, settings.database_url)
+    if photo_path.is_absolute():
+        settings.issue_photo_dir = photo_path.as_posix()
+    else:
         settings.issue_photo_dir = (ROOT / photo_path).resolve().as_posix()
     _validate(settings)
     return settings
