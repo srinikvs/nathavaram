@@ -21,7 +21,7 @@ REQUESTED_COLUMNS = [
     "panchayath", "mandal", "current_city", "is_local", "party", "constituency",
     "gender",  # added by 0009; SQLite ADD COLUMN appends, so it is physically last
 ]
-SYNC_COLUMNS = {"created_at", "updated_at", "revision", "deleted_at", "source_id"}
+SYNC_COLUMNS = {"created_at", "updated_at", "revision", "deleted_at", "hard_deleted_at", "source_id"}
 
 
 def _config(db_path) -> Config:

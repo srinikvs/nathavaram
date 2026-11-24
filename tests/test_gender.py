@@ -525,14 +525,14 @@ def test_sample_csv_header_is_the_21_columns_and_gender_values_are_valid(ctx):
 # --- Soft delete ---------------------------------------------------------------------------
 
 
-def test_deleting_a_voter_erases_gender_from_the_tombstone(ctx):
+def test_soft_delete_keeps_gender_in_the_tombstone(ctx):
     voter = _create(ctx, gender="Female")
 
     assert ctx.client.delete(f"/api/voters/{voter['voter_id']}", headers=ctx.auth).status_code == 200
 
     pulled = ctx.client.get("/api/sync/pull?since=0", headers=ctx.auth)
     tombstones = [row for row in pulled.json()["changes"] if row["voter_id"] == voter["voter_id"]]
-    assert tombstones and all(row["gender"] is None for row in tombstones)
+    assert tombstones and all(row["gender"] == "Female" for row in tombstones)
 
 
 # --- Migration ------------------------------------------------------------------------------

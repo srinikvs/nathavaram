@@ -80,7 +80,9 @@ def test_regular_user_list_also_links_voter_id(ctx):
     html = ctx.client.get("/voters").text
 
     assert f'<a href="/voters/{VOTER_ID}" data-voter-link>{VOTER_ID}</a>' in html
-    assert "data-row-select" not in html
+    # Every role selects rows; a user's bulk bar offers edit and soft delete only.
+    assert "data-row-select" in html
+    assert "Soft delete selected" in html
 
 
 def test_link_click_is_stopped_before_the_selection_handlers(ctx):

@@ -74,10 +74,7 @@ def test_permission_flags_expose_the_same_rules_for_templates():
 
 
 def test_user_editable_fields_match_the_product_list():
-    assert USER_EDITABLE_FIELDS == {
-        "booth", "ward", "booth_s_no", "ward_s_no", "relative_name", "house_no", "age", "street",
-        "mobile", "village", "panchayath", "current_city", "is_local", "party",
-    }
+    assert USER_EDITABLE_FIELDS == {"party", "caste", "mobile", "street", "house_no"}
 
 
 # --- Helpers ----------------------------------------------------------------------------------
@@ -413,7 +410,7 @@ def test_user_and_manager_bulk_edit_only_user_editable_fields(ctx, role):
     blocked = ctx.client.post(
         "/api/voters/bulk-edit",
         headers=headers,
-        json={"voter_ids": [voter["voter_id"]], "values": {"caste": "SampleGroupZ", "party": "INC"}},
+        json={"voter_ids": [voter["voter_id"]], "values": {"first_name": "Changedname", "party": "INC"}},
     )
 
     assert allowed.status_code == 200, allowed.text
@@ -577,8 +574,8 @@ def test_sync_field_forbidden_message_lists_the_new_editable_set(ctx):
     assert results[0]["status"] == "forbidden"
     assert "Gender" in results[0]["message"]
     allowed = results[0]["message"].split("may edit only ", 1)[1]
-    assert "Party" in allowed and "Booth" in allowed
-    assert "Caste" not in allowed and "FirstName" not in allowed
+    assert "Party" in allowed and "Caste" in allowed
+    assert "Booth" not in allowed and "FirstName" not in allowed
 
 
 # --- Migration 0010 ------------------------------------------------------------------------------

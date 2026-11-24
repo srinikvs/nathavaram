@@ -64,8 +64,8 @@ class UserCreate(BaseModel):
     @field_validator("role")
     @classmethod
     def _role(cls, value: str) -> str:
-        if value not in {"admin", "user"}:
-            raise ValueError("Role must be admin or user")
+        if value not in ROLES:
+            raise ValueError("Role must be admin, manager or user")
         return value
 
 

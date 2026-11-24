@@ -80,7 +80,7 @@ The rule applies to an **existing** voter and is enforced on the server in `PATC
 
 | Role | May change |
 | --- | --- |
-| `user` and `manager` | `USER_EDITABLE_FIELDS`: **Booth, Ward, Booth S.No, Ward S.No, RelativeName, HouseNo, Age, Street, Mobile, Village, Panchayath, Current City, Local/Non-Local, Party** |
+| `user` and `manager` | `USER_EDITABLE_FIELDS`: **Party, Caste, Mobile, Street, HouseNo** |
 | `admin` / owner | every column except VoterId |
 | nobody | VoterId (the key) |
 

@@ -278,7 +278,7 @@ def test_admin_voters_page_has_checkbox_column_and_action_bar(ctx, three):
     assert html.count("data-row-select") == 3
     assert "data-select-all" in html
     assert "data-bulk-bar hidden" in html  # hidden until something is checked
-    for text in ("selected", "Bulk edit", "Bulk delete", "Clear"):
+    for text in ("selected", "Bulk edit", "Soft delete selected", "Clear"):
         assert text in html
     # select-all column is first in the header and each row, ahead of Booth
     assert re.search(r'<tr>\s*<th class="select-cell">.*?</th>\s*<th>Booth</th>', html, re.S)
@@ -304,7 +304,7 @@ def test_admin_master_data_tables_have_checkboxes_but_profession_does_not(ctx, t
     caste = ctx.client.get("/master-data?tab=caste").text
     profession = ctx.client.get("/master-data?tab=profession").text
 
-    assert "data-row-select" in caste and "Bulk edit" in caste and "Bulk delete" in caste
+    assert "data-row-select" in caste and "Bulk edit" in caste and "Soft delete selected" in caste
     assert '<div class="table-scroll" data-top-scroll>' in caste
     for marker in ("data-row-select", "data-select-all", "data-bulk-bar", "Bulk edit"):
         assert marker not in profession
@@ -342,7 +342,7 @@ def test_web_bulk_delete_shows_count_first_and_cancel_deletes_nothing(ctx, three
     )
 
     assert confirm_page.status_code == 200
-    assert "Remove 2 voters?" in confirm_page.text
+    assert "Soft delete 2 voters?" in confirm_page.text
     assert 'name="confirm" value="yes"' in confirm_page.text
     assert 'href="/voters">Cancel' in confirm_page.text  # cancel is a plain link: no write
     for voter_id in three:
