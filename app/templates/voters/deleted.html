@@ -4,7 +4,8 @@
 <div class="page-head">
   <div>
     <h1>Deleted voters</h1>
-    <p class="lede">{{ total }} soft-deleted record{% if total != 1 %}s{% endif %}. Restore brings a voter back to the active list exactly as it was. Permanent delete removes the personal data and cannot be undone.</p>
+    <p class="lede">{{ total }} soft-deleted record{% if total != 1 %}s{% endif %}. Restore brings a voter back to the active list with every field as it was when deleted. Permanent delete removes the personal data and cannot be undone.</p>
+    <p class="hint">Some older deletions were made before soft delete kept every field. Those rows say "Details not recoverable": they cannot be restored, but they can still be permanently deleted.</p>
   </div>
   <div class="actions">
     <a class="button ghost" href="/voters">Back to voters</a>
@@ -58,7 +59,9 @@
         <td data-label="Deleted">{{ voter.deleted_at|ist }}</td>
         <td data-label="Deleted by" translate="no">{{ voter.source_id|display }}</td>
         <td data-label="Actions" class="row-actions">
-          {% if perms.restore %}
+          {% if voter.voter_id in unrecoverable_ids %}
+          <span class="muted">Details not recoverable</span>
+          {% elif perms.restore %}
           <form method="post" action="/voters/{{ voter.voter_id|urlencode }}/restore" class="inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit">Restore</button>

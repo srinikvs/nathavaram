@@ -80,13 +80,15 @@ def test_create_user_service_enforces_min_length(ctx):
     from app.config import load_settings
     from app.errors import ServiceError
     from app.schemas import UserCreate
+    from app.models import User
     from app.services.users import create_user
 
     data = UserCreate.model_construct(username="qa_short2", password="short", role="user")
     db = database.SessionLocal()
     try:
+        owner = db.query(User).filter(User.username == "admin").one()
         with pytest.raises(ServiceError):
-            create_user(db, data, load_settings())
+            create_user(db, data, load_settings(), owner)
     finally:
         db.close()
 

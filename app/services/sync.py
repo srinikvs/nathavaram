@@ -13,6 +13,9 @@ Conflict policy (also documented in docs/SYNC.md):
   restore. Hard delete is not available through sync.
 - A hard-deleted row (personal fields stripped, hard_deleted_at set) cannot be restored. A
   newer non-delete change for it creates a new record under the same voter_id.
+- A pre-PR-19 tombstone (soft-deleted, fields already stripped, no hard_deleted_at) cannot be
+  restored either: a newer non-delete change is refused with status forbidden for every role
+  and nothing is written.
 - A change whose voter_id is not valid is reported as validation_error and not applied.
 """
 
@@ -40,8 +43,10 @@ from app.schemas import (
 )
 from app.services.revision import allocate_revision, current_revision
 from app.services.voters import (
+    UNRECOVERABLE_RESTORE_MESSAGE,
     disallowed_changes,
     forbidden_fields_message,
+    is_unrecoverable_soft_delete,
     normalize_voter_id,
     voter_to_public,
 )
@@ -293,6 +298,9 @@ def _merge_existing(
         return _conflict(existing, user, "Server record changed after base_revision")
 
     # Stale and replayed changes were handled above, so only a genuine edit reaches this point.
+    if is_unrecoverable_soft_delete(existing):
+        # Its personal fields were removed before soft delete kept them: nothing to restore.
+        return _forbidden(existing, user, UNRECOVERABLE_RESTORE_MESSAGE)
     if existing.hard_deleted_at is not None:
         # Personal data is gone and cannot come back: this is a new record under the same key.
         existing.created_at = dump_dt(incoming)

@@ -65,6 +65,7 @@ from app.services.voters import (
     export_voters,
     get_active,
     hard_delete,
+    is_unrecoverable_soft_delete,
     list_deleted,
     load_any,
     replace_voter,
@@ -74,7 +75,7 @@ from app.services.voters import (
 )
 from app.validation import local_label
 from app.services.voters import VOTER_ID_LOCKED_MESSAGE
-from app.web.nav import COMING_SOON_PAGES, can_see
+from app.web.nav import COMING_SOON_PAGES, MANAGER, can_see
 from app.web.templates import render
 
 router = APIRouter()
@@ -264,8 +265,18 @@ def logout(request: Request):
     return response
 
 
-def _forbidden(request: Request, user):
-    return render(request, "403.html", {"user": user}, status_code=403)
+ADMIN_ONLY_PAGE_MESSAGE = "That page is for administrators."
+MANAGER_PAGE_MESSAGE = "That page is for managers and administrators."
+NO_ACCESS_PAGE_MESSAGE = "Your role cannot open that page."
+
+
+def _forbidden(request: Request, user, message: str = ADMIN_ONLY_PAGE_MESSAGE):
+    """403 page. Admin-only pages keep the default wording; manager pages pass MANAGER_PAGE_MESSAGE."""
+    return render(request, "403.html", {"user": user, "message": message}, status_code=403)
+
+
+def _forbidden_manager(request: Request, user):
+    return _forbidden(request, user, MANAGER_PAGE_MESSAGE)
 
 
 def _search_from_form(form) -> VoterSearch:
@@ -407,6 +418,7 @@ def _deleted_page(request: Request, db: Session, user, query: VoterSearch, error
         {
             "user": user,
             "voters": rows,
+            "unrecoverable_ids": {row.voter_id for row in rows if is_unrecoverable_soft_delete(row)},
             "total": total,
             "query": query,
             "error": error,
@@ -420,7 +432,7 @@ def _deleted_page(request: Request, db: Session, user, query: VoterSearch, error
 @router.get("/voters/deleted")
 def deleted_voters_page(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
     if not can_review_deleted(user):
-        return _forbidden(request, user)
+        return _forbidden_manager(request, user)
     paging = {k: v for k, v in request.query_params.items() if k in {"page", "page_size"}}
     try:
         query = VoterSearch.model_validate(paging)
@@ -435,7 +447,7 @@ async def bulk_hard_delete_submit(
 ):
     """Step 1 shows the count and warns; only a second post with confirm=yes removes data."""
     if not can_hard_delete(user):
-        return _forbidden(request, user)
+        return _forbidden_manager(request, user)
     form = await request.form()
     try:
         ids = normalize_ids(_selected_ids(form))
@@ -467,7 +479,7 @@ def hard_delete_confirm(
     user=Depends(web_user),
 ):
     if not can_hard_delete(user):
-        return _forbidden(request, user)
+        return _forbidden_manager(request, user)
     try:
         voter = load_any(db, voter_id)
     except ServiceError:
@@ -492,7 +504,7 @@ async def hard_delete_submit(
     user=Depends(web_user),
 ):
     if not can_hard_delete(user):
-        return _forbidden(request, user)
+        return _forbidden_manager(request, user)
     form = await request.form()
     if form.get("confirm") != "yes":
         return RedirectResponse(f"/voters/{voter_id}/hard-delete", status_code=303)
@@ -511,7 +523,7 @@ async def restore_submit(
     user=Depends(web_user),
 ):
     if not can_restore(user):
-        return _forbidden(request, user)
+        return _forbidden_manager(request, user)
     try:
         restore(db, voter_id, source_for(user))
     except ServiceError as exc:
@@ -666,7 +678,7 @@ def delete_confirm(
     user=Depends(web_user),
 ):
     if not can_soft_delete(user):
-        return _forbidden(request, user)
+        return _forbidden(request, user, NO_ACCESS_PAGE_MESSAGE)
     try:
         voter = get_active(db, voter_id)
     except ServiceError:
@@ -682,7 +694,7 @@ def delete_submit(
     user=Depends(web_user),
 ):
     if not can_soft_delete(user):
-        return _forbidden(request, user)
+        return _forbidden(request, user, NO_ACCESS_PAGE_MESSAGE)
     try:
         soft_delete(db, voter_id, source_for(user))
     except ServiceError:
@@ -746,7 +758,7 @@ async def bulk_edit_submit(request: Request, db: Session = Depends(get_db), user
 async def bulk_delete_submit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
     """Step 1 shows the count and asks; only a second post with confirm=yes soft deletes."""
     if not can_soft_delete(user):
-        return _forbidden(request, user)
+        return _forbidden(request, user, NO_ACCESS_PAGE_MESSAGE)
     form = await request.form()
     try:
         ids = normalize_ids(_selected_ids(form))
@@ -772,7 +784,8 @@ def _register_coming_soon_pages() -> None:
 
         def page(request: Request, user=Depends(web_user), item=item):
             if not can_see(user, item):
-                return _forbidden(request, user)
+                message = MANAGER_PAGE_MESSAGE if item.audience == MANAGER else ADMIN_ONLY_PAGE_MESSAGE
+                return _forbidden(request, user, message)
             return render(request, "coming_soon.html", {"user": user, "page_title": item.label})
 
         router.add_api_route(path, page, methods=["GET"], name="soon" + path.replace("/", "_"))
@@ -1000,7 +1013,7 @@ async def users_submit(request: Request, db: Session = Depends(get_db), user=Dep
     except ValidationError as exc:
         return _users_page(request, db, user, _form_errors(exc), status_code=400, values=shown)
     try:
-        create_user(db, data, request.app.state.settings)
+        create_user(db, data, request.app.state.settings, user)
     except ServiceError as exc:
         return _users_page(request, db, user, [exc.message], status_code=exc.status_code, values=shown)
     return RedirectResponse("/users?saved=1", status_code=303)

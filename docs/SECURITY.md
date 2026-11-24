@@ -66,7 +66,7 @@ Three roles on `users.role`, enforced in `app/permissions.py` and on every route
 | Import, export, Master Data | no | no | yes |
 | User accounts | no | no | yes (owner protections below) |
 
-Hard delete is never reachable through sync. A `user` cannot restore through sync either.
+Hard delete is never reachable through sync. A `user` cannot restore through sync either. Soft-deleted rows from before PR #19 had their details removed at delete time; they cannot be restored by anyone, and sync and create refuse to revive them (see `docs/SCHEMA.md`).
 
 ## Account management (admin)
 
@@ -75,6 +75,7 @@ Admins (owner included) manage accounts. Cookie-authenticated mutations need the
 Owner protections (enforced in `app/services/users.py`):
 
 - Only the owner can change, reset the password of, deactivate or delete the owner account. Another admin gets 403.
+- Only the owner can reset the password of, deactivate, delete, or change the role of any other admin account, and only the owner can create an admin or promote a user or manager to admin. A non-owner admin gets 403 with a clear message. Non-owner admins manage `user` and `manager` accounts only.
 - The owner account must stay `admin`; a role change to `manager` or `user` answers 400.
 - The owner cannot be deleted, and nobody can deactivate or delete themself.
 - At least one active admin must remain.
@@ -104,5 +105,5 @@ Choices:
 
 - It is set only on the admin created from `ADMIN_USERNAME`. If that user already exists at startup (a database from before the flag), startup marks it as owner and leaves its password unchanged.
 - It cannot be set through the API. Admins created later are not owners.
-- Other admins manage user accounts too, except the owner account (see Account management above). Non-admins get 403 on the user-management routes.
+- Other admins manage `user` and `manager` accounts, but not the owner or other admin accounts (see Account management above). Non-admins get 403 on the user-management routes.
 - Pointing `ADMIN_USERNAME` at a different name later adds a second owner; the earlier owner keeps the flag.

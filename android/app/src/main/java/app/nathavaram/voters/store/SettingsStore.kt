@@ -32,15 +32,18 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_PASSWORD_CHANGE, value).apply()
 
     /**
-     * The role the server reported at sign-in ("admin" or "user"); blank when unknown, for example
-     * after an app update that predates this setting. Unknown is treated as a regular user, so the
-     * restricted fields stay read-only until the next sign-in. The server enforces the rule either way.
+     * The role the server reported at sign-in: "admin", "manager" or "user"; blank when unknown, for
+     * example after an app update that predates this setting. Unknown is treated as a regular user,
+     * so the restricted fields stay read-only until the next sign-in. The server enforces the rule either way.
      */
     var role: String
         get() = prefs.getString(KEY_ROLE, null).orEmpty()
         set(value) = prefs.edit().putString(KEY_ROLE, value).apply()
 
-    /** Owner/admin may edit every field except VoterId; the regular user role only Party, Caste, Mobile, HouseNo, Street. */
+    /**
+     * Admin (and so the owner) may edit every field except VoterId. "user" and "manager" edit only
+     * the 14 USER_EDITABLE fields; manager is not treated as admin for field access.
+     */
     val canEditAllFields: Boolean get() = role == ROLE_ADMIN
 
     /** Random, generated once per install. Sent as `device_id` and stored as `source_id` by the server. */

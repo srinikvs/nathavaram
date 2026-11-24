@@ -334,6 +334,20 @@ class VoterPage(BaseModel):
     page_size: int
 
 
+class DeletedVoterPublic(VoterPublic):
+    """A row on the Deleted voters list. Derived, never stored: false for a pre-PR-19 tombstone
+    whose personal details were removed before soft delete kept them. Such a row cannot be restored."""
+
+    details_recoverable: bool
+
+
+class DeletedVoterPage(BaseModel):
+    items: list[DeletedVoterPublic]
+    total: int
+    page: int
+    page_size: int
+
+
 class VoterSearch(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
