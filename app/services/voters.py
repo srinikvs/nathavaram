@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.constants import DATA_FIELDS, EXPORT_ROW_LIMIT, LABEL_BY_FIELD, USER_EDITABLE_FIELDS
 from app.errors import ServiceError
-from app.models import User, Voter
+from app.models import Voter
 from app.schemas import VoterPatch, VoterPublic, VoterSearch, VoterWrite
 from app.services.revision import allocate_revision
 from app.validation import dump_dt
@@ -22,6 +22,12 @@ DUPLICATE_VOTER_ID_MESSAGE = (
     "search for the existing voter or use a different VoterId."
 )
 VOTER_ID_LOCKED_MESSAGE = "VoterId cannot be changed after the voter is created"
+HARD_DELETED_MESSAGE = (
+    "This voter was permanently deleted. Its personal data is gone and it cannot be restored."
+)
+HARD_DELETE_NEEDS_SOFT_DELETE_MESSAGE = (
+    "Soft delete the voter first. Only deleted voters can be permanently deleted."
+)
 
 
 def _now() -> str:
@@ -56,11 +62,6 @@ def ensure_voter_id_unchanged(voter: Voter, requested: str) -> None:
         raise ServiceError(VOTER_ID_LOCKED_MESSAGE, 422, "voter_id")
 
 
-def is_privileged(user: User) -> bool:
-    """Owner/admin check used across the app: the owner is always an admin."""
-    return user.role == "admin"
-
-
 def disallowed_changes(voter: Voter, values: dict[str, Any]) -> list[str]:
     """Fields in `values` that a regular user may not change and that differ from `voter`.
 
@@ -81,8 +82,8 @@ def forbidden_fields_message(fields: list[str]) -> str:
     names = ", ".join(LABEL_BY_FIELD[field] for field in fields)
     allowed = ", ".join(LABEL_BY_FIELD[field] for field in DATA_FIELDS if field in USER_EDITABLE_FIELDS)
     return (
-        f"Your role cannot change: {names}. Regular users may edit only {allowed}; "
-        "ask an owner or admin to change other fields."
+        f"Your role cannot change: {names}. Users and managers may edit only {allowed}; "
+        "ask an admin to change other fields."
     )
 
 
@@ -118,9 +119,12 @@ def create_voter(db: Session, data: VoterWrite, source_id: str) -> Voter:
         voter = Voter(voter_id=data.voter_id, created_at=now, source_id=source_id, revision=0)
         db.add(voter)
     else:
+        # Reusing the VoterId of a soft-deleted row (or a hard-deleted one) is a new record:
+        # the payload replaces every field and the old row is not restored.
         voter = existing
         voter.created_at = now
         voter.deleted_at = None
+        voter.hard_deleted_at = None
     voter.updated_at = now
     voter.source_id = source_id
     apply_write(voter, data)
@@ -135,9 +139,9 @@ def create_voter(db: Session, data: VoterWrite, source_id: str) -> Voter:
 
 
 def update_voter(
-    db: Session, voter_id: str, patch: VoterPatch, source_id: str, *, privileged: bool
+    db: Session, voter_id: str, patch: VoterPatch, source_id: str, *, all_fields: bool
 ) -> Voter:
-    """Apply a partial edit. `privileged` is owner/admin; others edit USER_EDITABLE_FIELDS only."""
+    """Apply a partial edit. `all_fields` is admin (owner included); others edit USER_EDITABLE_FIELDS."""
     voter = get_active(db, voter_id)
     changes = patch.model_dump(exclude_unset=True)
     if not changes:
@@ -147,7 +151,7 @@ def update_voter(
             raise ServiceError(f"{required} cannot be null", 422, required)
     if "voter_id" in changes:
         ensure_voter_id_unchanged(voter, changes.pop("voter_id"))
-    if not privileged:
+    if not all_fields:
         ensure_user_may_change(voter, changes)
     if not changes:
         return voter
@@ -166,12 +170,12 @@ def update_voter(
 
 
 def replace_voter(
-    db: Session, voter_id: str, data: VoterWrite, source_id: str, *, privileged: bool
+    db: Session, voter_id: str, data: VoterWrite, source_id: str, *, all_fields: bool
 ) -> Voter:
     """Replace every data column. Used by the web form, which always posts the full row."""
     voter = get_active(db, voter_id)
     ensure_voter_id_unchanged(voter, data.voter_id)
-    if not privileged:
+    if not all_fields:
         ensure_user_may_change(voter, {field: getattr(data, field) for field in DATA_FIELDS})
     apply_write(voter, data)
     voter.updated_at = _now()
@@ -199,9 +203,11 @@ def strip_to_tombstone(voter: Voter) -> None:
     voter.first_name = ""
 
 
-def tombstone_voter(db: Session, voter: Voter, source_id: str, now: str) -> None:
-    """Soft-delete one loaded row without committing (shared by single and bulk delete)."""
-    strip_to_tombstone(voter)
+def soft_delete_voter(db: Session, voter: Voter, source_id: str, now: str) -> None:
+    """Soft-delete one loaded row without committing (shared by single and bulk delete).
+
+    Every field is kept, so the row can be restored exactly. It leaves the active list.
+    """
     voter.deleted_at = now
     voter.updated_at = now
     voter.source_id = source_id
@@ -210,10 +216,78 @@ def tombstone_voter(db: Session, voter: Voter, source_id: str, now: str) -> None
 
 def soft_delete(db: Session, voter_id: str, source_id: str) -> Voter:
     voter = get_active(db, voter_id)
-    tombstone_voter(db, voter, source_id, _now())
+    soft_delete_voter(db, voter, source_id, _now())
     db.commit()
     db.refresh(voter)
     return voter
+
+
+def hard_delete_voter(db: Session, voter: Voter, source_id: str, now: str) -> None:
+    """Permanently remove personal data from one soft-deleted row, without committing.
+
+    The row stays so sync pulls the wipe: personal fields are nulled, deleted_at is kept,
+    and hard_deleted_at marks the row as unrestorable.
+    """
+    strip_to_tombstone(voter)
+    voter.deleted_at = voter.deleted_at or now
+    voter.hard_deleted_at = now
+    voter.updated_at = now
+    voter.source_id = source_id
+    voter.revision = allocate_revision(db)
+
+
+def check_hard_deletable(voter: Voter) -> None:
+    if voter.hard_deleted_at is not None:
+        raise ServiceError(HARD_DELETED_MESSAGE, 409, "voter_id")
+    if voter.deleted_at is None:
+        raise ServiceError(HARD_DELETE_NEEDS_SOFT_DELETE_MESSAGE, 409, "voter_id")
+
+
+def hard_delete(db: Session, voter_id: str, source_id: str) -> Voter:
+    voter = load_any(db, voter_id)
+    check_hard_deletable(voter)
+    hard_delete_voter(db, voter, source_id, _now())
+    db.commit()
+    db.refresh(voter)
+    return voter
+
+
+def check_restorable(voter: Voter) -> None:
+    if voter.hard_deleted_at is not None:
+        raise ServiceError(HARD_DELETED_MESSAGE, 409, "voter_id")
+    if voter.deleted_at is None:
+        raise ServiceError("Voter is not deleted", 409, "voter_id")
+
+
+def restore(db: Session, voter_id: str, source_id: str) -> Voter:
+    """Bring a soft-deleted voter back exactly as it was at soft-delete time."""
+    voter = load_any(db, voter_id)
+    check_restorable(voter)
+    voter.deleted_at = None
+    voter.updated_at = _now()
+    voter.source_id = source_id
+    voter.revision = allocate_revision(db)
+    db.commit()
+    db.refresh(voter)
+    return voter
+
+
+def load_any(db: Session, voter_id: str) -> Voter:
+    """Any row, active or deleted. Only Deleted voters and the restore/hard-delete path use it."""
+    voter = db.get(Voter, normalize_voter_id(voter_id))
+    if voter is None:
+        raise ServiceError("Voter not found", 404)
+    return voter
+
+
+def list_deleted(db: Session, query: VoterSearch) -> tuple[list[Voter], int]:
+    """Soft-deleted rows that have not been hard-deleted, newest deletions first."""
+    base = select(Voter).where(Voter.deleted_at.is_not(None), Voter.hard_deleted_at.is_(None))
+    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    stmt = base.order_by(Voter.deleted_at.desc(), Voter.voter_id)
+    offset = (query.page - 1) * query.page_size
+    rows = list(db.scalars(stmt.offset(offset).limit(query.page_size)).all())
+    return rows, int(total)
 
 
 def _full_name():

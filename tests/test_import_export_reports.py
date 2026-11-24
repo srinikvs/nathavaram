@@ -247,7 +247,7 @@ def test_regular_user_cannot_export_import_or_delete_but_can_search_and_edit(ctx
         files={"file": ("voters_sample.csv", SAMPLE.read_bytes(), "text/csv")},
     )
     assert denied_import.status_code == 403
-    assert ctx.client.delete(f"/api/voters/{created['voter_id']}", headers=user).status_code == 403
+    assert ctx.client.delete(f"/api/voters/{created['voter_id']}", headers=user).status_code == 200  # soft delete
     assert ctx.client.get("/api/users", headers=user).status_code == 403
     assert (
         ctx.client.post(

@@ -17,7 +17,14 @@ from app.validation import dump_dt
 
 
 MIN_PASSWORD_LENGTH = 10
+OWNER_PROTECTED_MESSAGE = "Only the owner can change the owner account"
 audit_logger = logging.getLogger("nathavaram.audit")
+
+
+def ensure_may_change_account(actor: User, target: User) -> None:
+    """The owner account is changed by the owner only. Other admins may manage the rest."""
+    if target.is_owner and not actor.is_owner:
+        raise ServiceError(OWNER_PROTECTED_MESSAGE, 403)
 
 
 def authenticate(db: Session, username: str, password: str, settings: Settings) -> User | None:
@@ -96,6 +103,7 @@ def reset_user_password(
         raise ServiceError("User not found", 404)
     if target.id == actor.id:
         raise ServiceError("Use Change password to change your own password", 400)
+    ensure_may_change_account(actor, target)
     _require_password_length(new_password, "new_password")
     target.password_hash = hash_password(new_password, settings.bcrypt_rounds)
     target.must_change_password = True
@@ -118,6 +126,7 @@ def delete_user(db: Session, actor: User, user_id: str) -> User:
         raise ServiceError("You cannot delete your own account", 400)
     if target.is_owner:
         raise ServiceError("An owner account cannot be deleted", 400)
+    ensure_may_change_account(actor, target)
     now = dump_dt(datetime.now(timezone.utc))
     target.is_active = False
     target.deleted_at = now
@@ -155,7 +164,10 @@ def update_user(db: Session, user_id: str, data: UserUpdate, settings: Settings,
     user = db.get(User, user_id)
     if user is None or user.deleted_at is not None:
         raise ServiceError("User not found", 404)
+    ensure_may_change_account(actor, user)
     changes = data.model_dump(exclude_unset=True)
+    if user.is_owner and changes.get("role") not in (None, "admin"):
+        raise ServiceError("The owner account must stay admin", 400)
     if "role" in changes and changes["role"] is not None:
         user.role = changes["role"]
     if "is_active" in changes and changes["is_active"] is not None:

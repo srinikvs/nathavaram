@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Permanently delete voters · Nathavaram{% endblock %}
+{% block content %}
+<section class="login-card">
+  <h1>Permanently delete {{ voter_ids|length }} voter{% if voter_ids|length != 1 %}s{% endif %}?</h1>
+  {% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
+  <p class="banner bad" role="alert">The personal data of {{ voter_ids|length }} selected voter{% if voter_ids|length != 1 %}s{% endif %} will be permanently removed. This cannot be undone and the voters cannot be restored. Voters you did not select are not touched.</p>
+  <form method="post" action="/voters/deleted/bulk-hard-delete" class="actions" data-confirm="Permanently delete {{ voter_ids|length }} voter(s)? This cannot be undone.">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="confirm" value="yes">
+    {% for voter_id in voter_ids %}<input type="hidden" name="voter_ids" value="{{ voter_id }}">{% endfor %}
+    <button type="submit" class="danger">Permanently delete {{ voter_ids|length }}</button>
+    <a class="button ghost" href="/voters/deleted">Cancel</a>
+  </form>
+</section>
+{% endblock %}

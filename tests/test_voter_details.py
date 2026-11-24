@@ -146,15 +146,15 @@ def test_regular_user_can_open_details_and_edit_stays_locked(ctx):
     assert re.search(r'<select id="is_local"[^>]*disabled', edit.text)
 
 
-def test_regular_user_changing_local_from_edit_is_refused_with_403(ctx):
+def test_regular_user_changing_a_locked_field_from_edit_is_refused_with_403(ctx):
     voter = _create(ctx)
     make_user(ctx, USER_NAME, USER_PASSWORD)
     _web_login(ctx, USER_NAME, USER_PASSWORD)
 
-    refused = _edit_post(ctx, VOTER_ID, is_local="Non-Local", first_name=voter["first_name"])
+    refused = _edit_post(ctx, VOTER_ID, gender="Female", first_name=voter["first_name"])
 
     assert refused.status_code == 403, refused.text
-    assert _get(ctx)["is_local"] is True
+    assert _get(ctx)["gender"] is None
 
 
 def test_admin_can_change_local_from_the_edit_form_opened_from_details(ctx):

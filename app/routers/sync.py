@@ -11,7 +11,6 @@ from app.errors import ServiceError
 from app.models import User
 from app.schemas import SyncPullResponse, SyncPushRequest, SyncPushResponse
 from app.services.sync import pull_changes, push_changes
-from app.services.voters import is_privileged
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
 
@@ -33,6 +32,6 @@ def push(
     user: User = Depends(require_user),
 ) -> SyncPushResponse:
     try:
-        return push_changes(db, body, privileged=is_privileged(user))
+        return push_changes(db, body, user)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

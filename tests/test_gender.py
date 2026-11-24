@@ -172,7 +172,7 @@ def test_regular_user_echoing_the_stored_gender_back_is_not_refused(ctx):
     voter = _create(ctx, gender="Male")
 
     patched = ctx.client.patch(
-        f"/api/voters/{voter['voter_id']}", headers=user, json={"gender": "male", "caste": "SampleGroupZ"}
+        f"/api/voters/{voter['voter_id']}", headers=user, json={"gender": "male", "party": "BJP"}
     )
 
     assert patched.status_code == 200, patched.text
@@ -312,13 +312,13 @@ def test_web_user_edit_without_the_disabled_gender_keeps_it(ctx):
     voter = _create(ctx, gender="Male")
     make_user(ctx)
     _web_login(ctx, USER_NAME, USER_PASSWORD)
-    posted = {key: value for key, value in _posted_row(voter, caste="SampleGroupZ").items() if key != "gender"}
+    posted = {key: value for key, value in _posted_row(voter, party="BJP").items() if key != "gender"}
 
     saved = _edit_post(ctx, voter["voter_id"], **posted)  # a disabled select is not posted
 
     assert saved.status_code == 303, saved.text
     stored = _get(ctx, voter["voter_id"])
-    assert stored["gender"] == "Male" and stored["caste"] == "SampleGroupZ"
+    assert stored["gender"] == "Male" and stored["party"] == "BJP"
 
 
 def test_web_create_saves_gender_and_rejects_an_invalid_one(ctx):

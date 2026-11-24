@@ -302,6 +302,7 @@ def _import_table(
         voter.updated_at = now
         voter.source_id = source_id
         voter.deleted_at = None
+        voter.hard_deleted_at = None  # a re-import is a new record, never a restore of old data
         for field in DATA_FIELDS:
             setattr(voter, field, getattr(item, field))
         voter.revision = allocate_revision(db)

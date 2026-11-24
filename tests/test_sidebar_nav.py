@@ -97,16 +97,15 @@ def test_regular_user_does_not_see_admin_links(ctx):
     assert _titles(sidebar) == SECTION_TITLES
 
 
-def test_non_owner_admin_sees_admin_links_but_not_users(ctx):
+def test_non_owner_admin_sees_admin_links_and_users(ctx):
     _as_non_owner_admin(ctx)
 
     hrefs = _hrefs(_sidebar(ctx.client.get("/voters").text))
 
-    assert set(ADMIN_ONLY_PATHS) <= hrefs
-    assert "/users" not in hrefs
+    assert set(ADMIN_ONLY_PATHS) | {"/users", "/voters/deleted"} <= hrefs
 
 
-@pytest.mark.parametrize("path", ADMIN_ONLY_PATHS + ["/users"])
+@pytest.mark.parametrize("path", ADMIN_ONLY_PATHS + ["/users", "/voters/deleted"])
 def test_admin_routes_return_403_for_regular_user(ctx, path):
     _as_clerk(ctx)
 
@@ -115,10 +114,18 @@ def test_admin_routes_return_403_for_regular_user(ctx, path):
     assert response.status_code == 403
 
 
-def test_users_route_is_403_for_non_owner_admin(ctx):
+def test_regular_user_sidebar_has_no_deleted_voters_link(ctx):
+    _as_clerk(ctx)
+
+    hrefs = _hrefs(_sidebar(ctx.client.get("/voters").text))
+
+    assert "/voters/deleted" not in hrefs and "/users" not in hrefs
+
+
+def test_non_owner_admin_can_open_users_and_master_data(ctx):
     _as_non_owner_admin(ctx)
 
-    assert ctx.client.get("/users", follow_redirects=False).status_code == 403
+    assert ctx.client.get("/users", follow_redirects=False).status_code == 200
     assert ctx.client.get("/master-data").status_code == 200
     assert ctx.client.get("/import").status_code == 200
 

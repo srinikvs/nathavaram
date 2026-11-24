@@ -10,6 +10,7 @@
   <div class="actions">
     <a class="button ghost" href="/voters" data-voter-list-return>Back to list</a>
     <a class="button" href="/voters/{{ voter.voter_id|urlencode }}/edit">Edit</a>
+    {% if perms.soft_delete %}<a class="button danger" href="/voters/{{ voter.voter_id|urlencode }}/delete">Soft delete</a>{% endif %}
   </div>
 </div>
 <dl class="voter-details">

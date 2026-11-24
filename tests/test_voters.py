@@ -236,12 +236,8 @@ def test_soft_delete_keeps_only_the_key_and_strips_every_personal_field(ctx):
         row = db.get(Voter, created["voter_id"])
         assert row is not None
         assert row.deleted_at is not None
-        for field in DATA_FIELDS:
-            if field in {"voter_id", "first_name", "is_local"}:
-                continue
-            assert getattr(row, field) is None, field
-        assert row.is_local is False
-        assert row.first_name == ""
+        assert row.hard_deleted_at is None  # soft delete: fields are kept, nothing is wiped
+        assert row.first_name == "Testperson" and row.mobile == "9000000021"
         assert row.voter_id == "ZZZ1000001"
     finally:
         db.close()
@@ -250,12 +246,5 @@ def test_soft_delete_keeps_only_the_key_and_strips_every_personal_field(ctx):
     tomb = next(item for item in pulled["changes"] if item["voter_id"] == created["voter_id"])
     assert tomb["deleted_at"] is not None
     assert tomb["revision"] == body["revision"]
-    for field in (
-        "mobile", "caste", "party", "last_name", "relative_name", "house_no", "street",
-        "village", "panchayath", "mandal", "current_city", "age", "booth", "ward", "constituency",
-    ):
-        assert tomb[field] is None, field
-    assert tomb["first_name"] == ""
-    raw = str(pulled)
-    for secret in ("Testperson", "Alpha", "SampleGroupA", "9000000021", "TDP", "Samplevillage", "Sample Street"):
-        assert secret not in raw
+    assert tomb["hard_deleted_at"] is None
+    assert tomb["first_name"] == "Testperson" and tomb["party"] == "TDP"

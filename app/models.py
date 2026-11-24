@@ -47,8 +47,9 @@ class SyncState(Base):
 class Voter(Base):
     """One row per voter. voter_id (EPIC number) is the primary key.
 
-    A soft-deleted row keeps its voter_id and loses every other personal field, so the
-    same voter_id can be added again: that revives the tombstone row.
+    Soft delete sets deleted_at and keeps every field (restorable). Hard delete strips the
+    personal fields, sets hard_deleted_at and keeps the row so sync can propagate the wipe.
+    The same voter_id can be added again: that revives the row in place.
     """
 
     __tablename__ = "voters"
@@ -94,4 +95,6 @@ class Voter(Base):
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     deleted_at: Mapped[str | None] = mapped_column(String(32))
+    # Set only by hard delete. A row with hard_deleted_at can never be restored.
+    hard_deleted_at: Mapped[str | None] = mapped_column(String(32))
     source_id: Mapped[str | None] = mapped_column(String(64))

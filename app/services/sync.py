@@ -8,7 +8,11 @@ Conflict policy (also documented in docs/SYNC.md):
 - Equal timestamps with the same content are an idempotent replay.
 - Equal timestamps with different content keep the server row.
 - voter_id is the primary key: a change for an existing voter_id is a merge, never a clash.
-  A tombstone keeps its voter_id, so a newer non-delete change for it revives the row.
+- Soft delete (deleted=true from any role) keeps every field and sets deleted_at.
+  A newer non-delete change for a soft-deleted row is a restore: only manager and admin may
+  restore. Hard delete is not available through sync.
+- A hard-deleted row (personal fields stripped, hard_deleted_at set) cannot be restored. A
+  newer non-delete change for it creates a new record under the same voter_id.
 - A change whose voter_id is not valid is reported as validation_error and not applied.
 """
 
@@ -22,18 +26,29 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.constants import DATA_FIELDS, SYNC_BATCH_LIMIT
-from app.models import Voter
-from app.schemas import SyncChange, SyncPullResponse, SyncPushRequest, SyncPushResponse, SyncResult, VoterPublic, VoterWrite
-from app.services.revision import allocate_revision, current_revision
 from app.errors import ServiceError
+from app.models import User, Voter
+from app.permissions import can_edit_all_fields, can_restore
+from app.schemas import (
+    SyncChange,
+    SyncPullResponse,
+    SyncPushRequest,
+    SyncPushResponse,
+    SyncResult,
+    VoterWrite,
+)
+from app.services.revision import allocate_revision, current_revision
 from app.services.voters import (
     disallowed_changes,
     forbidden_fields_message,
     normalize_voter_id,
-    strip_to_tombstone,
     voter_to_public,
 )
 from app.validation import canonical_voter_id, check_client_timestamp, dump_dt, parse_dt
+
+RESTORE_FORBIDDEN_MESSAGE = (
+    "Your role cannot restore deleted voters; ask a manager or admin to restore this voter."
+)
 
 
 def _server_time() -> str:
@@ -66,13 +81,13 @@ def pull_changes(db: Session, since: int, limit: int) -> SyncPullResponse:
     )
 
 
-def push_changes(db: Session, body: SyncPushRequest, *, privileged: bool) -> SyncPushResponse:
-    """`privileged` is owner/admin. Regular users may change USER_EDITABLE_FIELDS only."""
+def push_changes(db: Session, body: SyncPushRequest, user: User) -> SyncPushResponse:
+    """Apply a device batch as `user`. Field and restore rules follow the user's role."""
     if len(body.changes) > SYNC_BATCH_LIMIT:
         raise ServiceError(f"A sync batch can contain at most {SYNC_BATCH_LIMIT} changes", 422)
     results: list[SyncResult] = []
     for change in body.changes:
-        results.append(_apply_guarded(db, change, body.device_id, privileged))
+        results.append(_apply_guarded(db, change, body.device_id, user))
     db.commit()
     return SyncPushResponse(
         server_time=_server_time(),
@@ -81,11 +96,11 @@ def push_changes(db: Session, body: SyncPushRequest, *, privileged: bool) -> Syn
     )
 
 
-def _apply_guarded(db: Session, change: SyncChange, device_id: str, privileged: bool) -> SyncResult:
+def _apply_guarded(db: Session, change: SyncChange, device_id: str, user: User) -> SyncResult:
     """Apply one change inside a savepoint; a database error rejects only this change."""
     try:
         with db.begin_nested():
-            return _apply_one(db, change, device_id, privileged)
+            return _apply_one(db, change, device_id, user)
     except IntegrityError:
         # Two writers inserted the same voter_id at once; the other write won.
         key = normalize_voter_id(change.voter_id)
@@ -114,7 +129,7 @@ def _forbidden(existing: Voter, message: str) -> SyncResult:
     )
 
 
-def _apply_one(db: Session, change: SyncChange, device_id: str, privileged: bool) -> SyncResult:
+def _apply_one(db: Session, change: SyncChange, device_id: str, user: User) -> SyncResult:
     try:
         voter_key = canonical_voter_id(change.voter_id)
     except ValueError as exc:
@@ -130,10 +145,6 @@ def _apply_one(db: Session, change: SyncChange, device_id: str, privileged: bool
 
     existing = db.get(Voter, voter_key)
     if change.deleted:
-        # HTTP delete is admin-only; allowing it here would let a user delete and re-add a
-        # voter to rewrite fields they may not edit.
-        if not privileged and existing is not None and existing.deleted_at is None:
-            return _forbidden(existing, "Your role cannot delete voters; ask an owner or admin.")
         return _apply_delete(db, voter_key, existing, incoming, device_id, change.base_revision)
 
     try:
@@ -176,7 +187,7 @@ def _apply_one(db: Session, change: SyncChange, device_id: str, privileged: bool
             server_record=voter_to_public(voter),
         )
 
-    return _merge_existing(db, existing, snapshot, incoming, device_id, change.base_revision, privileged)
+    return _merge_existing(db, existing, snapshot, incoming, device_id, change.base_revision, user)
 
 
 def _apply_delete(
@@ -187,6 +198,7 @@ def _apply_delete(
     device_id: str,
     base_revision: int | None,
 ) -> SyncResult:
+    """Soft delete: keep every field, set deleted_at. Any role may do this."""
     if existing is None:
         return SyncResult(
             voter_id=record_id,
@@ -194,6 +206,14 @@ def _apply_delete(
             message="No server record; delete ignored",
             server_revision=None,
             server_record=None,
+        )
+    if existing.hard_deleted_at is not None:
+        return SyncResult(
+            voter_id=record_id,
+            status="applied",
+            message="Already permanently deleted",
+            server_revision=existing.revision,
+            server_record=voter_to_public(existing),
         )
     stored = parse_dt(existing.updated_at)
     if incoming < stored:
@@ -211,7 +231,6 @@ def _apply_delete(
     if existing.deleted_at is None and _stale_base(existing, base_revision):
         return _conflict(existing, "Server record changed after base_revision")
     stamp = dump_dt(incoming)
-    strip_to_tombstone(existing)
     existing.deleted_at = stamp
     existing.updated_at = stamp
     existing.source_id = device_id
@@ -232,7 +251,7 @@ def _merge_existing(
     incoming: datetime,
     device_id: str,
     base_revision: int | None,
-    privileged: bool,
+    user: User,
 ) -> SyncResult:
     stored = parse_dt(existing.updated_at)
     if incoming < stored:
@@ -249,16 +268,24 @@ def _merge_existing(
         return _conflict(existing, "Server record has the same updated_at and different content")
     if _stale_base(existing, base_revision):
         return _conflict(existing, "Server record changed after base_revision")
-    # Stale and replayed changes were handled above, so only a genuine edit reaches this
-    # check. Values equal to the stored ones are ignored: only real changes are refused.
-    if not privileged and existing.deleted_at is None:
-        blocked = disallowed_changes(existing, {f: getattr(snapshot, f) for f in DATA_FIELDS})
-        if blocked:
-            return _forbidden(existing, forbidden_fields_message(blocked))
-    if existing.deleted_at is not None:
-        existing.created_at = dump_dt(incoming)  # a revived row is a new voter, as on create/import
+
+    # Stale and replayed changes were handled above, so only a genuine edit reaches this point.
+    if existing.hard_deleted_at is not None:
+        # Personal data is gone and cannot come back: this is a new record under the same key.
+        existing.created_at = dump_dt(incoming)
+    else:
+        if existing.deleted_at is not None:
+            if not can_restore(user):
+                return _forbidden(existing, RESTORE_FORBIDDEN_MESSAGE)
+            existing.created_at = dump_dt(incoming)  # a restored row is a new voter, as on create
+        if not can_edit_all_fields(user):
+            # Values equal to the stored ones are ignored: only real changes are refused.
+            blocked = disallowed_changes(existing, {f: getattr(snapshot, f) for f in DATA_FIELDS})
+            if blocked:
+                return _forbidden(existing, forbidden_fields_message(blocked))
     _write_snapshot(existing, snapshot)
     existing.deleted_at = None
+    existing.hard_deleted_at = None
     existing.updated_at = dump_dt(incoming)
     existing.source_id = device_id
     existing.revision = allocate_revision(db)

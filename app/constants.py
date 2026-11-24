@@ -136,7 +136,10 @@ AGE_BANDS: tuple[str, ...] = (
     "Unknown",
 )
 
-ROLES: tuple[str, ...] = ("admin", "user")
+ROLE_ADMIN = "admin"
+ROLE_MANAGER = "manager"
+ROLE_USER = "user"
+ROLES: tuple[str, ...] = (ROLE_ADMIN, ROLE_MANAGER, ROLE_USER)
 
 TEXT_LIMITS: dict[str, int] = {
     "booth": 64,

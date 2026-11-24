@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import User
+from app.permissions import can_review_deleted, is_admin, is_owner
 from app.security import InvalidTokenError, csrf_matches, decode_access_token
 
 bearer = HTTPBearer(auto_error=False)
@@ -104,14 +105,21 @@ def require_user(user: User = Depends(require_session_user)) -> User:
     return user
 
 
+def require_manager(user: User = Depends(require_user)) -> User:
+    """Manager or admin: review of soft-deleted voters, restore and hard delete."""
+    if not can_review_deleted(user):
+        raise HTTPException(status_code=403, detail="Manager or admin role required")
+    return user
+
+
 def require_admin(user: User = Depends(require_user)) -> User:
-    if user.role != "admin":
+    if not is_admin(user):
         raise HTTPException(status_code=403, detail="Admin role required")
     return user
 
 
 def require_owner(user: User = Depends(require_admin)) -> User:
-    if not user.is_owner:
+    if not is_owner(user):
         raise HTTPException(status_code=403, detail="Owner role required")
     return user
 

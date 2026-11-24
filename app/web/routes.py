@@ -39,23 +39,42 @@ from app.services.login import (
     attempt_login,
     guarded_change_password,
 )
-from app.services.bulk import bulk_delete_voters, bulk_edit_voters, normalize_ids
+from app.permissions import (
+    can_edit_all_fields,
+    can_import,
+    can_hard_delete,
+    can_manage_accounts,
+    can_restore,
+    can_review_deleted,
+    can_soft_delete,
+    is_admin,
+)
+from app.services.bulk import (
+    bulk_delete_voters,
+    bulk_edit_voters,
+    bulk_hard_delete_voters,
+    normalize_ids,
+)
 from app.services.master_bulk import check_delete, key_names, rename_values, usage_counts
 from app.services.master_data import ENTITIES, build_master_table, tab_list
 from app.services.reports import build_report
 from app.services.users import create_user, delete_user, list_users, reset_user_password
 from app.services.voters import (
+    check_hard_deletable,
     create_voter,
     export_voters,
     get_active,
-    is_privileged,
+    hard_delete,
+    list_deleted,
+    load_any,
     replace_voter,
+    restore,
     search_voters,
     soft_delete,
 )
 from app.validation import local_label
 from app.services.voters import VOTER_ID_LOCKED_MESSAGE
-from app.web.nav import ADMIN, COMING_SOON_PAGES
+from app.web.nav import COMING_SOON_PAGES, can_see
 from app.web.templates import render
 
 router = APIRouter()
@@ -322,7 +341,7 @@ async def voter_search(request: Request, db: Session = Depends(get_db), user=Dep
 
 @router.post("/voters/export.csv")
 async def export_csv_form(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    if user.role != "admin":
+    if not is_admin(user):
         return _forbidden(request, user)
     form = await request.form()
     try:
@@ -339,7 +358,7 @@ async def export_csv_form(request: Request, db: Session = Depends(get_db), user=
 
 @router.post("/voters/export.xlsx")
 async def export_xlsx_form(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    if user.role != "admin":
+    if not is_admin(user):
         return _forbidden(request, user)
     form = await request.form()
     try:
@@ -368,6 +387,138 @@ def _detail_rows(voter) -> list[tuple[str, object]]:
         (label, local_label(voter.is_local) if field == "is_local" else getattr(voter, field))
         for field, label in VOTER_COLUMNS
     ]
+
+
+DELETED_NOTICES = {
+    "restored": "Voter restored to the active list with every field as it was.",
+    "hard": "Personal data permanently removed. The row stays only as a sync marker.",
+}
+
+
+def _deleted_page(request: Request, db: Session, user, query: VoterSearch, error=None, status_code=200):
+    rows, total = list_deleted(db, query)
+    done = request.query_params.get("done", "")
+    notice = DELETED_NOTICES.get(done, "")
+    if done == "hard_bulk":
+        notice = f"Permanently removed {request.query_params.get('n', '0')} voter(s)."
+    return render(
+        request,
+        "voters/deleted.html",
+        {
+            "user": user,
+            "voters": rows,
+            "total": total,
+            "query": query,
+            "error": error,
+            "notice": notice,
+        },
+        status_code=status_code,
+    )
+
+
+# Registered before /voters/{voter_id} so that "deleted" is never read as a VoterId.
+@router.get("/voters/deleted")
+def deleted_voters_page(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
+    if not can_review_deleted(user):
+        return _forbidden(request, user)
+    paging = {k: v for k, v in request.query_params.items() if k in {"page", "page_size"}}
+    try:
+        query = VoterSearch.model_validate(paging)
+    except ValidationError as exc:
+        return _deleted_page(request, db, user, VoterSearch(), error=_form_errors(exc)[0], status_code=422)
+    return _deleted_page(request, db, user, query)
+
+
+@router.post("/voters/deleted/bulk-hard-delete")
+async def bulk_hard_delete_submit(
+    request: Request, db: Session = Depends(get_db), user=Depends(web_user)
+):
+    """Step 1 shows the count and warns; only a second post with confirm=yes removes data."""
+    if not can_hard_delete(user):
+        return _forbidden(request, user)
+    form = await request.form()
+    try:
+        ids = normalize_ids(_selected_ids(form))
+    except ServiceError:
+        return RedirectResponse("/voters/deleted?done=none", status_code=303)
+    if form.get("confirm") != "yes":
+        return render(
+            request,
+            "voters/bulk_hard_delete.html",
+            {"user": user, "voter_ids": ids, "error": None},
+        )
+    try:
+        count = bulk_hard_delete_voters(db, ids, source_for(user), confirm=True)
+    except ServiceError as exc:
+        return render(
+            request,
+            "voters/bulk_hard_delete.html",
+            {"user": user, "voter_ids": ids, "error": exc.message},
+            status_code=exc.status_code,
+        )
+    return RedirectResponse(f"/voters/deleted?done=hard_bulk&n={count}", status_code=303)
+
+
+@router.get("/voters/{voter_id}/hard-delete")
+def hard_delete_confirm(
+    voter_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(web_user),
+):
+    if not can_hard_delete(user):
+        return _forbidden(request, user)
+    try:
+        voter = load_any(db, voter_id)
+    except ServiceError:
+        return render(request, "404.html", {"user": user}, status_code=404)
+    try:
+        check_hard_deletable(voter)
+    except ServiceError as exc:
+        return render(
+            request,
+            "voters/hard_delete.html",
+            {"user": user, "voter": voter, "error": exc.message},
+            status_code=exc.status_code,
+        )
+    return render(request, "voters/hard_delete.html", {"user": user, "voter": voter, "error": None})
+
+
+@router.post("/voters/{voter_id}/hard-delete")
+async def hard_delete_submit(
+    voter_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(web_user),
+):
+    if not can_hard_delete(user):
+        return _forbidden(request, user)
+    form = await request.form()
+    if form.get("confirm") != "yes":
+        return RedirectResponse(f"/voters/{voter_id}/hard-delete", status_code=303)
+    try:
+        hard_delete(db, voter_id, source_for(user))
+    except ServiceError:
+        return RedirectResponse("/voters/deleted", status_code=303)
+    return RedirectResponse("/voters/deleted?done=hard", status_code=303)
+
+
+@router.post("/voters/{voter_id}/restore")
+async def restore_submit(
+    voter_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(web_user),
+):
+    if not can_restore(user):
+        return _forbidden(request, user)
+    try:
+        restore(db, voter_id, source_for(user))
+    except ServiceError as exc:
+        return _deleted_page(
+            request, db, user, VoterSearch(), error=exc.message, status_code=exc.status_code
+        )
+    return RedirectResponse("/voters/deleted?done=restored", status_code=303)
 
 
 # Registered after /voters/new so that "new" is never read as a VoterId.
@@ -473,8 +624,8 @@ async def edit_voter_submit(
             status_code=400,
         )
     raw["voter_id"] = voter.voter_id
-    privileged = is_privileged(user)
-    if not privileged:
+    all_fields = can_edit_all_fields(user)
+    if not all_fields:
         # Locked fields are rendered read-only (selects are disabled and not posted), so a
         # missing one means "unchanged". A posted value that differs is refused by the service.
         stored = _stored_values(voter)
@@ -491,7 +642,7 @@ async def edit_voter_submit(
             status_code=400,
         )
     try:
-        replace_voter(db, voter_id, data, source_for(user), privileged=privileged)
+        replace_voter(db, voter_id, data, source_for(user), all_fields=all_fields)
     except ServiceError as exc:
         return render(
             request,
@@ -514,7 +665,7 @@ def delete_confirm(
     db: Session = Depends(get_db),
     user=Depends(web_user),
 ):
-    if user.role != "admin":
+    if not can_soft_delete(user):
         return _forbidden(request, user)
     try:
         voter = get_active(db, voter_id)
@@ -530,7 +681,7 @@ def delete_submit(
     db: Session = Depends(get_db),
     user=Depends(web_user),
 ):
-    if user.role != "admin":
+    if not can_soft_delete(user):
         return _forbidden(request, user)
     try:
         soft_delete(db, voter_id, source_for(user))
@@ -543,6 +694,13 @@ def _selected_ids(form) -> list[str]:
     return [str(v) for v in form.getlist("voter_ids")]
 
 
+def _editable_fields_for(user) -> tuple[str, ...]:
+    """Bulk-edit choices for this role: every field for admin, USER_EDITABLE_FIELDS otherwise."""
+    if can_edit_all_fields(user):
+        return BULK_EDIT_FIELDS
+    return tuple(f for f in BULK_EDIT_FIELDS if f in USER_EDITABLE_FIELDS)
+
+
 def _bulk_edit_page(request: Request, user, ids, values, errors, status_code=200):
     return render(
         request,
@@ -550,7 +708,7 @@ def _bulk_edit_page(request: Request, user, ids, values, errors, status_code=200
         {
             "user": user,
             "voter_ids": ids,
-            "fields": [(f, LABEL_BY_FIELD[f]) for f in BULK_EDIT_FIELDS],
+            "fields": [(f, LABEL_BY_FIELD[f]) for f in _editable_fields_for(user)],
             "values": values,
             "errors": errors,
         },
@@ -560,9 +718,10 @@ def _bulk_edit_page(request: Request, user, ids, values, errors, status_code=200
 
 @router.post("/voters/bulk-edit")
 async def bulk_edit_submit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    """Step 1 (no `apply`): show the field chooser. Step 2 (`apply=1`): validate and save."""
-    if user.role != "admin":
-        return _forbidden(request, user)
+    """Step 1 (no `apply`): show the field chooser. Step 2 (`apply=1`): validate and save.
+
+    Every role may use this; the service refuses fields the role may not change (403).
+    """
     form = await request.form()
     ids = _selected_ids(form)
     try:
@@ -571,9 +730,13 @@ async def bulk_edit_submit(request: Request, db: Session = Depends(get_db), user
         return RedirectResponse("/voters?bulk=none", status_code=303)
     if form.get("apply") != "1":
         return _bulk_edit_page(request, user, ids, {}, [])
-    chosen = {f: str(form.get(f"value_{f}") or "") for f in BULK_EDIT_FIELDS if form.get(f"use_{f}")}
+    chosen = {
+        f: str(form.get(f"value_{f}") or "") for f in BULK_EDIT_FIELDS if form.get(f"use_{f}")
+    }
     try:
-        voters = bulk_edit_voters(db, ids, chosen, source_for(user))
+        voters = bulk_edit_voters(
+            db, ids, chosen, source_for(user), all_fields=can_edit_all_fields(user)
+        )
     except ServiceError as exc:
         return _bulk_edit_page(request, user, ids, chosen, [exc.message], exc.status_code)
     return RedirectResponse(f"/voters?bulk=edited&n={len(voters)}", status_code=303)
@@ -581,8 +744,8 @@ async def bulk_edit_submit(request: Request, db: Session = Depends(get_db), user
 
 @router.post("/voters/bulk-delete")
 async def bulk_delete_submit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    """Step 1 shows the count and asks; only a second post with confirm=yes deletes."""
-    if user.role != "admin":
+    """Step 1 shows the count and asks; only a second post with confirm=yes soft deletes."""
+    if not can_soft_delete(user):
         return _forbidden(request, user)
     form = await request.form()
     try:
@@ -608,7 +771,7 @@ def _register_coming_soon_pages() -> None:
     for path, item in COMING_SOON_PAGES.items():
 
         def page(request: Request, user=Depends(web_user), item=item):
-            if item.audience == ADMIN and user.role != "admin":
+            if not can_see(user, item):
                 return _forbidden(request, user)
             return render(request, "coming_soon.html", {"user": user, "page_title": item.label})
 
@@ -630,7 +793,7 @@ def master_data_page(
     db: Session = Depends(get_db),
     user=Depends(web_user),
 ):
-    if user.role != "admin":
+    if not is_admin(user):
         return _forbidden(request, user)
     if tab not in ENTITIES:
         tab = DEFAULT_MASTER_TAB
@@ -678,7 +841,7 @@ def _master_selection(form) -> tuple[str, list]:
 @router.post("/master-data/bulk-edit")
 async def master_bulk_edit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
     """Step 1 asks for the new value; `apply=1` replaces it on the matching voters."""
-    if user.role != "admin":
+    if not is_admin(user):
         return _forbidden(request, user)
     form = await request.form()
     tab, items = _master_selection(form)
@@ -711,7 +874,7 @@ async def master_bulk_edit(request: Request, db: Session = Depends(get_db), user
 @router.post("/master-data/bulk-delete")
 async def master_bulk_delete(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
     """Refused with a count while any active voter still uses a selected value."""
-    if user.role != "admin":
+    if not is_admin(user):
         return _forbidden(request, user)
     form = await request.form()
     tab, items = _master_selection(form)
@@ -726,14 +889,14 @@ async def master_bulk_delete(request: Request, db: Session = Depends(get_db), us
 
 @router.get("/import")
 def import_form(request: Request, user=Depends(web_user)):
-    if user.role != "admin":
+    if not is_admin(user):
         return _forbidden(request, user)
     return render(request, "import.html", {"user": user, "report": None, "error": None})
 
 
 @router.post("/import")
 async def import_submit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    if user.role != "admin":
+    if not is_admin(user):
         return _forbidden(request, user)
     form = await request.form()
     upload = form.get("file")
@@ -767,7 +930,7 @@ async def import_submit(request: Request, db: Session = Depends(get_db), user=De
 
 @router.get("/sample.csv")
 def sample_csv(request: Request, user=Depends(web_user)):
-    if user.role != "admin":
+    if not is_admin(user):
         return _forbidden(request, user)
     path = ROOT / "sample" / "voters_sample.csv"
     return FileResponse(path, media_type="text/csv; charset=utf-8", filename="voters_sample.csv")
@@ -775,7 +938,7 @@ def sample_csv(request: Request, user=Depends(web_user)):
 
 @router.get("/sample.xlsx")
 def sample_xlsx(request: Request, user=Depends(web_user)):
-    if user.role != "admin":
+    if not is_admin(user):
         return _forbidden(request, user)
     return Response(
         content=sample_xlsx_bytes(ROOT / "sample" / "voters_sample.csv"),
@@ -789,10 +952,6 @@ SAVED_MESSAGES = {
     "reset": "Temporary password set. The user must change it at next sign-in.",
     "deleted": "User deleted.",
 }
-
-
-def _is_owner(user) -> bool:
-    return user.role == "admin" and user.is_owner
 
 
 def _users_page(
@@ -820,14 +979,14 @@ def _users_page(
 
 @router.get("/users")
 def users_page(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    if not _is_owner(user):
+    if not can_manage_accounts(user):
         return _forbidden(request, user)
     return _users_page(request, db, user, saved=request.query_params.get("saved", ""))
 
 
 @router.post("/users")
 async def users_submit(request: Request, db: Session = Depends(get_db), user=Depends(web_user)):
-    if not _is_owner(user):
+    if not can_manage_accounts(user):
         return _forbidden(request, user)
     form = await request.form()
     values = {
@@ -851,7 +1010,7 @@ async def users_submit(request: Request, db: Session = Depends(get_db), user=Dep
 async def users_reset_password(
     user_id: str, request: Request, db: Session = Depends(get_db), user=Depends(web_user)
 ):
-    if not _is_owner(user):
+    if not can_manage_accounts(user):
         return _forbidden(request, user)
     form = await request.form()
     try:
@@ -876,7 +1035,7 @@ async def users_reset_password(
 async def users_delete(
     user_id: str, request: Request, db: Session = Depends(get_db), user=Depends(web_user)
 ):
-    if not _is_owner(user):
+    if not can_manage_accounts(user):
         return _forbidden(request, user)
     form = await request.form()
     if form.get("confirm") != "yes":
