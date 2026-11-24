@@ -26,10 +26,14 @@ object FieldKey {
     const val CONSTITUENCY = "constituency"
 
     /**
-     * The only fields the regular "user" role may change on an existing voter (same list as the
-     * server's USER_EDITABLE_FIELDS). Owner/admin may change every field except [VOTER_ID].
+     * The only fields the "user" and "manager" roles may change on an existing voter. Same 14-field
+     * list as the server's USER_EDITABLE_FIELDS (app/constants.py). Admin and owner may change every
+     * field except [VOTER_ID]. Caste, FirstName, LastName, Gender, Mandal, Constituency stay locked.
      */
-    val USER_EDITABLE: Set<String> = setOf(PARTY, CASTE, MOBILE, STREET, HOUSE_NO)
+    val USER_EDITABLE: Set<String> = setOf(
+        BOOTH, BOOTH_S_NO, WARD, WARD_S_NO, RELATIVE_NAME, HOUSE_NO, AGE, STREET, MOBILE,
+        VILLAGE, PANCHAYATH, CURRENT_CITY, IS_LOCAL, PARTY,
+    )
 }
 
 /** Editable voter fields as the operator typed them. Immutable; every change returns a copy. */

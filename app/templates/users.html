@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Users</h1>
-    <p class="lede">Admins manage accounts. Roles: user (edits allowed fields, soft deletes), manager (also reviews, restores and permanently deletes soft-deleted voters), admin (every field and all admin tools). Only the owner can change the owner account. Passwords are stored as hashes. New and reset users must change their password at first sign-in.</p>
+    <p class="lede">Admins manage accounts. Roles: user (edits allowed fields, soft deletes), manager (also reviews, restores and permanently deletes soft-deleted voters), admin (every field and all admin tools). Only the owner can change the owner account, and only the owner can create, reset, delete or change the role of an admin account. Passwords are stored as hashes. New and reset users must change their password at first sign-in.</p>
   </div>
 </div>
 {% if saved_message %}<p class="banner ok" role="status">{{ saved_message }}</p>{% endif %}
@@ -30,8 +30,9 @@
     <select id="role" name="role">
       <option value="user" {% if values.role not in ["manager", "admin"] %}selected{% endif %}>user</option>
       <option value="manager" {% if values.role == "manager" %}selected{% endif %}>manager</option>
-      <option value="admin" {% if values.role == "admin" %}selected{% endif %}>admin</option>
+      {% if perms.owner %}<option value="admin" {% if values.role == "admin" %}selected{% endif %}>admin</option>{% endif %}
     </select>
+    {% if not perms.owner %}<p class="hint">Only the owner can create an admin account.</p>{% endif %}
   </div>
   <div class="full"><button type="submit">Create user</button></div>
 </form>
@@ -44,7 +45,7 @@
       <td>{{ account.role }}</td>
       <td>{{ "yes" if account.is_active else "no" }}</td>
       <td>
-        {% if account.id != user.id and (not account.is_owner or perms.owner) %}
+        {% if account.id != user.id and (perms.owner or (not account.is_owner and account.role != "admin")) %}
         <form method="post" action="/users/{{ account.id }}/reset-password" class="inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <label class="sr-only" for="reset-{{ account.id }}">New temporary password for {{ account.username }}</label>

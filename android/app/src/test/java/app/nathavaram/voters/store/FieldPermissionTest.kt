@@ -61,57 +61,59 @@ class FieldPermissionTest {
     }
 
     @Test
-    fun `user can change party caste mobile house no and street`() = runBlocking {
+    fun `user can change the fourteen product fields`() = runBlocking {
         val id = createdByAdmin()
 
         val result = repo(canEditAll = false).save(
             id,
             full().copy(
-                party = "BJP", caste = "SampleGroupZ", mobile = "9000000077",
-                houseNo = "99-Z", street = "New Street 5",
+                party = "BJP", mobile = "9000000077", houseNo = "99-Z", street = "New Street 5",
+                village = "Othervillage", currentCity = "Elsewhere", age = "50", isLocal = "Non-Local",
             ),
         )
 
         assertTrue(result is SaveResult.Saved)
         val stored = db.voterDao().get(id)!!
         assertEquals("BJP", stored.party)
-        assertEquals("SampleGroupZ", stored.caste)
         assertEquals("9000000077", stored.mobile)
         assertEquals("99-Z", stored.houseNo)
         assertEquals("New Street 5", stored.street)
+        assertEquals("Othervillage", stored.village)
+        assertEquals("Elsewhere", stored.currentCity)
+        assertEquals(50, stored.age)
+        assertFalse(stored.isLocal)
         assertTrue(stored.dirty)
     }
 
     @Test
-    fun `the editable fields are exactly party caste mobile house no and street`() {
-        assertEquals(setOf("party", "caste", "mobile", "house_no", "street"), FieldKey.USER_EDITABLE)
+    fun `the editable fields are exactly the fourteen product fields`() {
+        assertEquals(
+            setOf(
+                "booth", "ward", "booth_s_no", "ward_s_no", "relative_name", "house_no", "age", "street",
+                "mobile", "village", "panchayath", "current_city", "is_local", "party",
+            ),
+            FieldKey.USER_EDITABLE,
+        )
     }
 
     @Test
-    fun `user edit never changes a restricted field or the voter id`() = runBlocking {
+    fun `user edit never changes a locked field or the voter id`() = runBlocking {
         val id = createdByAdmin()
         val tampered = full().copy(
-            voterId = "ZZZ9999999", firstName = "Hacked", lastName = "Changed", booth = "99", ward = "9",
-            village = "Othervillage", panchayath = "Otherpanchayath", mandal = "Othermandal",
-            isLocal = "Non-Local", age = "50", currentCity = "Elsewhere", caste = "SampleGroupZ",
+            voterId = "ZZZ9999999", firstName = "Hacked", lastName = "Changed", mandal = "Othermandal",
+            constituency = "Otherconstituency", caste = "SampleGroupZ",
         )
 
         repo(canEditAll = false).save(id, tampered)
 
         val stored = db.voterDao().get(id)!!
-        assertEquals("SampleGroupZ", stored.caste) // the allowed change still goes through
         assertEquals("ZZZ0000001", stored.voterId)
         assertNull(db.voterDao().get("ZZZ9999999"))
         assertEquals("Testperson", stored.firstName)
         assertEquals("One", stored.lastName)
-        assertEquals("12A", stored.booth)
-        assertEquals("3", stored.ward)
-        assertEquals("Samplevillage", stored.village)
-        assertEquals("Samplepanchayath", stored.panchayath)
+        assertEquals("SampleGroupA", stored.caste)
         assertEquals("Samplemandal", stored.mandal)
-        assertTrue(stored.isLocal)
-        assertNull(stored.age)
-        assertNull(stored.currentCity)
+        assertFalse("Otherconstituency" == stored.constituency)
     }
 
     @Test
@@ -119,7 +121,7 @@ class FieldPermissionTest {
         val id = createdByAdmin()
         val before = SyncMerge.toPushChange(db.voterDao().get(id)!!)
 
-        repo(canEditAll = false).save(id, full().copy(firstName = "Hacked", ward = "9", party = "INC"))
+        repo(canEditAll = false).save(id, full().copy(firstName = "Hacked", caste = "SampleGroupZ", party = "INC"))
 
         val push = SyncMerge.toPushChange(db.voterDao().get(id)!!)
         assertEquals(before.copy(updatedAt = push.updatedAt, party = "INC"), push)

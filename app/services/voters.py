@@ -13,7 +13,7 @@ from app.constants import DATA_FIELDS, EXPORT_ROW_LIMIT, LABEL_BY_FIELD, USER_ED
 from app.errors import ServiceError
 from app.models import User, Voter
 from app.permissions import can_restore
-from app.schemas import VoterPatch, VoterPublic, VoterSearch, VoterWrite
+from app.schemas import DeletedVoterPublic, VoterPatch, VoterPublic, VoterSearch, VoterWrite
 from app.services.revision import allocate_revision
 from app.validation import dump_dt
 
@@ -32,6 +32,14 @@ SOFT_DELETED_VOTER_ID_MESSAGE = (
 HARD_DELETE_NEEDS_SOFT_DELETE_MESSAGE = (
     "Soft delete the voter first. Only deleted voters can be permanently deleted."
 )
+UNRECOVERABLE_VOTER_ID_MESSAGE = (
+    "VoterId belongs to a deleted record whose details were removed before soft delete kept "
+    "them, so it cannot be restored or reused. A manager or admin must permanently delete it first."
+)
+UNRECOVERABLE_RESTORE_MESSAGE = (
+    "This voter's details were removed before soft delete kept them, so it cannot be restored. "
+    "It can only be permanently deleted."
+)
 
 
 def _now() -> str:
@@ -49,6 +57,25 @@ def _like(value: str) -> str:
 
 def _contains(column, value: str):
     return column.ilike(_like(value), escape="\\")
+
+
+def is_unrecoverable_soft_delete(voter: Voter) -> bool:
+    """True for a soft-deleted row whose personal fields were removed before PR #19.
+
+    Those rows were tombstoned by strip_to_tombstone: first_name is "", is_local is False, and
+    every other data field is None. Post-PR-19 soft deletes keep their fields, so they never match.
+    Hard-deleted rows are excluded: hard_deleted_at already makes them unrestorable.
+    Derived from stored values only; no column is written or backfilled.
+    """
+    if voter.deleted_at is None or voter.hard_deleted_at is not None:
+        return False
+    if voter.first_name != "" or voter.is_local is not False:
+        return False
+    return all(
+        getattr(voter, field) is None
+        for field in DATA_FIELDS
+        if field not in {"voter_id", "first_name", "is_local"}
+    )
 
 
 def normalize_voter_id(raw: str) -> str:
@@ -101,6 +128,11 @@ def voter_to_public(voter: Voter) -> VoterPublic:
     return VoterPublic.model_validate(voter)
 
 
+def deleted_voter_to_public(voter: Voter) -> DeletedVoterPublic:
+    public = voter_to_public(voter).model_dump()
+    return DeletedVoterPublic(**public, details_recoverable=not is_unrecoverable_soft_delete(voter))
+
+
 def apply_write(voter: Voter, data: VoterWrite) -> None:
     for field in DATA_FIELDS:
         setattr(voter, field, getattr(data, field))
@@ -119,6 +151,8 @@ def create_voter(db: Session, data: VoterWrite, source_id: str, user: User) -> V
     existing = db.get(Voter, data.voter_id)
     if existing is not None and existing.deleted_at is None:
         raise duplicate_voter_id_error(data.voter_id)
+    if existing is not None and is_unrecoverable_soft_delete(existing):
+        raise ServiceError(UNRECOVERABLE_VOTER_ID_MESSAGE, 409, "voter_id")
     if existing is not None and existing.hard_deleted_at is None and not can_restore(user):
         raise ServiceError(SOFT_DELETED_VOTER_ID_MESSAGE, 409, "voter_id")
     now = _now()
@@ -265,6 +299,8 @@ def check_restorable(voter: Voter) -> None:
         raise ServiceError(HARD_DELETED_MESSAGE, 409, "voter_id")
     if voter.deleted_at is None:
         raise ServiceError("Voter is not deleted", 409, "voter_id")
+    if is_unrecoverable_soft_delete(voter):
+        raise ServiceError(UNRECOVERABLE_RESTORE_MESSAGE, 409, "voter_id")
 
 
 def restore(db: Session, voter_id: str, source_id: str) -> Voter:

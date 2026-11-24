@@ -35,10 +35,10 @@ def post_user(
     body: UserCreate,
     request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    actor: User = Depends(require_admin),
 ) -> User:
     try:
-        return create_user(db, body, request.app.state.settings)
+        return create_user(db, body, request.app.state.settings, actor)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

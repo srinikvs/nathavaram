@@ -27,6 +27,7 @@ from app.schemas import (
     BulkVoterDelete,
     BulkVoterEdit,
     BulkVoterHardDelete,
+    DeletedVoterPage,
     VoterPage,
     VoterPatch,
     VoterPublic,
@@ -50,6 +51,7 @@ from app.services.voters import (
     search_voters,
     soft_delete,
     update_voter,
+    deleted_voter_to_public,
     voter_to_public,
 )
 
@@ -112,17 +114,17 @@ def post_voter(
     return voter_to_public(voter)
 
 
-@router.get("/deleted", response_model=VoterPage)
+@router.get("/deleted", response_model=DeletedVoterPage)
 def list_deleted_voters(
     request: Request,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager),
-) -> VoterPage:
+) -> DeletedVoterPage:
     """Soft-deleted voters that are not hard-deleted yet. Manager and admin only."""
     query = _page_only(request)
     rows, total = list_deleted(db, query)
-    return VoterPage(
-        items=[voter_to_public(row) for row in rows],
+    return DeletedVoterPage(
+        items=[deleted_voter_to_public(row) for row in rows],
         total=total,
         page=query.page,
         page_size=query.page_size,

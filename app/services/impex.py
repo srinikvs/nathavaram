@@ -28,6 +28,7 @@ from app.constants import (
 from app.models import Voter
 from app.schemas import ImportErrorItem, ImportReport, VoterWrite
 from app.services.revision import allocate_revision
+from app.services.voters import is_unrecoverable_soft_delete
 from app.validation import csv_safe, csv_unsafe, dump_dt, local_label
 from pydantic import ValidationError
 
@@ -276,6 +277,7 @@ def _import_table(
             select(Voter).where(Voter.voter_id.in_([item.voter_id for _, item in accepted]))
         ).all()
         active = {row.voter_id for row in stored if row.deleted_at is None}
+        unrecoverable = {row.voter_id for row in stored if is_unrecoverable_soft_delete(row)}
         tombstones = {row.voter_id: row for row in stored if row.deleted_at is not None}
         fresh: list[tuple[int, VoterWrite]] = []
         for row_number, item in accepted:
@@ -285,6 +287,18 @@ def _import_table(
                         row=row_number,
                         field="VoterId",
                         message=f"VoterId {item.voter_id} already exists",
+                    )
+                )
+                continue
+            if item.voter_id in unrecoverable:
+                errors.append(
+                    ImportErrorItem(
+                        row=row_number,
+                        field="VoterId",
+                        message=(
+                            f"VoterId {item.voter_id} belongs to a deleted record whose details were "
+                            "removed and cannot be restored; permanently delete it first"
+                        ),
                     )
                 )
                 continue

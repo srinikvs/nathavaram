@@ -9,8 +9,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
+from app.constants import ROLE_ADMIN
 from app.errors import ServiceError
 from app.models import User
+from app.permissions import is_owner
 from app.schemas import UserCreate, UserUpdate
 from app.security import dummy_verify, hash_password, verify_password
 from app.validation import dump_dt
@@ -18,13 +20,27 @@ from app.validation import dump_dt
 
 MIN_PASSWORD_LENGTH = 10
 OWNER_PROTECTED_MESSAGE = "Only the owner can change the owner account"
+ADMIN_ACCOUNT_MESSAGE = "Only the owner can change admin accounts"
+ADMIN_ROLE_MESSAGE = "Only the owner can create or promote admin accounts"
 audit_logger = logging.getLogger("nathavaram.audit")
 
 
 def ensure_may_change_account(actor: User, target: User) -> None:
-    """The owner account is changed by the owner only. Other admins may manage the rest."""
-    if target.is_owner and not actor.is_owner:
+    """Who may reset, deactivate, delete or change the role of `target`.
+
+    The owner account and every admin account are changed by the owner only. Other admins
+    may manage user and manager accounts.
+    """
+    if target.is_owner and not is_owner(actor):
         raise ServiceError(OWNER_PROTECTED_MESSAGE, 403)
+    if target.role == ROLE_ADMIN and not is_owner(actor):
+        raise ServiceError(ADMIN_ACCOUNT_MESSAGE, 403)
+
+
+def ensure_may_assign_role(actor: User, role: str) -> None:
+    """Only the owner may create an admin account or promote someone to admin."""
+    if role == ROLE_ADMIN and not is_owner(actor):
+        raise ServiceError(ADMIN_ROLE_MESSAGE, 403)
 
 
 def authenticate(db: Session, username: str, password: str, settings: Settings) -> User | None:
@@ -138,7 +154,8 @@ def delete_user(db: Session, actor: User, user_id: str) -> User:
     return target
 
 
-def create_user(db: Session, data: UserCreate, settings: Settings) -> User:
+def create_user(db: Session, data: UserCreate, settings: Settings, actor: User) -> User:
+    ensure_may_assign_role(actor, data.role)
     _require_password_length(data.password)
     existing = db.scalar(select(User).where(User.username == data.username))
     if existing is not None:
@@ -166,9 +183,10 @@ def update_user(db: Session, user_id: str, data: UserUpdate, settings: Settings,
         raise ServiceError("User not found", 404)
     ensure_may_change_account(actor, user)
     changes = data.model_dump(exclude_unset=True)
-    if user.is_owner and changes.get("role") not in (None, "admin"):
+    if user.is_owner and changes.get("role") not in (None, ROLE_ADMIN):
         raise ServiceError("The owner account must stay admin", 400)
-    if "role" in changes and changes["role"] is not None:
+    if changes.get("role") is not None:
+        ensure_may_assign_role(actor, changes["role"])
         user.role = changes["role"]
     if "is_active" in changes and changes["is_active"] is not None:
         if user.is_active and not changes["is_active"]:
