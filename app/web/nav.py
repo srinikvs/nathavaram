@@ -53,7 +53,7 @@ NAV_SECTIONS: tuple[NavSection, ...] = (
             _soon("Voice Calls", "/campaign/voice-calls"),
             _soon("Projection", "/campaign/projection"),
             _soon("Activities", "/campaign/activities"),
-            _soon("Public Issues", "/campaign/public-issues"),
+            NavItem("Public Issues", "/issues"),
         ),
     ),
     NavSection(

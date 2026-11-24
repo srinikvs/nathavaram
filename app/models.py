@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import CheckConstraint, Integer, String, Text, false, text, true
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text, false, text, true
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from app.issue_rules import ISSUE_STATUSES, NOTE_KIND, SYSTEM_KIND
 
 
 class Base(DeclarativeBase):
@@ -98,3 +100,82 @@ class Voter(Base):
     # Set only by hard delete. A row with hard_deleted_at can never be restored.
     hard_deleted_at: Mapped[str | None] = mapped_column(String(32))
     source_id: Mapped[str | None] = mapped_column(String(64))
+
+
+_STATUS_SQL = ", ".join(f"'{status}'" for status in ISSUE_STATUSES)
+
+
+class PublicIssue(Base):
+    """One public issue. voter_id is a snapshot: it is set only when it matched an active voter.
+
+    Name and mobile are copied at creation and never follow later voter edits.
+    """
+
+    __tablename__ = "public_issues"
+    __table_args__ = (
+        CheckConstraint(f"status IN ({_STATUS_SQL})", name="ck_public_issues_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    voter_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    mobile: Mapped[str] = mapped_column(String(20), nullable=False)
+    subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    issue: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class PublicIssueStatusEvent(Base):
+    """Append-only status history. from_status is NULL only for the first (creation) row."""
+
+    __tablename__ = "public_issue_status_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("public_issues.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    from_status: Mapped[str | None] = mapped_column(String(16))
+    to_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    changed_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    changed_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class PublicIssuePhoto(Base):
+    """Metadata for one stored photo. The file lives outside static/ under the photo directory."""
+
+    __tablename__ = "public_issue_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("public_issues.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    storage_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    uploaded_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class PublicIssueNote(Base):
+    """Notes thread. kind 'note' is written by a user and is never edited; 'system' records a
+    status change. Only an admin may delete a 'note' row."""
+
+    __tablename__ = "public_issue_notes"
+    __table_args__ = (
+        CheckConstraint(
+            f"kind IN ('{NOTE_KIND}', '{SYSTEM_KIND}')", name="ck_public_issue_notes_kind"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("public_issues.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    author: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)

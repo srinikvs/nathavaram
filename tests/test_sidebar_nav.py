@@ -19,7 +19,6 @@ SOON_PATHS = [
     "/campaign/voice-calls",
     "/campaign/projection",
     "/campaign/activities",
-    "/campaign/public-issues",
     "/survey-report",
 ]
 ADMIN_ONLY_PATHS = ["/master-data", "/survey-report", "/import"]
@@ -78,7 +77,7 @@ def test_owner_sees_all_sections_in_order_with_every_link(ctx):
     sidebar = _sidebar(ctx.client.get("/voters").text)
 
     assert _titles(sidebar) == SECTION_TITLES
-    expected = {"/voters", "/reports", "/master-data", "/import", "/users", "/change-password"}
+    expected = {"/voters", "/reports", "/issues", "/master-data", "/import", "/users", "/change-password"}
     assert expected | set(SOON_PATHS) <= _hrefs(sidebar)
     assert 'action="/logout"' in sidebar
     assert "Log out" in sidebar

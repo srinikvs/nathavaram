@@ -59,6 +59,9 @@ def normalize_database_url(url: str) -> str:
 def load_settings() -> Settings:
     settings = Settings()
     settings.database_url = normalize_database_url(settings.database_url)
+    photo_path = Path(settings.issue_photo_dir)
+    if not photo_path.is_absolute():
+        settings.issue_photo_dir = (ROOT / photo_path).resolve().as_posix()
     _validate(settings)
     return settings
 

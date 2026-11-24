@@ -319,3 +319,48 @@ abbr { text-decoration: none; color: var(--chili); }
   main { max-width: none; padding: 0; }
   .report-block { break-inside: avoid; }
 }
+
+/* Public Issues: maroon hero, status cards, wrapping text (Telugu-safe). */
+.issues-hero {
+  background: #6e1c1c; color: #fff; border-radius: 10px; padding: 16px; margin: 0 0 14px;
+}
+.issues-hero h1 { color: #fff; margin: 0; }
+.issues-hero .lede { color: #f6dede; margin: 4px 0 0; }
+.issues-hero-head { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
+.issue-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.issue-card {
+  display: grid; gap: 2px; padding: 10px; border-radius: 10px; background: #fff; color: var(--ink);
+  text-decoration: none; border: 3px solid transparent; min-width: 0;
+}
+.issue-card.is-active { border-color: #e0a526; }
+.issue-card-icon { font-size: 1.2rem; }
+.issue-card-count { font-size: 1.6rem; font-weight: 700; }
+.issue-card-label { font-size: 0.75rem; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.issues-card-head { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
+.issues-card-head h2 { margin: 0; }
+.issues-search { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.issues-search input { min-width: 0; flex: 1 1 180px; }
+.issue-text { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+.issues-register td { vertical-align: top; }
+.issues-register .issue-text { max-width: 28rem; }
+.issue-status-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.issue-status-form select { max-width: 100%; }
+.status-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--paper-2); border: 1px solid var(--line); }
+.issue-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; }
+.issue-facts dt { color: var(--muted); }
+.issue-facts dd { margin: 0; min-width: 0; }
+.issue-photos { display: flex; flex-wrap: wrap; gap: 10px; }
+.issue-photos figure { margin: 0; display: grid; gap: 4px; justify-items: start; }
+.issue-photos img { width: 96px; height: 96px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.issue-photo-form { display: grid; gap: 6px; }
+.notes-thread { padding-left: 1.2em; }
+.note { margin-bottom: 10px; }
+.note-system { color: var(--muted); }
+.issue-history { padding-left: 1.2em; }
+.wide { grid-column: 1 / -1; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .issue-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

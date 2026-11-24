@@ -18,9 +18,10 @@ from app import database
 from app.database import dispose_db, get_db, init_db
 from app.deps import csrf_guard
 from app.migrate import run_migrations
-from app.routers import auth, master_data, reports, sync, users, voters
+from app.routers import auth, issues, master_data, reports, sync, users, voters
 from app.services.bootstrap import seed_admin
 from app.services.throttle import LoginThrottle
+from app.web.issue_routes import router as issue_web_router
 from app.web.routes import LoginRequired, PasswordChangeRequired
 from app.web.routes import router as web_router
 from app.web.templates import render
@@ -105,7 +106,9 @@ def create_app() -> FastAPI:
     app.include_router(reports.router)
     app.include_router(master_data.router)
     app.include_router(sync.router)
+    app.include_router(issues.router)
     app.include_router(web_router)
+    app.include_router(issue_web_router)
     app.mount("/static", StaticFiles(directory=str(ROOT / "app" / "static")), name="static")
     logger.info("Nathavaram voter list %s ready", __version__)
     return app
