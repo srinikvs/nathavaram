@@ -272,7 +272,7 @@ def test_sync_with_another_voter_id_creates_a_separate_record_for_any_role(ctx, 
     assert _get(ctx, voter["voter_id"]) == voter  # the original is untouched
 
 
-def test_sync_user_soft_delete_is_applied_and_keeps_every_field(ctx):
+def test_sync_user_soft_delete_is_applied_and_a_user_gets_a_stripped_tombstone(ctx):
     user = make_user(ctx)
     voter = _create(ctx)
 
@@ -281,10 +281,19 @@ def test_sync_user_soft_delete_is_applied_and_keeps_every_field(ctx):
     ][0]
 
     assert result["status"] == "applied", result
-    stored = result["server_record"]
-    assert stored["deleted_at"] is not None
+    tombstone = result["server_record"]
+    assert tombstone["deleted_at"] is not None
     for field in DATA_FIELDS:
-        assert stored[field] == voter[field], field  # the payload is no longer an empty tombstone
+        if field in {"voter_id", "first_name", "is_local"}:
+            continue
+        assert tombstone[field] is None, field  # a user never receives a deleted voter's personal fields
+
+    # The row itself keeps every field: a manager or admin pull still sees them.
+    pulled = ctx.client.get("/api/sync/pull?since=0", headers=ctx.auth).json()["changes"]
+    kept = next(row for row in pulled if row["voter_id"] == voter["voter_id"])
+    assert kept["deleted_at"] is not None
+    for field in DATA_FIELDS:
+        assert kept[field] == voter[field], field
 
 
 def test_sync_user_can_still_create_a_new_voter(ctx):

@@ -261,9 +261,9 @@ def test_regular_user_cannot_export_import_or_delete_but_can_search_and_edit(ctx
     assert found.status_code == 200
     assert found.json()["total"] == 1
     assert ctx.client.get(f"/api/voters/{created['voter_id']}", headers=user).status_code == 200
-    edited = ctx.client.patch(f"/api/voters/{created['voter_id']}", headers=user, json={"caste": "SampleGroupZ"})
+    edited = ctx.client.patch(f"/api/voters/{created['voter_id']}", headers=user, json={"party": "BJP"})
     assert edited.status_code == 200
-    assert edited.json()["caste"] == "SampleGroupZ"
+    assert edited.json()["party"] == "BJP"
 
     assert ctx.client.delete(f"/api/voters/{created['voter_id']}", headers=user).status_code == 200  # soft delete
     # A soft-deleted voter leaves search, so the active list is empty again.
