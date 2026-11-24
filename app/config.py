@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     bcrypt_rounds: int = 12
     cookie_name: str = "access_token"
     cookie_secure: bool = False
+    issue_photo_dir: str = "data/issue-photos"
 
 
 def normalize_database_url(url: str) -> str:
