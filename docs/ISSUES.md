@@ -48,6 +48,7 @@ Each change appends a history row and a notes system line, for example `Initiate
 ## Photos
 
 - Up to 5 per issue. The 6th upload is 409.
+- The Add issue form (`/issues/new`) takes optional photos too (up to 5, chosen with the Photos field, with previews before Save). Every photo is checked before the issue is saved: a bad or oversized photo, or more than 5, re-shows the form with the error and creates no issue. The photos are stored exactly as the issue-detail upload stores them.
 - Accepted: JPG, PNG, HEIC. HEIC needs `pillow-heif`; without it HEIC is refused with 415 and JPG/PNG still work.
 - Every upload is re-encoded as JPEG: the long edge is capped at 1600 px (smaller images are not enlarged), and EXIF, GPS and other metadata are dropped.
 - Where photos go, in order:

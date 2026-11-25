@@ -49,7 +49,9 @@ DONE_NOTICES = {
 }
 FORM_FIELDS = ("voter_id", "name", "mobile", "subject", "issue")
 PHOTO_FIELD = "photo"
+NEW_ISSUE_PHOTOS_FIELD = "photos"
 NO_PHOTO_MESSAGE = "Choose a photo to upload (JPG, PNG or HEIC)."
+TOO_MANY_PHOTOS_MESSAGE = "You can add up to {cap} photos to an issue."
 
 
 def _photo_dir(request: Request) -> Path:
@@ -127,9 +129,27 @@ def _form_page(request: Request, user, values: dict, errors: list[str], status_c
     return render(
         request,
         "issues/form.html",
-        {"user": user, "values": values, "errors": errors},
+        {
+            "user": user,
+            "values": values,
+            "errors": errors,
+            "max_photos": MAX_PHOTOS_PER_ISSUE,
+        },
         status_code=status_code,
     )
+
+
+async def _new_issue_photos(form) -> list[bytes]:
+    """Read the photos chosen on the add form. Empty file parts (no file picked) are ignored."""
+    uploads = [
+        item
+        for item in form.getlist(NEW_ISSUE_PHOTOS_FIELD)
+        if isinstance(item, UploadFile) and item.filename
+    ]
+    if len(uploads) > MAX_PHOTOS_PER_ISSUE:
+        raise ServiceError(TOO_MANY_PHOTOS_MESSAGE.format(cap=MAX_PHOTOS_PER_ISSUE), 422, "photos")
+    payloads = [await upload.read(issue_photos.MAX_UPLOAD_BYTES + 1) for upload in uploads]
+    return [payload for payload in payloads if payload]
 
 
 def _search_from_form(form) -> IssueSearch:
@@ -169,7 +189,13 @@ async def new_issue_submit(request: Request, db: Session = Depends(get_db), user
     values = {field: str(form.get(field) or "") for field in FORM_FIELDS}
     try:
         data = IssueCreate(**{field: value or None for field, value in values.items()})
+        photos = await _new_issue_photos(form)
+        # Check every photo before the issue exists, so a bad photo never leaves an orphan issue.
+        for payload in photos:
+            issue_photos.normalize_image(payload)
         issue = create_issue(db, data, user)
+        for payload in photos:
+            add_photo(db, issue.id, payload, user, _photo_dir(request))
     except ValidationError as exc:
         return _form_page(request, user, values, [_first_error(exc)], 422)
     except ServiceError as exc:

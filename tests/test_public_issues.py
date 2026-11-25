@@ -6,6 +6,7 @@ a temporary directory, never to the repository.
 
 from __future__ import annotations
 
+import re
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from app.issue_rules import check_transition, status_options
+from app.issue_rules import MAX_PHOTOS_PER_ISSUE, check_transition, status_options
 from app.errors import ServiceError
 from app.services.issue_photos import HEIC_SUPPORTED, photo_path
 from tests.conftest import csrf_from_page, make_user, voter_payload
@@ -786,3 +787,111 @@ def test_sidebar_links_public_issues_to_the_live_page(issues):
 
     assert 'href="/issues"' in html
     assert "/campaign/public-issues" not in html
+
+
+# --- 13. photos on the add form ------------------------------------------------------------
+
+
+def _add_form_post(env, files=None, **overrides):
+    """POST /issues/new as a signed-in clerk with CSRF. Returns the response (not followed)."""
+    _web_login(env.ctx, CLERK, CLERK_PW)
+    token = csrf_from_page(env.client.get("/issues/new").text)
+    fields = {
+        "csrf_token": token,
+        "voter_id": "",
+        "name": "Photo Person",
+        "mobile": "9000000061",
+        "subject": "Drain",
+        "issue": "Open drain overflows near the school",
+    }
+    fields.update(overrides)
+    return env.client.post("/issues/new", data=fields, files=files, follow_redirects=False)
+
+
+def _issue_total(env) -> int:
+    response = env.client.post("/api/issues/search", headers=env.admin, json={})
+    assert response.status_code == 200, response.text
+    return response.json()["total"]
+
+
+def test_add_form_has_multiple_photo_input_below_full_width_issue_field(issues):
+    _web_login(issues.ctx, CLERK, CLERK_PW)
+
+    page = issues.client.get("/issues/new").text
+
+    assert 'enctype="multipart/form-data"' in page
+    photos_input = re.search(r'<input[^>]*name="photos"[^>]*>', page)
+    assert photos_input and "multiple" in photos_input.group(0)
+    assert 'accept="image/jpeg,image/png,image/heic,image/heif"' in photos_input.group(0)
+    assert re.search(r'<div class="wide">\s*<label for="issue">Issue</label>', page)
+    assert page.index('name="issue"') < photos_input.start() < page.index("Save issue")
+
+
+def test_web_create_without_photos_still_creates_issue(issues):
+    response = _add_form_post(issues, files={"photos": ("", b"", "application/octet-stream")})
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/issues/")
+    assert _issue_total(issues) == 1
+    assert _files(issues.photo_dir) == []
+
+
+def test_web_create_with_photos_stores_them_under_issue_folder_and_shows_them(issues):
+    response = _add_form_post(
+        issues,
+        files=[
+            ("photos", ("first.jpg", _jpeg(), "image/jpeg")),
+            ("photos", ("second.png", _png(), "image/png")),
+        ],
+    )
+
+    assert response.status_code == 303
+    issue_id = int(response.headers["location"].split("?")[0].rsplit("/", 1)[1])
+    detail = issues.client.get(f"/api/issues/{issue_id}", headers=issues.admin).json()
+    assert len(detail["photos"]) == 2
+    stored = _files(issues.photo_dir)
+    assert len(stored) == 2
+    for path in stored:
+        assert path.parent == issues.photo_dir / str(issue_id)
+        assert path.suffix == ".jpg"
+    served = issues.client.get(detail["photos"][0]["url"], headers=issues.clerk)
+    assert served.status_code == 200
+    assert served.headers["content-type"] == "image/jpeg"
+    page = issues.client.get(f"/issues/{issue_id}", headers=issues.clerk).text
+    assert detail["photos"][0]["url"] in page
+
+
+def test_web_create_with_more_than_five_photos_is_refused_and_creates_nothing(issues):
+    files = [("photos", (f"p{i}.jpg", _jpeg(), "image/jpeg")) for i in range(MAX_PHOTOS_PER_ISSUE + 1)]
+
+    response = _add_form_post(issues, files=files)
+
+    assert response.status_code == 422
+    assert "5 photos" in response.text
+    assert _issue_total(issues) == 0
+    assert _files(issues.photo_dir) == []
+
+
+def test_web_create_with_text_file_is_refused_and_creates_nothing(issues):
+    response = _add_form_post(
+        issues, files=[("photos", ("note.txt", b"this is not an image", "text/plain"))]
+    )
+
+    assert response.status_code == 422
+    assert "Upload a JPG, PNG or HEIC photo" in response.text
+    assert _issue_total(issues) == 0
+    assert _files(issues.photo_dir) == []
+
+
+def test_web_create_with_one_bad_photo_among_good_ones_saves_nothing(issues):
+    response = _add_form_post(
+        issues,
+        files=[
+            ("photos", ("good.jpg", _jpeg(), "image/jpeg")),
+            ("photos", ("bad.txt", b"not an image", "text/plain")),
+        ],
+    )
+
+    assert response.status_code == 422
+    assert _issue_total(issues) == 0
+    assert _files(issues.photo_dir) == []
