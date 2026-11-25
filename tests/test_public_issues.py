@@ -19,6 +19,7 @@ from app.errors import ServiceError
 from app.services.issue_photos import HEIC_SUPPORTED, photo_path
 from tests.conftest import csrf_from_page, make_user, voter_payload
 
+STATIC = Path(__file__).resolve().parent.parent / "app" / "static"
 CLERK = "clerk.one"
 CLERK_PW = "clerk-pass-123"
 MANAGER = "mgr.one"
@@ -826,6 +827,23 @@ def test_add_form_has_multiple_photo_input_below_full_width_issue_field(issues):
     assert 'accept="image/jpeg,image/png,image/heic,image/heif"' in photos_input.group(0)
     assert re.search(r'<div class="wide">\s*<label for="issue">Issue</label>', page)
     assert page.index('name="issue"') < photos_input.start() < page.index("Save issue")
+
+
+def test_add_form_issue_textarea_is_half_height_and_full_width(issues):
+    _web_login(issues.ctx, CLERK, CLERK_PW)
+
+    page = issues.client.get("/issues/new").text
+    css = (STATIC / "styles.css").read_text(encoding="utf-8")
+    issue_textarea = re.search(r'<textarea id="issue"[^>]*>', page)
+
+    assert issue_textarea and 'rows="5"' in issue_textarea.group(0)
+    assert 'rows="10"' not in issue_textarea.group(0)
+    assert re.search(r'<div class="wide">\s*<label for="issue">Issue</label>', page)
+    assert re.search(r"input,\s*select,\s*textarea\s*\{[^}]*width:\s*100%", css)
+    issue_rule = re.search(r"\.issue-form textarea\s*\{([^}]*)\}", css)
+    assert issue_rule and "min-height: 6rem" in issue_rule.group(1)
+    assert "min-height: 12rem" not in css
+    assert "resize: vertical" in issue_rule.group(1)
 
 
 def test_web_create_without_photos_still_creates_issue(issues):
