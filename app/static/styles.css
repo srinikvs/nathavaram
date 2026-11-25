@@ -198,7 +198,7 @@ input, select, textarea {
   color: inherit;
 }
 /* The Issue field on the add form: full width (its wrapper is .wide) and tall enough to write in. */
-.issue-form textarea { min-height: 12rem; resize: vertical; }
+.issue-form textarea { min-height: 6rem; resize: vertical; }
 input:focus, select:focus, textarea:focus, button:focus, a:focus {
   outline: 3px solid #e0b15a;
   outline-offset: 1px;
