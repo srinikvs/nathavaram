@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from tests.conftest import csrf_from_page, make_user, voter_payload
 
 STATIC = Path(__file__).resolve().parent.parent / "app" / "static"
@@ -196,6 +198,69 @@ def test_soft_deleted_voter_details_and_edit_are_clean_404s(ctx):
         assert response.status_code == 404, path
         assert "not on the active list" in response.text
         assert "Traceback" not in response.text
+
+
+# --- Add issue button on details -------------------------------------------------------
+
+ADD_ISSUE_BUTTON = re.compile(
+    r'<a class="button ghost" href="/issues/new\?voter_id=ZZZ50000001">Add issue</a>'
+)
+
+
+@pytest.mark.parametrize(
+    ("username", "password", "role"),
+    [
+        (USER_NAME, USER_PASSWORD, "user"),
+        ("mgr.voter", "mgr-pass-123", "manager"),
+        ("admin", "admin-pass-123", "admin"),
+    ],
+)
+def test_every_signed_in_role_sees_add_issue_before_back_to_list(ctx, username, password, role):
+    _create(ctx)
+    if role != "admin":
+        make_user(ctx, username, password, role=role)
+    _web_login(ctx, username, password)
+
+    response = ctx.client.get(f"/voters/{VOTER_ID}")
+
+    assert response.status_code == 200, role
+    assert ADD_ISSUE_BUTTON.search(response.text), role
+    assert response.text.index("Add issue") < response.text.index("Back to list"), role
+
+
+def test_add_issue_button_appears_once_with_the_encoded_voter_id(ctx):
+    _create(ctx)
+    _web_login(ctx, "admin", "admin-pass-123")
+
+    html = ctx.client.get(f"/voters/{VOTER_ID}").text
+
+    assert html.count("Add issue") == 1
+    assert 'href="/issues/new?voter_id=ZZZ50000001"' in html
+
+
+def test_add_issue_button_is_absent_for_soft_deleted_and_missing_voters(ctx):
+    _create(ctx)
+    _web_login(ctx, "admin", "admin-pass-123")
+    assert ctx.client.delete(f"/api/voters/{VOTER_ID}", headers=ctx.auth).status_code == 200
+
+    removed = ctx.client.get(f"/voters/{VOTER_ID}")
+    missing = ctx.client.get("/voters/ZZZ99999999")
+
+    assert removed.status_code == 404
+    assert missing.status_code == 404
+    assert "Add issue" not in removed.text
+    assert "Add issue" not in missing.text
+
+
+def test_add_issue_button_is_not_on_the_deleted_voters_list(ctx):
+    _create(ctx)
+    _web_login(ctx, "admin", "admin-pass-123")
+    assert ctx.client.delete(f"/api/voters/{VOTER_ID}", headers=ctx.auth).status_code == 200
+
+    html = ctx.client.get("/voters/deleted").text
+
+    assert VOTER_ID in html
+    assert "Add issue" not in html
 
 
 def test_details_route_does_not_swallow_new_voter_or_search(ctx):

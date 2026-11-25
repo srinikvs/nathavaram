@@ -8,6 +8,7 @@
     <p class="lede" translate="no">VoterId {{ voter.voter_id }}</p>
   </div>
   <div class="actions">
+    <a class="button ghost" href="/issues/new?voter_id={{ voter.voter_id|urlencode }}">Add issue</a>
     <a class="button ghost" href="/voters" data-voter-list-return>Back to list</a>
     <a class="button" href="/voters/{{ voter.voter_id|urlencode }}/edit">Edit</a>
     {% if perms.soft_delete %}<a class="button danger" href="/voters/{{ voter.voter_id|urlencode }}/delete">Soft delete</a>{% endif %}

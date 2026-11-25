@@ -178,9 +178,14 @@ async def issues_search(request: Request, db: Session = Depends(get_db), user=De
     return _list_page(request, db, user, query)
 
 
+ISSUE_VOTER_ID_MAX_LENGTH = 32  # matches the VoterId field's maxlength in issues/form.html
+
+
 @router.get("/issues/new")
 def new_issue_form(request: Request, user=Depends(web_user)):
-    return _form_page(request, user, {}, [])
+    # Only VoterId may be prefilled from the URL; Name and Mobile come from the voter lookup.
+    voter_id = request.query_params.get("voter_id", "").strip()[:ISSUE_VOTER_ID_MAX_LENGTH]
+    return _form_page(request, user, {"voter_id": voter_id} if voter_id else {}, [])
 
 
 @router.post("/issues/new")
