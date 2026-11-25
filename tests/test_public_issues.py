@@ -846,6 +846,62 @@ def test_add_form_issue_textarea_is_half_height_and_full_width(issues):
     assert "resize: vertical" in issue_rule.group(1)
 
 
+def _voter_id_input(page: str) -> str:
+    match = re.search(r'<input id="voter_id"[^>]*>', page)
+    assert match, "VoterId input not rendered"
+    return match.group(0)
+
+
+def test_new_form_prefills_voter_id_from_the_query(issues):
+    _web_login(issues.ctx, CLERK, CLERK_PW)
+
+    page = issues.client.get("/issues/new?voter_id=ZZZ3000003").text
+
+    assert 'value="ZZZ3000003"' in _voter_id_input(page)
+
+
+def test_new_form_without_query_keeps_voter_id_empty(issues):
+    _web_login(issues.ctx, CLERK, CLERK_PW)
+
+    page = issues.client.get("/issues/new").text
+
+    assert 'value=""' in _voter_id_input(page)
+
+
+def test_new_form_ignores_name_and_mobile_in_the_query(issues):
+    _web_login(issues.ctx, CLERK, CLERK_PW)
+
+    page = issues.client.get(
+        "/issues/new?voter_id=ZZZ3000003&name=Typed+Name&mobile=9000000099&subject=Hi"
+    ).text
+
+    assert 'value="ZZZ3000003"' in _voter_id_input(page)
+    assert 'name="name" maxlength="128" value="" required' in page
+    assert 'name="mobile" maxlength="20" inputmode="tel" value="" required' in page
+    assert "Typed Name" not in page
+    assert "9000000099" not in page
+
+
+def test_new_form_truncates_prefilled_voter_id_to_the_field_limit(issues):
+    _web_login(issues.ctx, CLERK, CLERK_PW)
+
+    page = issues.client.get("/issues/new?voter_id=" + "Z" * 40).text
+
+    assert 'value="' + "Z" * 32 + '"' in _voter_id_input(page)
+    assert "Z" * 33 not in page
+
+
+def test_issues_js_runs_lookup_on_load_when_voter_id_is_prefilled():
+    script = (STATIC / "issues.js").read_text(encoding="utf-8")
+
+    assert re.search(
+        r'voterInput\.addEventListener\("change", lookup\);\s*'
+        r'(?://[^\n]*\n\s*)?'
+        r'if \(voterInput\.value\.trim\(\) !== ""\) \{\s*lookup\(\);\s*\}',
+        script,
+    )
+
+
 def test_web_create_without_photos_still_creates_issue(issues):
     response = _add_form_post(issues, files={"photos": ("", b"", "application/octet-stream")})
 

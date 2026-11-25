@@ -91,6 +91,10 @@
       timer = window.setTimeout(lookup, LOOKUP_DELAY_MS);
     });
     voterInput.addEventListener("change", lookup);
+    // A prefilled VoterId (from /issues/new?voter_id=...) fills Name and Mobile without a keystroke.
+    if (voterInput.value.trim() !== "") {
+      lookup();
+    }
   }
 
   // Previews only: nothing uploads until Save issue, and the server enforces the same cap.
