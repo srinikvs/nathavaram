@@ -32,6 +32,9 @@ Each change appends a history row and a notes system line, for example `Initiate
 
 - If `voter_id` matches an **active** voter (not soft-deleted, not hard-deleted), `name` (first + last) and `mobile` are copied from that voter. The copy does not change later.
 - Otherwise `voter_id` is stored as NULL and the typed `name` and `mobile` are used. Name, Subject and Issue are required; Mobile must pass the same Indian mobile check as voters.
+- Issue mobile is **masked on output**: the issues list, the issue detail page, and every issues API response (create, get, search, status change) show only the last 4 characters, for example `******0012`. A value shorter than 4 characters is fully masked. The full number is stored unchanged in `public_issues.mobile`. The masking happens in `issue_payload` (`mask_issue_mobile`), so the web pages and the JSON API share one rule.
+- Voter lookup (`POST /api/issues/voter-lookup`) still returns the voter's full mobile so the Add issue form can fill it in. Voter pages are not masked.
+- Issues are not part of the Android sync, so the masking does not change sync.
 
 ## Roles
 

@@ -359,7 +359,7 @@ def test_blank_voter_id_uses_hand_typed_name_and_mobile(issues):
 
     assert created["voter_id"] is None
     assert created["name"] == "Typed Name"
-    assert created["mobile"] == "+91 90000 00022"
+    assert created["mobile"] == "***********0022"
 
 
 def test_unknown_voter_id_stores_null_voter_id_and_typed_contact(issues):
@@ -367,7 +367,7 @@ def test_unknown_voter_id_stores_null_voter_id_and_typed_contact(issues):
 
     assert created["voter_id"] is None
     assert created["name"] == "Manual Person"
-    assert created["mobile"] == "9000000043"
+    assert created["mobile"] == "******0043"
 
 
 @pytest.mark.parametrize(
@@ -387,7 +387,7 @@ def test_matching_active_voter_fills_name_and_mobile(issues):
 
     assert created["voter_id"] == "ZZZ3000002"
     assert created["name"] == "Testperson Alpha"
-    assert created["mobile"] == "9000000021"
+    assert created["mobile"] == "******0021"
 
 
 def test_lookup_returns_active_voter_only_and_requires_login(issues):
@@ -413,7 +413,7 @@ def test_snapshot_does_not_follow_later_voter_edits(issues):
     assert edit.status_code == 200
     detail = issues.client.get(f"/api/issues/{issue_id}", headers=issues.clerk).json()["issue"]
     assert detail["name"] == "Testperson Alpha"
-    assert detail["mobile"] == "9000000021"
+    assert detail["mobile"] == "******0021"
 
 
 def test_soft_deleted_voter_is_not_used_for_autofill(issues):
@@ -720,7 +720,8 @@ def test_web_add_form_stores_hand_typed_contact(issues):
     assert response.status_code == 303
     page = issues.client.get(response.headers["location"].split("?")[0])
     assert "Web Person" in page.text
-    assert "9000000053" in page.text
+    assert "******0053" in page.text
+    assert "9000000053" not in page.text
 
 
 def test_list_page_shows_heading_count_cards_and_columns(issues):
@@ -895,3 +896,99 @@ def test_web_create_with_one_bad_photo_among_good_ones_saves_nothing(issues):
     assert response.status_code == 422
     assert _issue_total(issues) == 0
     assert _files(issues.photo_dir) == []
+
+
+# --- 14. issue mobile is masked on every read path -----------------------------------------------
+
+GAME_QA_MOBILE = "9000000077"
+GAME_QA_MASKED = "******0077"
+
+
+def _stored_issue_mobile(issue_id: int) -> str:
+    from app import database
+    from app.models import PublicIssue
+
+    db = database.SessionLocal()
+    try:
+        return db.get(PublicIssue, issue_id).mobile
+    finally:
+        db.close()
+
+
+def test_mask_issue_mobile_keeps_only_last_four_characters():
+    from app.services.issues import mask_issue_mobile
+
+    assert mask_issue_mobile("9000000012") == "******0012"
+    assert mask_issue_mobile("+91 90000 00022") == "***********0022"
+
+
+def test_mask_issue_mobile_fully_masks_values_shorter_than_four_characters():
+    from app.services.issues import mask_issue_mobile
+
+    assert mask_issue_mobile("123") == "***"
+    assert mask_issue_mobile("1") == "*"
+
+
+def test_mask_issue_mobile_leaves_empty_values_empty():
+    from app.services.issues import mask_issue_mobile
+
+    assert mask_issue_mobile(None) is None
+    assert mask_issue_mobile("") == ""
+
+
+def test_api_create_returns_masked_mobile_and_database_keeps_full_number(issues):
+    created = _create_ok(issues, issues.clerk, voter_id="", name="Game QA", mobile=GAME_QA_MOBILE)
+
+    assert created["mobile"] == GAME_QA_MASKED
+    assert GAME_QA_MOBILE not in str(created)
+    assert _stored_issue_mobile(created["id"]) == GAME_QA_MOBILE
+
+
+def test_api_get_issue_returns_masked_mobile(issues):
+    issue_id = _create_ok(issues, issues.clerk, voter_id="", mobile=GAME_QA_MOBILE)["id"]
+
+    response = issues.client.get(f"/api/issues/{issue_id}", headers=issues.clerk)
+
+    assert response.status_code == 200
+    assert response.json()["issue"]["mobile"] == GAME_QA_MASKED
+    assert GAME_QA_MOBILE not in response.text
+
+
+def test_api_search_returns_masked_mobile(issues):
+    _create_ok(issues, issues.clerk, voter_id="", mobile=GAME_QA_MOBILE)
+
+    response = issues.client.post("/api/issues/search", headers=issues.clerk, json={})
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["mobile"] == GAME_QA_MASKED
+    assert GAME_QA_MOBILE not in response.text
+
+
+def test_api_status_change_returns_masked_mobile(issues):
+    issue_id = _create_ok(issues, issues.clerk, voter_id="", mobile=GAME_QA_MOBILE)["id"]
+
+    response = _status(issues, issues.manager, issue_id, IN_PROCESS)
+
+    assert response.status_code == 200
+    assert GAME_QA_MOBILE not in response.text
+    assert GAME_QA_MASKED in response.text
+
+
+def test_web_list_shows_masked_mobile_only(issues):
+    _create_ok(issues, issues.clerk, voter_id="", mobile=GAME_QA_MOBILE)
+    _web_login(issues.ctx, CLERK, CLERK_PW)
+
+    page = issues.client.get("/issues").text
+
+    assert GAME_QA_MASKED in page
+    assert GAME_QA_MOBILE not in page
+
+
+def test_web_detail_shows_masked_mobile_only(issues):
+    issue_id = _create_ok(issues, issues.clerk, voter_id="", mobile=GAME_QA_MOBILE)["id"]
+    _web_login(issues.ctx, CLERK, CLERK_PW)
+
+    page = issues.client.get(f"/issues/{issue_id}").text
+
+    assert GAME_QA_MASKED in page
+    assert GAME_QA_MOBILE not in page
