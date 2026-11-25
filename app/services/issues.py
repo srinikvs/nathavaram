@@ -49,6 +49,8 @@ from app.validation import canonical_mobile, dump_dt, require_text
 PHOTO_CAP_MESSAGE = "This issue already has {cap} photos. Remove one before adding another."
 PHOTO_NOT_FOUND_MESSAGE = "Photo not found"
 ISSUE_NOT_FOUND_MESSAGE = "Issue not found"
+MOBILE_VISIBLE_CHARS = 4
+MASK_CHAR = "*"
 
 
 def _now() -> str:
@@ -194,12 +196,24 @@ def search_issues(db: Session, query: IssueSearch) -> tuple[list[PublicIssue], i
     return list(rows), int(total)
 
 
+def mask_issue_mobile(value: str | None) -> str | None:
+    """Hide every character of an issue mobile except the last four, for display and JSON only.
+
+    A value shorter than four characters is fully masked, so a short number is never shown in
+    full. None and the empty string are returned unchanged. The stored value is not touched.
+    """
+    if not value:
+        return value
+    visible = value[-MOBILE_VISIBLE_CHARS:] if len(value) >= MOBILE_VISIBLE_CHARS else ""
+    return MASK_CHAR * (len(value) - len(visible)) + visible
+
+
 def issue_payload(issue: PublicIssue) -> dict:
     return {
         "id": issue.id,
         "voter_id": issue.voter_id,
         "name": issue.name,
-        "mobile": issue.mobile,
+        "mobile": mask_issue_mobile(issue.mobile),
         "subject": issue.subject,
         "issue": issue.issue,
         "status": issue.status,

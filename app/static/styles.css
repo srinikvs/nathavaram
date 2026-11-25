@@ -187,7 +187,7 @@ button.danger, .button.danger, a.danger {
 button:hover, .button:hover { background: var(--green-2); color: white; }
 .ghost:hover, a.ghost:hover { background: #e7f0ea; color: var(--green-2); }
 label { display: block; font-size: 0.92rem; font-weight: 600; margin-bottom: 4px; }
-input, select {
+input, select, textarea {
   width: 100%;
   min-height: 44px;
   padding: 8px 10px;
@@ -197,7 +197,9 @@ input, select {
   font: inherit;
   color: inherit;
 }
-input:focus, select:focus, button:focus, a:focus {
+/* The Issue field on the add form: full width (its wrapper is .wide) and tall enough to write in. */
+.issue-form textarea { min-height: 12rem; resize: vertical; }
+input:focus, select:focus, textarea:focus, button:focus, a:focus {
   outline: 3px solid #e0b15a;
   outline-offset: 1px;
 }

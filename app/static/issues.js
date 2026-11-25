@@ -93,6 +93,60 @@
     voterInput.addEventListener("change", lookup);
   }
 
+  // Previews only: nothing uploads until Save issue, and the server enforces the same cap.
+  function initPhotoPreviews(form) {
+    var input = form.querySelector("[data-photo-input]");
+    var previews = form.querySelector("[data-photo-previews]");
+    if (!input || !previews) {
+      return;
+    }
+    var maxPhotos = parseInt(input.getAttribute("data-max-photos"), 10) || 5;
+    var objectUrls = [];
+
+    function clearPreviews() {
+      objectUrls.forEach(function (url) {
+        URL.revokeObjectURL(url);
+      });
+      objectUrls = [];
+      previews.textContent = "";
+    }
+
+    function addFigure(file) {
+      var figure = document.createElement("figure");
+      var image = document.createElement("img");
+      var caption = document.createElement("figcaption");
+      var url = URL.createObjectURL(file);
+      objectUrls.push(url);
+      image.src = url;
+      image.width = 96;
+      image.height = 96;
+      image.alt = "Selected photo: " + file.name;
+      image.onerror = function () {
+        // Some browsers cannot draw HEIC; keep the file name visible instead.
+        image.hidden = true;
+      };
+      caption.className = "hint";
+      caption.textContent = file.name;
+      figure.appendChild(image);
+      figure.appendChild(caption);
+      previews.appendChild(figure);
+    }
+
+    input.addEventListener("change", function () {
+      clearPreviews();
+      var files = Array.prototype.slice.call(input.files || []);
+      if (files.length > maxPhotos) {
+        input.value = "";
+        var notice = document.createElement("p");
+        notice.className = "hint";
+        notice.textContent = "Choose up to " + maxPhotos + " photos for one issue.";
+        previews.appendChild(notice);
+        return;
+      }
+      files.forEach(addFigure);
+    });
+  }
+
   function initConfirmForms() {
     var forms = document.querySelectorAll("form[data-confirm]");
     Array.prototype.forEach.call(forms, function (form) {
@@ -107,6 +161,7 @@
   var issueForm = document.querySelector("[data-issue-form]");
   if (issueForm) {
     initIssueForm(issueForm);
+    initPhotoPreviews(issueForm);
   }
   initConfirmForms();
 })();

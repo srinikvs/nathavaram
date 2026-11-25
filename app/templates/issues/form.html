@@ -13,7 +13,7 @@
   {% for line in errors %}<p>{{ line }}</p>{% endfor %}
 </div>
 {% endif %}
-<form method="post" action="/issues/new" class="grid issue-form" autocomplete="off" data-issue-form>
+<form method="post" action="/issues/new" class="grid issue-form" autocomplete="off" enctype="multipart/form-data" data-issue-form>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div>
     <label for="voter_id">VoterId (optional)</label>
@@ -34,7 +34,13 @@
   </div>
   <div class="wide">
     <label for="issue">Issue</label>
-    <textarea id="issue" name="issue" rows="6" maxlength="4000" required>{{ values.get('issue', '') }}</textarea>
+    <textarea id="issue" name="issue" rows="10" maxlength="4000" required>{{ values.get('issue', '') }}</textarea>
+  </div>
+  <div class="wide issue-photos-field">
+    <label for="issue-photos">Photos (optional)</label>
+    <input id="issue-photos" name="photos" type="file" accept="image/jpeg,image/png,image/heic,image/heif" multiple data-photo-input data-max-photos="{{ max_photos }}">
+    <p class="hint">JPG, PNG or HEIC. Location data is removed on upload. Up to {{ max_photos }} photos per issue.</p>
+    <div class="issue-photos" data-photo-previews aria-live="polite"></div>
   </div>
   <div class="actions wide">
     <button type="submit">Save issue</button>

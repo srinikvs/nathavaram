@@ -32,6 +32,9 @@ Each change appends a history row and a notes system line, for example `Initiate
 
 - If `voter_id` matches an **active** voter (not soft-deleted, not hard-deleted), `name` (first + last) and `mobile` are copied from that voter. The copy does not change later.
 - Otherwise `voter_id` is stored as NULL and the typed `name` and `mobile` are used. Name, Subject and Issue are required; Mobile must pass the same Indian mobile check as voters.
+- Issue mobile is **masked on output**: the issues list, the issue detail page, and every issues API response (create, get, search, status change) show only the last 4 characters, for example `******0012`. A value shorter than 4 characters is fully masked. The full number is stored unchanged in `public_issues.mobile`. The masking happens in `issue_payload` (`mask_issue_mobile`), so the web pages and the JSON API share one rule.
+- Voter lookup (`POST /api/issues/voter-lookup`) still returns the voter's full mobile so the Add issue form can fill it in. Voter pages are not masked.
+- Issues are not part of the Android sync, so the masking does not change sync.
 
 ## Roles
 
@@ -48,6 +51,7 @@ Each change appends a history row and a notes system line, for example `Initiate
 ## Photos
 
 - Up to 5 per issue. The 6th upload is 409.
+- The Add issue form (`/issues/new`) takes optional photos too (up to 5, chosen with the Photos field, with previews before Save). Every photo is checked before the issue is saved: a bad or oversized photo, or more than 5, re-shows the form with the error and creates no issue. The photos are stored exactly as the issue-detail upload stores them.
 - Accepted: JPG, PNG, HEIC. HEIC needs `pillow-heif`; without it HEIC is refused with 415 and JPG/PNG still work.
 - Every upload is re-encoded as JPEG: the long edge is capped at 1600 px (smaller images are not enlarged), and EXIF, GPS and other metadata are dropped.
 - Where photos go, in order:

@@ -6,6 +6,7 @@ a temporary directory, never to the repository.
 
 from __future__ import annotations
 
+import re
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from app.issue_rules import check_transition, status_options
+from app.issue_rules import MAX_PHOTOS_PER_ISSUE, check_transition, status_options
 from app.errors import ServiceError
 from app.services.issue_photos import HEIC_SUPPORTED, photo_path
 from tests.conftest import csrf_from_page, make_user, voter_payload
@@ -358,7 +359,7 @@ def test_blank_voter_id_uses_hand_typed_name_and_mobile(issues):
 
     assert created["voter_id"] is None
     assert created["name"] == "Typed Name"
-    assert created["mobile"] == "+91 90000 00022"
+    assert created["mobile"] == "***********0022"
 
 
 def test_unknown_voter_id_stores_null_voter_id_and_typed_contact(issues):
@@ -366,7 +367,7 @@ def test_unknown_voter_id_stores_null_voter_id_and_typed_contact(issues):
 
     assert created["voter_id"] is None
     assert created["name"] == "Manual Person"
-    assert created["mobile"] == "9000000043"
+    assert created["mobile"] == "******0043"
 
 
 @pytest.mark.parametrize(
@@ -386,7 +387,7 @@ def test_matching_active_voter_fills_name_and_mobile(issues):
 
     assert created["voter_id"] == "ZZZ3000002"
     assert created["name"] == "Testperson Alpha"
-    assert created["mobile"] == "9000000021"
+    assert created["mobile"] == "******0021"
 
 
 def test_lookup_returns_active_voter_only_and_requires_login(issues):
@@ -412,7 +413,7 @@ def test_snapshot_does_not_follow_later_voter_edits(issues):
     assert edit.status_code == 200
     detail = issues.client.get(f"/api/issues/{issue_id}", headers=issues.clerk).json()["issue"]
     assert detail["name"] == "Testperson Alpha"
-    assert detail["mobile"] == "9000000021"
+    assert detail["mobile"] == "******0021"
 
 
 def test_soft_deleted_voter_is_not_used_for_autofill(issues):
@@ -719,7 +720,8 @@ def test_web_add_form_stores_hand_typed_contact(issues):
     assert response.status_code == 303
     page = issues.client.get(response.headers["location"].split("?")[0])
     assert "Web Person" in page.text
-    assert "9000000053" in page.text
+    assert "******0053" in page.text
+    assert "9000000053" not in page.text
 
 
 def test_list_page_shows_heading_count_cards_and_columns(issues):
@@ -786,3 +788,207 @@ def test_sidebar_links_public_issues_to_the_live_page(issues):
 
     assert 'href="/issues"' in html
     assert "/campaign/public-issues" not in html
+
+
+# --- 13. photos on the add form ------------------------------------------------------------
+
+
+def _add_form_post(env, files=None, **overrides):
+    """POST /issues/new as a signed-in clerk with CSRF. Returns the response (not followed)."""
+    _web_login(env.ctx, CLERK, CLERK_PW)
+    token = csrf_from_page(env.client.get("/issues/new").text)
+    fields = {
+        "csrf_token": token,
+        "voter_id": "",
+        "name": "Photo Person",
+        "mobile": "9000000061",
+        "subject": "Drain",
+        "issue": "Open drain overflows near the school",
+    }
+    fields.update(overrides)
+    return env.client.post("/issues/new", data=fields, files=files, follow_redirects=False)
+
+
+def _issue_total(env) -> int:
+    response = env.client.post("/api/issues/search", headers=env.admin, json={})
+    assert response.status_code == 200, response.text
+    return response.json()["total"]
+
+
+def test_add_form_has_multiple_photo_input_below_full_width_issue_field(issues):
+    _web_login(issues.ctx, CLERK, CLERK_PW)
+
+    page = issues.client.get("/issues/new").text
+
+    assert 'enctype="multipart/form-data"' in page
+    photos_input = re.search(r'<input[^>]*name="photos"[^>]*>', page)
+    assert photos_input and "multiple" in photos_input.group(0)
+    assert 'accept="image/jpeg,image/png,image/heic,image/heif"' in photos_input.group(0)
+    assert re.search(r'<div class="wide">\s*<label for="issue">Issue</label>', page)
+    assert page.index('name="issue"') < photos_input.start() < page.index("Save issue")
+
+
+def test_web_create_without_photos_still_creates_issue(issues):
+    response = _add_form_post(issues, files={"photos": ("", b"", "application/octet-stream")})
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/issues/")
+    assert _issue_total(issues) == 1
+    assert _files(issues.photo_dir) == []
+
+
+def test_web_create_with_photos_stores_them_under_issue_folder_and_shows_them(issues):
+    response = _add_form_post(
+        issues,
+        files=[
+            ("photos", ("first.jpg", _jpeg(), "image/jpeg")),
+            ("photos", ("second.png", _png(), "image/png")),
+        ],
+    )
+
+    assert response.status_code == 303
+    issue_id = int(response.headers["location"].split("?")[0].rsplit("/", 1)[1])
+    detail = issues.client.get(f"/api/issues/{issue_id}", headers=issues.admin).json()
+    assert len(detail["photos"]) == 2
+    stored = _files(issues.photo_dir)
+    assert len(stored) == 2
+    for path in stored:
+        assert path.parent == issues.photo_dir / str(issue_id)
+        assert path.suffix == ".jpg"
+    served = issues.client.get(detail["photos"][0]["url"], headers=issues.clerk)
+    assert served.status_code == 200
+    assert served.headers["content-type"] == "image/jpeg"
+    page = issues.client.get(f"/issues/{issue_id}", headers=issues.clerk).text
+    assert detail["photos"][0]["url"] in page
+
+
+def test_web_create_with_more_than_five_photos_is_refused_and_creates_nothing(issues):
+    files = [("photos", (f"p{i}.jpg", _jpeg(), "image/jpeg")) for i in range(MAX_PHOTOS_PER_ISSUE + 1)]
+
+    response = _add_form_post(issues, files=files)
+
+    assert response.status_code == 422
+    assert "5 photos" in response.text
+    assert _issue_total(issues) == 0
+    assert _files(issues.photo_dir) == []
+
+
+def test_web_create_with_text_file_is_refused_and_creates_nothing(issues):
+    response = _add_form_post(
+        issues, files=[("photos", ("note.txt", b"this is not an image", "text/plain"))]
+    )
+
+    assert response.status_code == 422
+    assert "Upload a JPG, PNG or HEIC photo" in response.text
+    assert _issue_total(issues) == 0
+    assert _files(issues.photo_dir) == []
+
+
+def test_web_create_with_one_bad_photo_among_good_ones_saves_nothing(issues):
+    response = _add_form_post(
+        issues,
+        files=[
+            ("photos", ("good.jpg", _jpeg(), "image/jpeg")),
+            ("photos", ("bad.txt", b"not an image", "text/plain")),
+        ],
+    )
+
+    assert response.status_code == 422
+    assert _issue_total(issues) == 0
+    assert _files(issues.photo_dir) == []
+
+
+# --- 14. issue mobile is masked on every read path -----------------------------------------------
+
+GAME_QA_MOBILE = "9000000077"
+GAME_QA_MASKED = "******0077"
+
+
+def _stored_issue_mobile(issue_id: int) -> str:
+    from app import database
+    from app.models import PublicIssue
+
+    db = database.SessionLocal()
+    try:
+        return db.get(PublicIssue, issue_id).mobile
+    finally:
+        db.close()
+
+
+def test_mask_issue_mobile_keeps_only_last_four_characters():
+    from app.services.issues import mask_issue_mobile
+
+    assert mask_issue_mobile("9000000012") == "******0012"
+    assert mask_issue_mobile("+91 90000 00022") == "***********0022"
+
+
+def test_mask_issue_mobile_fully_masks_values_shorter_than_four_characters():
+    from app.services.issues import mask_issue_mobile
+
+    assert mask_issue_mobile("123") == "***"
+    assert mask_issue_mobile("1") == "*"
+
+
+def test_mask_issue_mobile_leaves_empty_values_empty():
+    from app.services.issues import mask_issue_mobile
+
+    assert mask_issue_mobile(None) is None
+    assert mask_issue_mobile("") == ""
+
+
+def test_api_create_returns_masked_mobile_and_database_keeps_full_number(issues):
+    created = _create_ok(issues, issues.clerk, voter_id="", name="Game QA", mobile=GAME_QA_MOBILE)
+
+    assert created["mobile"] == GAME_QA_MASKED
+    assert GAME_QA_MOBILE not in str(created)
+    assert _stored_issue_mobile(created["id"]) == GAME_QA_MOBILE
+
+
+def test_api_get_issue_returns_masked_mobile(issues):
+    issue_id = _create_ok(issues, issues.clerk, voter_id="", mobile=GAME_QA_MOBILE)["id"]
+
+    response = issues.client.get(f"/api/issues/{issue_id}", headers=issues.clerk)
+
+    assert response.status_code == 200
+    assert response.json()["issue"]["mobile"] == GAME_QA_MASKED
+    assert GAME_QA_MOBILE not in response.text
+
+
+def test_api_search_returns_masked_mobile(issues):
+    _create_ok(issues, issues.clerk, voter_id="", mobile=GAME_QA_MOBILE)
+
+    response = issues.client.post("/api/issues/search", headers=issues.clerk, json={})
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["mobile"] == GAME_QA_MASKED
+    assert GAME_QA_MOBILE not in response.text
+
+
+def test_api_status_change_returns_masked_mobile(issues):
+    issue_id = _create_ok(issues, issues.clerk, voter_id="", mobile=GAME_QA_MOBILE)["id"]
+
+    response = _status(issues, issues.manager, issue_id, IN_PROCESS)
+
+    assert response.status_code == 200
+    assert GAME_QA_MOBILE not in response.text
+    assert GAME_QA_MASKED in response.text
+
+
+def test_web_list_shows_masked_mobile_only(issues):
+    _create_ok(issues, issues.clerk, voter_id="", mobile=GAME_QA_MOBILE)
+    _web_login(issues.ctx, CLERK, CLERK_PW)
+
+    page = issues.client.get("/issues").text
+
+    assert GAME_QA_MASKED in page
+    assert GAME_QA_MOBILE not in page
+
+
+def test_web_detail_shows_masked_mobile_only(issues):
+    issue_id = _create_ok(issues, issues.clerk, voter_id="", mobile=GAME_QA_MOBILE)["id"]
+    _web_login(issues.ctx, CLERK, CLERK_PW)
+
+    page = issues.client.get(f"/issues/{issue_id}").text
+
+    assert GAME_QA_MASKED in page
+    assert GAME_QA_MOBILE not in page
