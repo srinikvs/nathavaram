@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -15,12 +16,13 @@ from sqlalchemy.orm import Session
 from app import __version__
 from app.config import ROOT, load_settings
 from app import database
-from app.database import dispose_db, get_db, init_db
+from app.database import dispose_db, ensure_sqlite_parent, get_db, init_db
 from app.deps import csrf_guard
 from app.migrate import run_migrations
-from app.routers import auth, master_data, reports, sync, users, voters
+from app.routers import auth, issues, master_data, reports, sync, users, voters
 from app.services.bootstrap import seed_admin
 from app.services.throttle import LoginThrottle
+from app.web.issue_routes import router as issue_web_router
 from app.web.routes import LoginRequired, PasswordChangeRequired
 from app.web.routes import router as web_router
 from app.web.templates import render
@@ -34,8 +36,12 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         logging.basicConfig(level=logging.INFO)
+        # Migrations open the SQLite file before init_db runs, so create its directory first.
+        ensure_sqlite_parent(settings.database_url)
         run_migrations(settings.database_url)
         init_db(settings.database_url)
+        # Create the photo root so a fresh service-owned directory appears without a host change.
+        Path(settings.issue_photo_dir).mkdir(parents=True, exist_ok=True)
         if database.SessionLocal is None:
             raise RuntimeError("Database session factory was not created")
         db = database.SessionLocal()
@@ -105,7 +111,9 @@ def create_app() -> FastAPI:
     app.include_router(reports.router)
     app.include_router(master_data.router)
     app.include_router(sync.router)
+    app.include_router(issues.router)
     app.include_router(web_router)
+    app.include_router(issue_web_router)
     app.mount("/static", StaticFiles(directory=str(ROOT / "app" / "static")), name="static")
     logger.info("Nathavaram voter list %s ready", __version__)
     return app

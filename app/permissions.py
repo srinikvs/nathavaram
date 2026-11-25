@@ -69,6 +69,16 @@ def can_manage_accounts(user) -> bool:
     return is_admin(user)
 
 
+def can_manage_issues(user) -> bool:
+    """Manager or admin: any Public Issue status, delete an issue, remove a photo."""
+    return can_review_deleted(user)
+
+
+def can_delete_issue_note(user) -> bool:
+    """Only an admin may delete a note on a Public Issue."""
+    return is_admin(user)
+
+
 def permission_flags(user) -> dict[str, bool]:
     """Booleans for templates. Each one is a convenience; the routes enforce the same rule."""
     if user is None:

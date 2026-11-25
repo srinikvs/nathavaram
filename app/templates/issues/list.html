@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Public Issues · Nathavaram{% endblock %}
+{% block content %}
+{% set icons = {"Initiated": "≡", "In Process": "⌛", "Resolved": "✓", "Rejected": "👎"} %}
+<section class="issues-hero" aria-labelledby="issues-title">
+  <div class="issues-hero-head">
+    <div>
+      <h1 id="issues-title">Public Issues</h1>
+      <p class="lede">Track and follow up on public issues.</p>
+    </div>
+    <a class="button" href="/issues/new">Add issue</a>
+  </div>
+  <nav class="issue-cards" aria-label="Filter by status">
+    {% for status in statuses %}
+    {% set active = query.status == status %}
+    <a class="issue-card{% if active %} is-active{% endif %}" href="{% if active %}/issues{% else %}/issues?status={{ status|urlencode }}{% endif %}" aria-current="{{ 'true' if active else 'false' }}" data-status-card>
+      <span class="issue-card-icon" aria-hidden="true">{{ icons[status] }}</span>
+      <span class="issue-card-count">{{ counts[status] }}</span>
+      <span class="issue-card-label">{{ status|upper }}</span>
+    </a>
+    {% endfor %}
+  </nav>
+</section>
+<section class="card issues-card">
+  <div class="issues-card-head">
+    <h2>Public issues · {{ total }}</h2>
+    <form method="post" action="/issues/search" class="issues-search">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if query.status %}<input type="hidden" name="status" value="{{ query.status }}">{% endif %}
+      <label class="visually-hidden" for="q">Search VoterId, name or subject</label>
+      <input id="q" name="q" value="{{ query.q or '' }}" placeholder="VoterId, name or subject" maxlength="100">
+      <button type="submit">Search</button>
+      {% if query.q or query.status %}<a class="button ghost" href="/issues">Clear filter</a>{% endif %}
+    </form>
+  </div>
+  {% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
+  {% if notice %}<p class="banner ok">{{ notice }}</p>{% endif %}
+  {% if items %}
+  <div class="table-wrap" data-top-scroll>
+    <table class="register issues-register">
+      <thead>
+        <tr>
+          <th>S No</th>
+          <th>VOTERID</th>
+          <th>Name</th>
+          <th>Mobile</th>
+          <th>Subject</th>
+          <th>Issue</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in items %}
+        {% set issue = row.issue %}
+        <tr>
+          <td data-label="S No">{{ issue.id }}</td>
+          <td data-label="VOTERID" translate="no">{{ issue.voter_id|display }}</td>
+          <td data-label="Name" translate="no"><a href="/issues/{{ issue.id }}">{{ issue.name }}</a></td>
+          <td data-label="Mobile" translate="no">{{ issue.mobile|display }}</td>
+          <td data-label="Subject" class="issue-text">{{ issue.subject }}</td>
+          <td data-label="Issue" class="issue-text">{{ issue.issue }}</td>
+          <td data-label="Status">
+            {% if row.options|length > 1 %}
+            <form method="post" action="/issues/{{ issue.id }}/status" class="issue-status-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label class="visually-hidden" for="status-{{ issue.id }}">Status of issue {{ issue.id }}</label>
+              <select id="status-{{ issue.id }}" name="status">
+                {% for option in row.options %}
+                <option value="{{ option }}"{% if option == issue.status %} selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit">Save</button>
+            </form>
+            {% else %}
+            <span class="status-pill">{{ issue.status }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if total > items|length %}
+  <p class="hint">Showing the first {{ items|length }} of {{ total }}. Narrow the search to see the rest.</p>
+  {% endif %}
+  {% else %}
+  <p class="empty">No issues match.</p>
+  {% endif %}
+</section>
+{% endblock %}

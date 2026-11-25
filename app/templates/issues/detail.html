@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Issue {{ detail.issue.id }} · Nathavaram{% endblock %}
+{% block content %}
+{% set issue = detail.issue %}
+<div class="page-head">
+  <div>
+    <h1>Issue {{ issue.id }}</h1>
+    <p class="lede"><span class="status-pill">{{ issue.status }}</span></p>
+  </div>
+  <a class="button ghost" href="/issues">Back to issues</a>
+</div>
+{% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
+{% if notice %}<p class="banner ok">{{ notice }}</p>{% endif %}
+
+<section class="card">
+  <dl class="issue-facts">
+    <dt>VoterId</dt><dd translate="no">{{ issue.voter_id|display }}</dd>
+    <dt>Name</dt><dd translate="no">{{ issue.name }}</dd>
+    <dt>Mobile</dt><dd translate="no">{{ issue.mobile|display }}</dd>
+    <dt>Subject</dt><dd class="issue-text">{{ issue.subject }}</dd>
+    <dt>Issue</dt><dd class="issue-text">{{ issue.issue }}</dd>
+    <dt>Created</dt><dd>{{ issue.created_at|ist }} by {{ issue.created_by }}</dd>
+    <dt>Last change</dt><dd>{{ issue.updated_at|ist }} by {{ issue.updated_by }}</dd>
+  </dl>
+</section>
+
+<section class="card">
+  <h2>Status</h2>
+  {% if options|length > 1 %}
+  <form method="post" action="/issues/{{ issue.id }}/status" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      {% for option in options %}
+      <option value="{{ option }}"{% if option == issue.status %} selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Save status</button>
+  </form>
+  {% else %}
+  <p class="hint">Your role cannot change this status any further. A manager or admin can.</p>
+  {% endif %}
+  <h3>History</h3>
+  <ul class="issue-history">
+    {% for event in detail.history %}
+    <li>{{ event.from_status or "Created" }} to {{ event.to_status }} by {{ event.changed_by }}, {{ event.changed_at|ist }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="card">
+  <h2>Photos ({{ detail.photos|length }} of {{ max_photos }})</h2>
+  <div class="issue-photos">
+    {% for photo in detail.photos %}
+    <figure>
+      <a href="{{ photo.url }}" target="_blank" rel="noopener">
+        <img src="{{ photo.url }}" alt="Photo {{ loop.index }} of issue {{ issue.id }}" width="96" height="96" loading="lazy">
+      </a>
+      {% if can_manage %}
+      <form method="post" action="/issues/{{ issue.id }}/photos/{{ photo.id }}/delete" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="linkish">Remove</button>
+      </form>
+      {% endif %}
+    </figure>
+    {% endfor %}
+  </div>
+  {% if detail.photos|length < max_photos %}
+  <form method="post" action="/issues/{{ issue.id }}/photos" enctype="multipart/form-data" class="issue-photo-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="photo-camera">Take a photo</label>
+    <input id="photo-camera" name="photo" type="file" accept="image/*" capture="environment">
+    <label for="photo-gallery">Or choose from gallery</label>
+    <input id="photo-gallery" name="photo" type="file" accept="image/*">
+    <button type="submit">Upload photo</button>
+    <p class="hint">JPG, PNG or HEIC. Location data is removed on upload.</p>
+  </form>
+  {% else %}
+  <p class="hint">This issue has {{ max_photos }} photos. A manager or admin can remove one to add another.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Notes and follow-up</h2>
+  <ol class="notes-thread">
+    {% for note in detail.notes %}
+    <li class="note note-{{ note.kind }}">
+      <p class="issue-text">{{ note.body }}</p>
+      <p class="hint">
+        {% if note.kind == "system" %}Status change{% else %}{{ note.author }}{% endif %} · {{ note.created_at|ist }}
+        {% if note.kind == "note" and can_delete_note %}
+        <form method="post" action="/issues/{{ issue.id }}/notes/{{ note.id }}/delete" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="linkish">Delete note</button>
+        </form>
+        {% endif %}
+      </p>
+    </li>
+    {% endfor %}
+  </ol>
+  <form method="post" action="/issues/{{ issue.id }}/notes" class="grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="wide">
+      <label for="note-text">Add a note</label>
+      <textarea id="note-text" name="text" rows="3" maxlength="1000" required></textarea>
+    </div>
+    <div class="actions wide"><button type="submit">Add note</button></div>
+  </form>
+</section>
+
+{% if can_manage %}
+<section class="card">
+  <h2>Delete issue</h2>
+  <p class="hint">Deleting removes the issue, its photos, notes and status history.</p>
+  <form method="post" action="/issues/{{ issue.id }}/delete" data-confirm="Delete this issue with its photos and notes? This cannot be undone.">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="danger">Delete issue</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="/static/issues.js"></script>{% endblock %}

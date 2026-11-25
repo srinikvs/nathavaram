@@ -1,5 +1,7 @@
 # Nathavaram voter schema
 
+Public Issues tables (`public_issues`, `public_issue_status_events`, `public_issue_photos`, `public_issue_notes`, migration 0011) are described in [ISSUES.md](ISSUES.md). They do not change any voter row.
+
 Phase 1 stores the village list in a relational database. `voter_id` is the primary key of the `voters` table. SQLite is the default. The same SQLAlchemy models and this Alembic migration run on PostgreSQL when `DATABASE_URL` uses the `postgresql+psycopg://` driver.
 
 Display names below are the exact labels in the web form and the exact CSV/Excel headers. The database and JSON API use the snake_case names.

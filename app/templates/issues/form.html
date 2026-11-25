@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Add issue · Nathavaram{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Add issue</h1>
+    <p class="lede">VoterId is optional. An active voter with that VoterId fills in Name and Mobile; otherwise type them in.</p>
+  </div>
+  <a class="button ghost" href="/issues">Back to issues</a>
+</div>
+{% if errors %}
+<div class="banner bad" role="alert">
+  {% for line in errors %}<p>{{ line }}</p>{% endfor %}
+</div>
+{% endif %}
+<form method="post" action="/issues/new" class="grid issue-form" autocomplete="off" data-issue-form>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div>
+    <label for="voter_id">VoterId (optional)</label>
+    <input id="voter_id" name="voter_id" maxlength="32" value="{{ values.get('voter_id', '') }}" data-voter-id>
+    <p class="hint" data-lookup-status aria-live="polite"></p>
+  </div>
+  <div>
+    <label for="name">Name</label>
+    <input id="name" name="name" maxlength="128" value="{{ values.get('name', '') }}" required data-name>
+  </div>
+  <div>
+    <label for="mobile">Mobile</label>
+    <input id="mobile" name="mobile" maxlength="20" inputmode="tel" value="{{ values.get('mobile', '') }}" required data-mobile>
+  </div>
+  <div>
+    <label for="subject">Subject</label>
+    <input id="subject" name="subject" maxlength="200" value="{{ values.get('subject', '') }}" required>
+  </div>
+  <div class="wide">
+    <label for="issue">Issue</label>
+    <textarea id="issue" name="issue" rows="6" maxlength="4000" required>{{ values.get('issue', '') }}</textarea>
+  </div>
+  <div class="actions wide">
+    <button type="submit">Save issue</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}<script src="/static/issues.js"></script>{% endblock %}
