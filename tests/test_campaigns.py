@@ -283,6 +283,40 @@ def test_sms_and_whatsapp_pages_render_for_signed_in_user(campaigns):
         assert "Dry-run mode" in page.text
 
 
+def test_campaign_list_pages_are_csp_safe_without_inline_scripts(campaigns):
+    """Quick Message must work under script-src 'self' (no inline script/handlers)."""
+    _web_login(campaigns)
+    for path, channel in (("/campaign/sms", "sms"), ("/campaign/whatsapp", "whatsapp")):
+        page = campaigns.client.get(path)
+        assert page.status_code == 200, page.text
+        html = page.text
+
+        inline_scripts = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>", html, flags=re.I)
+        assert inline_scripts == [], f"{path} has inline <script>: {inline_scripts}"
+        assert re.search(r'<script\s+src="/static/campaigns\.js">', html), path
+        assert "NATHAVARAM_CAMPAIGN" not in html
+        assert not re.search(r"\sonsubmit\s*=", html, flags=re.I), path
+        assert not re.search(r"\sonclick\s*=", html, flags=re.I), path
+
+        modal = re.search(
+            r"<dialog\b[^>]*\bdata-quick-message-modal\b[^>]*>",
+            html,
+            flags=re.I | re.S,
+        )
+        assert modal, f"{path} missing data-quick-message-modal"
+        tag = modal.group(0)
+        assert f'data-channel="{channel}"' in tag
+        assert 'data-channel-label="' in tag
+        assert 'data-csrf-token="' in tag
+        assert 'data-max-photos="' in tag
+        assert 'data-max-daily-times="' in tag
+        assert "data-target-labels=" in tag
+        labels_match = re.search(r"data-target-labels='([^']*)'", tag)
+        assert labels_match, f"{path} missing JSON data-target-labels"
+        labels = json.loads(labels_match.group(1))
+        assert "ward" in labels and "booth" in labels
+
+
 def test_sidebar_links_sms_and_whatsapp_without_coming_soon(campaigns):
     _web_login(campaigns)
     html = campaigns.client.get("/voters").text

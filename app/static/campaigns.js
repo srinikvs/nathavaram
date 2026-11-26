@@ -1,9 +1,37 @@
 /* Quick Message modal for SMS / WhatsApp campaign pages. */
 (function () {
-  const cfg = window.NATHAVARAM_CAMPAIGN;
-  if (!cfg) return;
+  document.querySelectorAll("form[data-confirm]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      if (!window.confirm(form.getAttribute("data-confirm"))) {
+        event.preventDefault();
+      }
+    });
+  });
+
+  function configFromModal(modal) {
+    if (!modal) return null;
+    let labels = {};
+    try {
+      labels = JSON.parse(modal.getAttribute("data-target-labels") || "{}") || {};
+    } catch (err) {
+      labels = {};
+    }
+    const channel = modal.getAttribute("data-channel") || "";
+    if (!channel) return null;
+    return {
+      channel,
+      channelLabel: modal.getAttribute("data-channel-label") || "",
+      csrfToken: modal.getAttribute("data-csrf-token") || "",
+      maxPhotos: parseInt(modal.getAttribute("data-max-photos"), 10) || 0,
+      maxDailyTimes: parseInt(modal.getAttribute("data-max-daily-times"), 10) || 3,
+      targetLabels: labels,
+    };
+  }
 
   const modal = document.querySelector("[data-quick-message-modal]");
+  const cfg = configFromModal(modal) || window.NATHAVARAM_CAMPAIGN;
+  if (!cfg) return;
+
   const form = document.querySelector("[data-quick-message-form]");
   const openBtn = document.querySelector("[data-open-quick-message]");
   if (!modal || !form || !openBtn) return;
