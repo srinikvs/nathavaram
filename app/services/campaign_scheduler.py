@@ -175,6 +175,17 @@ def process_due_schedules(
     return processed
 
 
+def _tick_due_schedules(settings: Settings, photo_dir: Path) -> int:
+    """Run one scheduler tick on a worker thread with its own Session."""
+    if database.SessionLocal is None:
+        return 0
+    db = database.SessionLocal()
+    try:
+        return process_due_schedules(db, settings, photo_dir)
+    finally:
+        db.close()
+
+
 async def scheduler_loop(app, stop_event: asyncio.Event) -> None:
     """Background poller started from the FastAPI lifespan."""
     settings: Settings = app.state.settings
@@ -182,14 +193,7 @@ async def scheduler_loop(app, stop_event: asyncio.Event) -> None:
     photo_dir = Path(settings.campaign_photo_dir)
     while not stop_event.is_set():
         try:
-            if database.SessionLocal is None:
-                await asyncio.sleep(interval)
-                continue
-            db = database.SessionLocal()
-            try:
-                process_due_schedules(db, settings, photo_dir)
-            finally:
-                db.close()
+            await asyncio.to_thread(_tick_due_schedules, settings, photo_dir)
         except Exception:
             logger.exception("Campaign scheduler tick failed")
         try:

@@ -21,11 +21,14 @@ from sqlalchemy import select
 
 from app.campaign_rules import MAX_PHOTOS_PER_CAMPAIGN
 from app.models import Campaign, CampaignDelivery, CampaignRecipient, CampaignScheduleRun
+from app.campaign_rules import MISSING_MOBILE_MESSAGE, VOTER_REMOVED_MESSAGE
 from app.services.campaign_providers import (
     SmsHttpProvider,
     WhatsAppCloudProvider,
     build_photo_urls,
     scrub_phone_text,
+    sign_photo_token,
+    verify_photo_token,
 )
 from app.services.campaign_scheduler import due_slots_for_campaign, process_due_schedules
 from app.services.campaigns import SCRUBBED_MOBILE, mask_campaign_mobile
@@ -351,7 +354,10 @@ def test_send_now_whatsapp_dry_run_updates_kpis_and_masks_mobiles(campaigns):
     db = database.SessionLocal()
     try:
         mobiles = db.scalars(select(CampaignRecipient.mobile)).all()
-        assert "9000000101" in mobiles
+        assert mobiles
+        assert all(mobile.startswith("*") for mobile in mobiles)
+        assert "9000000101" not in mobiles
+        assert "9000000102" not in mobiles
     finally:
         db.close()
 
@@ -565,7 +571,7 @@ def test_mid_loop_provider_exception_keeps_prior_deliveries(campaigns):
     # Force a second send-now-like slot with a provider that fails mid-way.
     campaign_id = created.json()["id"]
     from app import database
-    from app.services import campaigns as campaign_service
+    from app.services import campaign_send
 
     class BoomRouter:
         mode = "dry_run"
@@ -583,22 +589,24 @@ def test_mid_loop_provider_exception_keeps_prior_deliveries(campaigns):
 
     db = database.SessionLocal()
     try:
-        with patch.object(campaign_service, "get_provider", return_value=BoomRouter()):
-            with pytest.raises(RuntimeError):
-                campaign_service.process_campaign_slot(
-                    db,
-                    campaign_id,
-                    slot_key="retry-slot",
-                    settings=campaigns.settings,
-                    photo_dir=Path(campaigns.photo_dir),
-                )
+        with patch.object(campaign_send, "get_provider", return_value=BoomRouter()):
+            sent = campaign_send.process_campaign_slot(
+                db,
+                campaign_id,
+                slot_key="retry-slot",
+                settings=campaigns.settings,
+                photo_dir=Path(campaigns.photo_dir),
+            )
+        assert sent == 1
+        campaign = db.get(Campaign, campaign_id)
+        assert campaign.status == "completed"
         deliveries = db.scalars(
             select(CampaignDelivery).where(
                 CampaignDelivery.campaign_id == campaign_id,
                 CampaignDelivery.slot_key == "retry-slot",
             )
         ).all()
-        assert len(deliveries) >= 1
+        assert len(deliveries) == 2
         assert any(row.status == "sent" for row in deliveries)
         assert any(row.status == "rejected" for row in deliveries)
         for row in deliveries:
@@ -648,7 +656,7 @@ def test_live_sms_sends_api_key_in_header(campaigns, monkeypatch):
         kwargs = client.post.call_args.kwargs
         assert "api_key" not in kwargs["json"]
         assert kwargs["headers"]["Authorization"] == "Bearer secret-key"
-        assert kwargs["headers"]["X-API-Key"] == "secret-key"
+        assert "X-API-Key" not in kwargs["headers"]
 
 
 def test_web_detail_shows_masked_mobile_only(campaigns):
@@ -753,3 +761,238 @@ def test_hard_delete_scrubs_campaign_recipient_mobile(campaigns):
         db.close()
     detail = _detail(campaigns, "whatsapp", created["id"]).json()
     _assert_no_full_mobiles(detail)
+
+
+# --- security / send-time resolution (ECC #61) -------------------------------
+
+
+def test_soft_deleted_voter_is_not_messaged_on_scheduled_slot(campaigns):
+    _seed_voters(campaigns)
+    created = _create_campaign(
+        campaigns,
+        send_mode="daily",
+        daily_times='["09:00"]',
+        start_date="2026-11-26",
+        end_date="2026-11-26",
+    )
+    assert created.status_code == 201, created.text
+    campaign_id = created.json()["id"]
+    assert (
+        campaigns.client.delete("/api/voters/ZZZ4000001", headers=campaigns.admin).status_code
+        == 200
+    )
+
+    from app import database
+    from app.services import campaign_send
+
+    db = database.SessionLocal()
+    try:
+        campaign = db.get(Campaign, campaign_id)
+        campaign.created_at = dump_dt(datetime(2026, 11, 26, 2, 0, tzinfo=timezone.utc))
+        db.commit()
+        now = datetime(2026, 11, 26, 9, 5, tzinfo=IST)
+        assert process_due_schedules(db, campaigns.settings, Path(campaigns.photo_dir), now=now) == 1
+        recipients = {
+            row.voter_id: row
+            for row in db.scalars(
+                select(CampaignRecipient).where(CampaignRecipient.campaign_id == campaign_id)
+            ).all()
+        }
+        assert recipients["ZZZ4000001"].status == "rejected"
+        assert recipients["ZZZ4000001"].last_error == VOTER_REMOVED_MESSAGE
+        assert recipients["ZZZ4000002"].status == "sent"
+        deliveries = db.scalars(
+            select(CampaignDelivery).where(CampaignDelivery.campaign_id == campaign_id)
+        ).all()
+        by_recipient = {row.recipient_id: row for row in deliveries}
+        assert by_recipient[recipients["ZZZ4000001"].id].status == "rejected"
+        assert by_recipient[recipients["ZZZ4000002"].id].status == "sent"
+        # live_mobile_for_send never falls back to stored recipient.mobile
+        mobile, reason = campaign_send.live_mobile_for_send(db, recipients["ZZZ4000001"])
+        assert mobile is None and reason == VOTER_REMOVED_MESSAGE
+    finally:
+        db.close()
+
+
+def test_invalidated_voter_mobile_is_not_messaged_on_scheduled_slot(campaigns):
+    _seed_voters(campaigns)
+    created = _create_campaign(
+        campaigns,
+        send_mode="daily",
+        daily_times='["09:00"]',
+        start_date="2026-11-26",
+        end_date="2026-11-26",
+    )
+    campaign_id = created.json()["id"]
+
+    from app import database
+    from app.models import Voter
+
+    db = database.SessionLocal()
+    try:
+        voter = db.get(Voter, "ZZZ4000002")
+        voter.mobile = "12"
+        db.commit()
+        campaign = db.get(Campaign, campaign_id)
+        campaign.created_at = dump_dt(datetime(2026, 11, 26, 2, 0, tzinfo=timezone.utc))
+        db.commit()
+        now = datetime(2026, 11, 26, 9, 5, tzinfo=IST)
+        assert process_due_schedules(db, campaigns.settings, Path(campaigns.photo_dir), now=now) == 1
+        recipients = {
+            row.voter_id: row
+            for row in db.scalars(
+                select(CampaignRecipient).where(CampaignRecipient.campaign_id == campaign_id)
+            ).all()
+        }
+        assert recipients["ZZZ4000001"].status == "sent"
+        assert recipients["ZZZ4000002"].status == "rejected"
+        assert recipients["ZZZ4000002"].last_error == MISSING_MOBILE_MESSAGE
+    finally:
+        db.close()
+
+
+def test_cancel_mid_send_stops_remaining_recipients(campaigns):
+    _seed_voters(campaigns)
+    created = _create_campaign(
+        campaigns, channel="sms", send_mode="daily", daily_times='["10:00"]'
+    )
+    campaign_id = created.json()["id"]
+    from app import database
+    from app.services import campaign_send
+
+    db = database.SessionLocal()
+
+    class CancelAfterFirst:
+        def mode_for(self, channel):
+            return "dry_run"
+
+        def send(self, **kwargs):
+            # Cancel on the same Session so the next loop iteration sees it.
+            campaign = db.get(Campaign, campaign_id)
+            campaign.status = "cancelled"
+            campaign.schedule_active = False
+            db.commit()
+            return SimpleNamespace(
+                ok=True, provider_mode="dry_run", provider_ref="ok", detail="ok"
+            )
+
+    try:
+        with patch.object(campaign_send, "get_provider", return_value=CancelAfterFirst()):
+            sent = campaign_send.process_campaign_slot(
+                db,
+                campaign_id,
+                slot_key="cancel-slot",
+                settings=campaigns.settings,
+                photo_dir=Path(campaigns.photo_dir),
+            )
+        assert sent == 1
+        campaign = db.get(Campaign, campaign_id)
+        assert campaign.status == "cancelled"
+        deliveries = db.scalars(
+            select(CampaignDelivery).where(
+                CampaignDelivery.campaign_id == campaign_id,
+                CampaignDelivery.slot_key == "cancel-slot",
+            )
+        ).all()
+        assert len(deliveries) == 1
+        assert deliveries[0].status == "sent"
+    finally:
+        db.close()
+
+
+def test_non_creator_manager_cannot_pause_cancel_or_delete(campaigns):
+    _seed_voters(campaigns)
+    other = make_user(campaigns.ctx, "camp.mgr2", "mgr2-pass-1234", role="manager")
+    created = _create_campaign(
+        campaigns,
+        headers=campaigns.manager,
+        send_mode="daily",
+        daily_times='["08:00"]',
+    )
+    assert created.status_code == 201, created.text
+    campaign_id = created.json()["id"]
+    assert (
+        campaigns.client.post(
+            f"/api/campaigns/whatsapp/{campaign_id}/pause", headers=other
+        ).status_code
+        == 403
+    )
+    assert (
+        campaigns.client.post(
+            f"/api/campaigns/whatsapp/{campaign_id}/cancel", headers=other
+        ).status_code
+        == 403
+    )
+    assert (
+        campaigns.client.delete(
+            f"/api/campaigns/whatsapp/{campaign_id}", headers=other
+        ).status_code
+        == 403
+    )
+
+
+def test_create_rate_limit_and_max_recipients_cap(campaigns, monkeypatch):
+    _seed_voters(campaigns)
+    monkeypatch.setattr(campaigns.settings, "campaign_create_rate_limit", 1)
+    first = _create_campaign(campaigns, title="rate-one")
+    assert first.status_code == 201, first.text
+    second = _create_campaign(campaigns, title="rate-two")
+    assert second.status_code == 429
+
+    monkeypatch.setattr(campaigns.settings, "campaign_create_rate_limit", 100)
+    monkeypatch.setattr(campaigns.settings, "campaign_max_recipients", 1)
+    capped = _create_campaign(campaigns, title="too-many", target_values='["1"]')
+    assert capped.status_code == 422
+    assert "at most 1" in capped.json()["detail"]
+
+
+def test_photo_file_public_rejects_bad_sig_expired_and_cancelled(campaigns, monkeypatch):
+    _seed_voters(campaigns)
+    monkeypatch.setattr(campaigns.settings, "public_base_url", "https://example.test")
+    created = _create_campaign(
+        campaigns, channel="sms", photos=[_jpeg_bytes()], send_mode="daily", daily_times='["20:00"]'
+    )
+    assert created.status_code == 201, created.text
+    campaign_id = created.json()["id"]
+    detail = _detail(campaigns, "sms", campaign_id).json()
+    photo_id = detail["photos"][0]["id"]
+    urls = build_photo_urls(campaigns.settings, [photo_id])
+    assert urls
+    good_path = urls[0].split("example.test", 1)[1]
+
+    assert campaigns.client.get(good_path).status_code == 200
+    assert (
+        campaigns.client.get(
+            f"/api/campaigns/photos/{photo_id}/public?exp=9999999999&sig=deadbeef"
+        ).status_code
+        == 403
+    )
+    expired = int(datetime.now(timezone.utc).timestamp()) - 10
+    bad_sig = sign_photo_token(campaigns.settings, photo_id, expired)
+    assert (
+        campaigns.client.get(
+            f"/api/campaigns/photos/{photo_id}/public?exp={expired}&sig={bad_sig}"
+        ).status_code
+        == 403
+    )
+    assert verify_photo_token(campaigns.settings, photo_id, expired, bad_sig) is False
+
+    cancelled = campaigns.client.post(
+        f"/api/campaigns/sms/{campaign_id}/cancel", headers=campaigns.admin
+    )
+    assert cancelled.status_code == 200
+    assert campaigns.client.get(good_path).status_code == 410
+
+
+def test_sms_api_url_over_http_is_rejected_by_config(monkeypatch):
+    from app.config import load_settings
+
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key-0123456789")
+    monkeypatch.setenv("ADMIN_USERNAME", "")
+    monkeypatch.setenv("ADMIN_PASSWORD", "")
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("COOKIE_SECURE", "false")
+    monkeypatch.setenv("SMS_API_URL", "http://insecure.example/send")
+    monkeypatch.setenv("SMS_API_KEY", "key")
+    with pytest.raises(RuntimeError, match="SMS_API_URL must use HTTPS"):
+        load_settings()

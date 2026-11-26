@@ -31,6 +31,7 @@ logger = logging.getLogger("nathavaram.campaigns")
 
 PROVIDER_DRY_RUN = "dry_run"
 PROVIDER_LIVE = "live"
+_PHOTO_HMAC_DOMAIN = b"campaign-photo"
 
 # Digits that look like an Indian mobile (with optional country/trunk prefix).
 _MOBILE_IN_TEXT = re.compile(
@@ -279,10 +280,7 @@ class SmsHttpProvider:
         payload: dict = {"to": to, "message": body}
         if self._sender:
             payload["sender_id"] = self._sender
-        headers = {
-            "Authorization": f"Bearer {self._key}",
-            "X-API-Key": self._key,
-        }
+        headers = {"Authorization": f"Bearer {self._key}"}
         try:
             with httpx.Client(timeout=30.0) as client:
                 response = client.post(self._url, json=payload, headers=headers)
@@ -359,11 +357,18 @@ class ChannelRouter:
         )
 
 
+def _photo_signing_key(settings: Settings) -> bytes:
+    """Domain-separated key so campaign photo tokens cannot collide with CSRF/JWT material."""
+    return hmac.new(
+        settings.secret_key.encode("utf-8"),
+        _PHOTO_HMAC_DOMAIN,
+        hashlib.sha256,
+    ).digest()
+
+
 def sign_photo_token(settings: Settings, photo_id: int, expires_at: int) -> str:
     payload = f"{photo_id}:{expires_at}".encode("utf-8")
-    return hmac.new(
-        settings.secret_key.encode("utf-8"), payload, hashlib.sha256
-    ).hexdigest()
+    return hmac.new(_photo_signing_key(settings), payload, hashlib.sha256).hexdigest()
 
 
 def verify_photo_token(

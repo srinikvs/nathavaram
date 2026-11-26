@@ -14,6 +14,7 @@ from app.campaign_rules import (
     MESSAGE_MAX_LENGTH,
     SEND_MODES,
     TARGET_TYPES,
+    TARGET_VALUE_MAX_LENGTH,
     TIME_HHMM_RE,
     TITLE_MAX_LENGTH,
     TOO_MANY_TIMES_MESSAGE,
@@ -37,6 +38,10 @@ class RecipientPreview(BaseModel):
             text = (raw or "").strip()
             if not text or text in seen:
                 continue
+            if len(text) > TARGET_VALUE_MAX_LENGTH:
+                raise ValueError(
+                    f"Each target value must be at most {TARGET_VALUE_MAX_LENGTH} characters"
+                )
             seen.add(text)
             cleaned.append(text)
         if not cleaned:
@@ -71,7 +76,7 @@ class CampaignCreate(BaseModel):
 
     @field_validator("target_values")
     @classmethod
-    def _clean_values(cls, values: list[str]) -> list[str]:
+    def _clean_create_values(cls, values: list[str]) -> list[str]:
         return RecipientPreview._clean_values(values)
 
     @field_validator("daily_times")

@@ -245,7 +245,7 @@ class CampaignPhoto(Base):
 
 
 class CampaignRecipient(Base):
-    """One voter targeted by a campaign. mobile is stored in full; API/UI mask it."""
+    """One voter targeted by a campaign. mobile stores a masked display value only."""
 
     __tablename__ = "campaign_recipients"
     __table_args__ = (

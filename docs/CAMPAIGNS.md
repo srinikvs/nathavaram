@@ -19,7 +19,7 @@ Ownership: pause, resume, cancel and delete require the campaign's `created_by` 
 | --- | --- |
 | `campaigns` | One SMS or WhatsApp campaign: title, message, target geo, send mode, daily IST times, status |
 | `campaign_photos` | Metadata per photo (files under the campaign photo directory) |
-| `campaign_recipients` | One row per matched voter with a valid mobile; status `initiated` / `processed` / `sent` / `rejected` |
+| `campaign_recipients` | One row per matched voter with a valid mobile; `mobile` stores a **masked** display value only; status `initiated` / `processed` / `sent` / `rejected` |
 | `campaign_deliveries` | One delivery attempt per recipient per slot; unique so slots are idempotent |
 | `campaign_schedule_runs` | Claimed daily IST slots to prevent double-sends |
 | `campaign_idempotency_keys` | Optional `Idempotency-Key` header → campaign id (per user + channel) |
@@ -30,7 +30,7 @@ Ownership: pause, resume, cancel and delete require the campaign's `created_by` 
 
 ## Photos
 
-Up to 5 photos per campaign (422 if more). Uploads reuse the Public Issues image pipeline. WhatsApp sends every attached image (caption on the first). SMS includes photo links only when `PUBLIC_BASE_URL` is set: those links are signed, expiring HMAC URLs on `/api/campaigns/photos/{id}/public`. Auth-gated `/file` URLs are never embedded in SMS.
+Up to 5 photos per campaign (422 if more). Uploads reuse the Public Issues image pipeline. WhatsApp sends every attached image (caption on the first). SMS includes photo links only when `PUBLIC_BASE_URL` is set: those links are signed, expiring HMAC URLs on `/api/campaigns/photos/{id}/public` (domain-separated key `hmac(secret_key, "campaign-photo")`, default TTL 24h). Cancelled campaigns return 410 on public photo links. Auth-gated `/file` URLs are never embedded in SMS.
 
 ## Scheduling
 
@@ -39,11 +39,11 @@ Up to 5 photos per campaign (422 if more). Uploads reuse the Public Issues image
 
 ## Providers and dry-run
 
-Credentials are environment-only (`WHATSAPP_*`, `SMS_*`). When missing, the dry-run provider records realistic deliveries without external HTTP. `SMS_API_URL` must be HTTPS. The SMS API key is sent in `Authorization` / `X-API-Key` headers, never in the JSON body.
+Credentials are environment-only (`WHATSAPP_*`, `SMS_*`). When missing, the dry-run provider records realistic deliveries without external HTTP. `SMS_API_URL` must be HTTPS. The SMS API key is sent only as `Authorization: Bearer …`, never in the JSON body and never duplicated in `X-API-Key`.
 
 ## Privacy and retention
 
-Recipient mobiles are masked to the last 4 characters in every API and UI payload. Provider `detail` / `last_error` text is scrubbed of phone-like digit runs. When a voter is **hard-deleted**, stored `campaign_recipients.mobile` values for that voter are scrubbed to `****`; send-time resolution prefers the live voter mobile when the voter is still active.
+`campaign_recipients.mobile` stores only a masked display value (e.g. `******1234`). Send-time always resolves the live mobile from `voters` by `voter_id`. Soft-deleted, hard-deleted, missing, or invalid-mobile voters are marked `rejected` (`voter removed` / `missing valid mobile`) and never messaged. API/UI payloads never expose full mobiles. Provider `detail` / `last_error` text is scrubbed of phone-like digit runs. Hard-delete (including bulk) batch-scrubs stored recipient mobiles to `****`.
 
 ## Auth and idempotency
 

@@ -21,7 +21,7 @@ from app.config import sms_configured, whatsapp_configured
 from app.database import get_db
 from app.deps import require_admin, require_manager, require_user
 from app.errors import ServiceError
-from app.models import User
+from app.models import Campaign, User
 from app.services import issue_photos
 from app.services.campaign_providers import verify_photo_token
 from app.services.campaign_scheduler import process_due_schedules
@@ -99,6 +99,9 @@ def photo_file_public(
     if not verify_photo_token(request.app.state.settings, photo_id, exp, sig):
         raise HTTPException(status_code=403, detail="Photo link expired or invalid")
     photo = _run(get_photo, db, photo_id)
+    campaign = db.get(Campaign, photo.campaign_id)
+    if campaign is None or campaign.status == "cancelled":
+        raise HTTPException(status_code=410, detail="Campaign cancelled")
     path = _run(issue_photos.photo_path, _photo_dir(request), photo.storage_name)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Photo not found")
@@ -198,7 +201,7 @@ def _list_form(raw: str | None) -> list[str]:
 
 
 @router.post("/{channel}", status_code=201)
-async def create(
+def create(
     request: Request,
     channel: str,
     title: str = Form(...),
@@ -215,13 +218,14 @@ async def create(
     user: User = Depends(require_manager),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict:
+    """Sync route so FastAPI runs create + provider work off the event loop."""
     channel = _parse_channel(channel)
     uploads: list[bytes] = []
     files = photos or []
     if len(files) > MAX_PHOTOS_PER_CAMPAIGN:
         raise HTTPException(status_code=422, detail=TOO_MANY_PHOTOS_MESSAGE)
     for upload in files:
-        data = await upload.read(issue_photos.MAX_UPLOAD_BYTES + 1)
+        data = upload.file.read(issue_photos.MAX_UPLOAD_BYTES + 1)
         if data:
             uploads.append(data)
     if len(uploads) > MAX_PHOTOS_PER_CAMPAIGN:

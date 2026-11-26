@@ -1,7 +1,7 @@
-"""Campaign messaging: recipient resolution, create/list, send processing, and controls.
+"""Campaign messaging: create, mutate, targeting, and scrub helpers.
 
-Manager/admin may create and mutate campaigns. Mobile numbers are stored in full (until a
-voter is hard-deleted) and masked in every payload helper. Provider detail text is scrubbed.
+Manager/admin may create and mutate campaigns. ``campaign_recipients.mobile`` stores only a
+masked display value; send-time resolution always loads the live voter mobile.
 """
 
 from __future__ import annotations
@@ -11,22 +11,18 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.campaign_rules import (
     CHANNELS,
-    CHANNEL_LABELS,
     IDEMPOTENCY_KEY_MAX_LENGTH,
-    KPI_LABELS,
     MAX_PHOTOS_PER_CAMPAIGN,
     OWNERSHIP_REFUSED_MESSAGE,
     PHOTO_CAP_MESSAGE,
     RATE_LIMIT_MESSAGE,
-    RECIPIENTS_PAGE_SIZE_DEFAULT,
-    RECIPIENTS_PAGE_SIZE_MAX,
-    RECIPIENT_STATUSES,
-    TARGET_LABELS,
+    SCRUBBED_MOBILE,
     TARGET_TYPES,
     TARGET_VOTER_FIELDS,
     TOO_MANY_PHOTOS_MESSAGE,
@@ -36,46 +32,61 @@ from app.config import Settings
 from app.errors import ServiceError
 from app.models import (
     Campaign,
-    CampaignDelivery,
     CampaignIdempotencyKey,
     CampaignPhoto,
     CampaignRecipient,
-    CampaignScheduleRun,
     User,
     Voter,
 )
 from app.permissions import can_manage_campaigns, is_admin
 from app.services import issue_photos
-from app.services.campaign_providers import (
-    build_photo_urls,
-    get_provider,
-    scrub_phone_text,
+from app.services.campaign_providers import get_provider
+from app.services.campaign_read import (
+    campaign_detail,
+    campaign_payload,
+    campaign_summary_payload,
+    kpi_cards,
+    mask_campaign_mobile,
+    status_counts,
 )
-from app.services.issues import mask_issue_mobile
-from app.validation import dump_dt, is_loose_indian_mobile, parse_dt
+from app.services.campaign_send import process_campaign_slot
+from app.validation import dump_dt, is_loose_indian_mobile
 
 CAMPAIGN_NOT_FOUND = "Campaign not found"
 PHOTO_NOT_FOUND = "Photo not found"
-SCRUBBED_MOBILE = "****"
+
+# Re-exports for routers and tests.
+__all__ = [
+    "CAMPAIGN_NOT_FOUND",
+    "PHOTO_NOT_FOUND",
+    "SCRUBBED_MOBILE",
+    "campaign_detail",
+    "campaign_payload",
+    "campaign_summary_payload",
+    "cancel_campaign",
+    "create_campaign",
+    "delete_campaign",
+    "find_idempotent_campaign",
+    "get_photo",
+    "kpi_cards",
+    "list_target_options",
+    "mask_campaign_mobile",
+    "match_active_voters",
+    "pause_campaign",
+    "preview_recipients",
+    "process_campaign_slot",
+    "resolve_recipients",
+    "resume_campaign",
+    "scrub_recipient_mobiles_for_voter",
+    "scrub_recipient_mobiles_for_voters",
+    "search_campaigns",
+    "status_counts",
+    "voters_with_valid_mobile",
+]
 
 
 def _now() -> str:
     return dump_dt(datetime.now(timezone.utc))
-
-
-def mask_campaign_mobile(value: str | None) -> str | None:
-    """Same masking rule as Public Issues: last 4 visible, shorter values fully masked."""
-    return mask_issue_mobile(value)
-
-
-def _parse_json_list(raw: str) -> list[str]:
-    try:
-        data = json.loads(raw or "[]")
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(data, list):
-        return []
-    return [str(item) for item in data]
 
 
 def _channel(channel: str) -> str:
@@ -121,7 +132,6 @@ def _target_column(target_type: str):
 
 
 def match_active_voters(db: Session, target_type: str, target_values: list[str]) -> list[Voter]:
-    """Active voters matching the target geo values (mobile may be missing or invalid)."""
     if target_type not in TARGET_TYPES:
         raise ServiceError("Unsupported target type", 422, "target_type")
     if not target_values:
@@ -148,7 +158,6 @@ def voters_with_valid_mobile(voters: list[Voter]) -> list[Voter]:
 
 
 def resolve_recipients(db: Session, target_type: str, target_values: list[str]) -> list[Voter]:
-    """Active voters matching the target geo values who have a valid Indian mobile."""
     return voters_with_valid_mobile(match_active_voters(db, target_type, target_values))
 
 
@@ -196,7 +205,8 @@ def _attach_photos(
     uploads: list[bytes],
     user: User,
     photo_dir: Path,
-) -> list[CampaignPhoto]:
+) -> list[str]:
+    """Attach photos; return storage names written (for cleanup on commit failure)."""
     if len(uploads) > MAX_PHOTOS_PER_CAMPAIGN:
         raise ServiceError(TOO_MANY_PHOTOS_MESSAGE, 422, "photos")
     existing = db.scalar(
@@ -207,28 +217,27 @@ def _attach_photos(
     if existing + len(uploads) > MAX_PHOTOS_PER_CAMPAIGN:
         raise ServiceError(PHOTO_CAP_MESSAGE, 422, "photos")
     now = _now()
-    photos: list[CampaignPhoto] = []
     written: list[str] = []
     try:
         for data in uploads:
             stored = store_campaign_photo(data, photo_dir, campaign.id)
             written.append(stored.storage_name)
-            photo = CampaignPhoto(
-                campaign_id=campaign.id,
-                storage_name=stored.storage_name,
-                width=stored.width,
-                height=stored.height,
-                uploaded_by=user.username,
-                uploaded_at=now,
+            db.add(
+                CampaignPhoto(
+                    campaign_id=campaign.id,
+                    storage_name=stored.storage_name,
+                    width=stored.width,
+                    height=stored.height,
+                    uploaded_by=user.username,
+                    uploaded_at=now,
+                )
             )
-            db.add(photo)
-            photos.append(photo)
         db.flush()
     except Exception:
         for name in written:
             issue_photos.delete_photo_file(photo_dir, name)
         raise
-    return photos
+    return written
 
 
 def _check_create_rate_limit(db: Session, user: User, settings: Settings) -> None:
@@ -326,18 +335,19 @@ def create_campaign(
     db.flush()
 
     for voter in voters:
+        # Store masked display only; send-time always resolves the live voter mobile.
         db.add(
             CampaignRecipient(
                 campaign_id=campaign.id,
                 voter_id=voter.voter_id,
-                mobile=(voter.mobile or "").strip(),
+                mobile=mask_campaign_mobile((voter.mobile or "").strip()) or SCRUBBED_MOBILE,
                 status="initiated",
                 created_at=now,
                 updated_at=now,
             )
         )
     db.flush()
-    _attach_photos(db, campaign, uploads, user, photo_dir)
+    written = _attach_photos(db, campaign, uploads, user, photo_dir)
 
     if idempotency_key and idempotency_key.strip():
         db.add(
@@ -349,7 +359,16 @@ def create_campaign(
                 created_at=now,
             )
         )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        for name in written:
+            issue_photos.delete_photo_file(photo_dir, name)
+        raced = find_idempotent_campaign(db, user, channel, idempotency_key)
+        if raced is not None:
+            return raced
+        raise ServiceError("Could not create campaign (conflict)", 409)
     db.refresh(campaign)
 
     if body.send_mode == "now":
@@ -360,176 +379,20 @@ def create_campaign(
     return campaign
 
 
-def _mobile_for_send(db: Session, recipient: CampaignRecipient) -> str | None:
-    """Prefer the live voter mobile when the voter is still active; else stored copy."""
-    voter = db.get(Voter, recipient.voter_id)
-    if (
-        voter is not None
-        and voter.deleted_at is None
-        and voter.hard_deleted_at is None
-        and voter.mobile
-        and is_loose_indian_mobile(voter.mobile.strip())
-    ):
-        return voter.mobile.strip()
-    stored = (recipient.mobile or "").strip()
-    if stored and stored != SCRUBBED_MOBILE and is_loose_indian_mobile(stored):
-        return stored
-    return None
-
-
-def process_campaign_slot(
-    db: Session,
-    campaign_id: int,
-    *,
-    slot_key: str,
-    settings: Settings,
-    photo_dir: Path,
-) -> int:
-    """Send (or dry-run) every recipient for a slot. Idempotent per campaign/recipient/slot.
-
-    Each delivery is committed as ``initiated`` before the provider call, then updated to
-    ``sent`` / ``rejected`` and committed again so a mid-loop failure keeps prior results.
-    """
-    campaign = _require_campaign(db, campaign_id)
-    if campaign.status == "cancelled":
+def scrub_recipient_mobiles_for_voters(db: Session, voter_ids: list[str]) -> int:
+    """Batch-scrub stored campaign recipient mobiles when voters are hard-deleted."""
+    if not voter_ids:
         return 0
-    if campaign.send_mode == "daily" and not campaign.schedule_active and slot_key != "now":
-        return 0
-
-    recipients = db.scalars(
-        select(CampaignRecipient).where(CampaignRecipient.campaign_id == campaign.id)
-    ).all()
-    already = set(
-        db.scalars(
-            select(CampaignDelivery.recipient_id).where(
-                CampaignDelivery.campaign_id == campaign.id,
-                CampaignDelivery.slot_key == slot_key,
-            )
-        ).all()
+    result = db.execute(
+        update(CampaignRecipient)
+        .where(CampaignRecipient.voter_id.in_(voter_ids))
+        .values(mobile=SCRUBBED_MOBILE, updated_at=_now())
     )
-    photos = db.scalars(
-        select(CampaignPhoto).where(CampaignPhoto.campaign_id == campaign.id)
-    ).all()
-    photo_paths = [issue_photos.photo_path(photo_dir, photo.storage_name) for photo in photos]
-    photo_ids = [photo.id for photo in photos]
-    photo_urls = build_photo_urls(settings, photo_ids) if campaign.channel == "sms" else []
-    provider = get_provider(settings)
-    now = _now()
-    sent_count = 0
-
-    if campaign.status in {"queued", "scheduled", "paused"} and slot_key == "now":
-        campaign.status = "sending"
-        campaign.updated_at = now
-        db.commit()
-    elif campaign.status == "scheduled" and slot_key != "now":
-        campaign.status = "sending"
-        campaign.updated_at = now
-        db.commit()
-
-    for recipient in recipients:
-        if recipient.id in already:
-            continue
-
-        mobile = _mobile_for_send(db, recipient)
-        stamp = _now()
-        delivery = CampaignDelivery(
-            campaign_id=campaign.id,
-            recipient_id=recipient.id,
-            slot_key=slot_key,
-            status="initiated",
-            provider_mode=provider.mode_for(campaign.channel),
-            created_at=stamp,
-            updated_at=stamp,
-        )
-        db.add(delivery)
-        recipient.status = "processed"
-        recipient.updated_at = stamp
-        db.commit()
-        db.refresh(delivery)
-
-        if mobile is None:
-            delivery.status = "rejected"
-            delivery.detail = "No valid mobile available for recipient"
-            recipient.status = "rejected"
-            recipient.last_error = delivery.detail
-            delivery.updated_at = _now()
-            recipient.updated_at = delivery.updated_at
-            db.commit()
-            continue
-
-        try:
-            result = provider.send(
-                channel=campaign.channel,
-                to_mobile=mobile,
-                title=campaign.title,
-                message=campaign.message,
-                photo_paths=photo_paths,
-                photo_urls=photo_urls,
-            )
-        except Exception as exc:
-            detail = scrub_phone_text(str(exc)[:300]) or "Provider error"
-            delivery.status = "rejected"
-            delivery.detail = detail
-            recipient.status = "rejected"
-            recipient.last_error = detail
-            delivery.updated_at = _now()
-            recipient.updated_at = delivery.updated_at
-            db.commit()
-            raise
-
-        stamp = _now()
-        safe_detail = scrub_phone_text(result.detail)
-        if result.ok:
-            recipient.status = "sent"
-            delivery.status = "sent"
-            sent_count += 1
-        else:
-            recipient.status = "rejected"
-            recipient.last_error = safe_detail
-            delivery.status = "rejected"
-            delivery.detail = safe_detail
-        delivery.provider_mode = result.provider_mode
-        delivery.provider_ref = result.provider_ref
-        delivery.updated_at = stamp
-        recipient.updated_at = stamp
-        campaign.provider_mode = result.provider_mode
-        campaign.updated_at = stamp
-        db.commit()
-
-    campaign = _require_campaign(db, campaign_id)
-    if campaign.send_mode == "now":
-        campaign.status = "completed"
-    elif campaign.schedule_active and campaign.status != "cancelled":
-        campaign.status = "scheduled"
-    campaign.updated_at = _now()
-    db.commit()
-    return sent_count
+    return int(result.rowcount or 0)
 
 
 def scrub_recipient_mobiles_for_voter(db: Session, voter_id: str) -> int:
-    """Clear stored campaign recipient mobiles when a voter is hard-deleted."""
-    rows = db.scalars(
-        select(CampaignRecipient).where(CampaignRecipient.voter_id == voter_id)
-    ).all()
-    for row in rows:
-        row.mobile = SCRUBBED_MOBILE
-        row.updated_at = _now()
-    return len(rows)
-
-
-def status_counts(db: Session, channel: str) -> dict[str, int]:
-    channel = _channel(channel)
-    counts = {status: 0 for status in RECIPIENT_STATUSES}
-    rows = db.execute(
-        select(CampaignRecipient.status, func.count())
-        .join(Campaign, Campaign.id == CampaignRecipient.campaign_id)
-        .where(Campaign.channel == channel)
-        .group_by(CampaignRecipient.status)
-    ).all()
-    for status, count in rows:
-        if status in counts:
-            counts[status] = int(count)
-    return counts
+    return scrub_recipient_mobiles_for_voters(db, [voter_id])
 
 
 def search_campaigns(
@@ -566,180 +429,6 @@ def search_campaigns(
         ).all():
             recipient_totals[int(campaign_id)] = int(count)
     return rows, int(total), recipient_totals
-
-
-def photo_payload(photo: CampaignPhoto) -> dict:
-    return {
-        "id": photo.id,
-        "width": photo.width,
-        "height": photo.height,
-        "uploaded_by": photo.uploaded_by,
-        "uploaded_at": photo.uploaded_at,
-        "url": f"/api/campaigns/photos/{photo.id}/file",
-    }
-
-
-def recipient_payload(recipient: CampaignRecipient) -> dict:
-    return {
-        "id": recipient.id,
-        "voter_id": recipient.voter_id,
-        "mobile": mask_campaign_mobile(recipient.mobile),
-        "status": recipient.status,
-        "last_error": scrub_phone_text(recipient.last_error),
-        "created_at": recipient.created_at,
-        "updated_at": recipient.updated_at,
-    }
-
-
-def delivery_payload(delivery: CampaignDelivery) -> dict:
-    return {
-        "id": delivery.id,
-        "recipient_id": delivery.recipient_id,
-        "slot_key": delivery.slot_key,
-        "status": delivery.status,
-        "provider_mode": delivery.provider_mode,
-        "provider_ref": delivery.provider_ref,
-        "detail": scrub_phone_text(delivery.detail),
-        "created_at": delivery.created_at,
-        "updated_at": delivery.updated_at,
-    }
-
-
-def _target_summary(campaign: Campaign) -> str:
-    values = _parse_json_list(campaign.target_values_json)
-    label = TARGET_LABELS.get(campaign.target_type, campaign.target_type)
-    if not values:
-        return label
-    shown = ", ".join(values[:5])
-    if len(values) > 5:
-        shown += f" (+{len(values) - 5})"
-    return f"{label}: {shown}"
-
-
-def _schedule_summary(campaign: Campaign) -> str:
-    if campaign.send_mode == "now":
-        return "Send now"
-    times = _parse_json_list(campaign.daily_times_json)
-    parts = ["Daily " + ", ".join(times) + " IST" if times else "Daily"]
-    if campaign.start_date or campaign.end_date:
-        parts.append(f"{campaign.start_date or '…'} → {campaign.end_date or '…'}")
-    if campaign.status == "paused" or not campaign.schedule_active:
-        parts.append("Paused")
-    return " · ".join(parts)
-
-
-def campaign_payload(campaign: Campaign, *, recipient_total: int | None = None) -> dict:
-    return {
-        "id": campaign.id,
-        "channel": campaign.channel,
-        "channel_label": CHANNEL_LABELS.get(campaign.channel, campaign.channel),
-        "title": campaign.title,
-        "message": campaign.message,
-        "from": campaign.created_by,
-        "to": _target_summary(campaign),
-        "target_type": campaign.target_type,
-        "target_values": _parse_json_list(campaign.target_values_json),
-        "send_mode": campaign.send_mode,
-        "daily_times": _parse_json_list(campaign.daily_times_json),
-        "start_date": campaign.start_date,
-        "end_date": campaign.end_date,
-        "schedule_active": campaign.schedule_active,
-        "schedule": _schedule_summary(campaign),
-        "status": campaign.status,
-        "provider_mode": campaign.provider_mode,
-        "created_by": campaign.created_by,
-        "created_at": campaign.created_at,
-        "updated_at": campaign.updated_at,
-        "cancelled_at": campaign.cancelled_at,
-        "recipient_total": recipient_total,
-    }
-
-
-def campaign_summary_payload(db: Session, campaign: Campaign) -> dict:
-    total = db.scalar(
-        select(func.count())
-        .select_from(CampaignRecipient)
-        .where(CampaignRecipient.campaign_id == campaign.id)
-    ) or 0
-    status_rows = db.execute(
-        select(CampaignRecipient.status, func.count())
-        .where(CampaignRecipient.campaign_id == campaign.id)
-        .group_by(CampaignRecipient.status)
-    ).all()
-    by_status = {status: 0 for status in RECIPIENT_STATUSES}
-    for status, count in status_rows:
-        if status in by_status:
-            by_status[status] = int(count)
-    photo_count = db.scalar(
-        select(func.count())
-        .select_from(CampaignPhoto)
-        .where(CampaignPhoto.campaign_id == campaign.id)
-    ) or 0
-    payload = campaign_payload(campaign, recipient_total=int(total))
-    payload["recipient_counts"] = by_status
-    payload["photo_count"] = int(photo_count)
-    return payload
-
-
-def campaign_detail(
-    db: Session,
-    campaign_id: int,
-    channel: str | None = None,
-    *,
-    recipients_page: int = 1,
-    recipients_page_size: int = RECIPIENTS_PAGE_SIZE_DEFAULT,
-) -> dict:
-    campaign = _require_campaign(db, campaign_id, channel)
-    page = max(1, recipients_page)
-    page_size = min(max(1, recipients_page_size), RECIPIENTS_PAGE_SIZE_MAX)
-    recipient_total = db.scalar(
-        select(func.count())
-        .select_from(CampaignRecipient)
-        .where(CampaignRecipient.campaign_id == campaign.id)
-    ) or 0
-    recipients = db.scalars(
-        select(CampaignRecipient)
-        .where(CampaignRecipient.campaign_id == campaign.id)
-        .order_by(CampaignRecipient.id)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
-    photos = db.scalars(
-        select(CampaignPhoto)
-        .where(CampaignPhoto.campaign_id == campaign.id)
-        .order_by(CampaignPhoto.id)
-    ).all()
-    deliveries = db.scalars(
-        select(CampaignDelivery)
-        .where(CampaignDelivery.campaign_id == campaign.id)
-        .order_by(CampaignDelivery.id.desc())
-        .limit(200)
-    ).all()
-    runs = db.scalars(
-        select(CampaignScheduleRun)
-        .where(CampaignScheduleRun.campaign_id == campaign.id)
-        .order_by(CampaignScheduleRun.id.desc())
-        .limit(50)
-    ).all()
-    payload = campaign_payload(campaign, recipient_total=int(recipient_total))
-    payload["recipients"] = [recipient_payload(row) for row in recipients]
-    payload["recipients_page"] = page
-    payload["recipients_page_size"] = page_size
-    payload["recipients_total"] = int(recipient_total)
-    payload["photos"] = [photo_payload(row) for row in photos]
-    payload["deliveries"] = [delivery_payload(row) for row in deliveries]
-    payload["schedule_runs"] = [
-        {
-            "id": run.id,
-            "run_date": run.run_date,
-            "run_time": run.run_time,
-            "claimed_at": run.claimed_at,
-            "completed_at": run.completed_at,
-            "recipient_count": run.recipient_count,
-        }
-        for run in runs
-    ]
-    return payload
 
 
 def pause_campaign(db: Session, campaign_id: int, channel: str, user: User) -> Campaign:
@@ -811,22 +500,3 @@ def get_photo(db: Session, photo_id: int) -> CampaignPhoto:
     if photo is None:
         raise ServiceError(PHOTO_NOT_FOUND, 404)
     return photo
-
-
-def kpi_cards(db: Session, channel: str) -> list[dict]:
-    counts = status_counts(db, channel)
-    icons = {
-        "initiated": "≡",
-        "processed": "⌛",
-        "sent": "✓",
-        "rejected": "👎",
-    }
-    return [
-        {
-            "key": key,
-            "label": KPI_LABELS[key],
-            "count": counts[key],
-            "icon": icons[key],
-        }
-        for key in RECIPIENT_STATUSES
-    ]

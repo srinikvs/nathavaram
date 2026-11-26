@@ -140,9 +140,13 @@ def bulk_hard_delete_voters(db: Session, voter_ids: list[str], source_id: str, *
     """Permanently remove personal data from the listed soft-deleted voters (manager/admin)."""
     if confirm is not True:
         raise ServiceError(CONFIRM_HARD_REQUIRED_MESSAGE, 400, "confirm")
-    voters = load_deleted_for_hard_delete(db, normalize_ids(voter_ids))
+    ids = normalize_ids(voter_ids)
+    voters = load_deleted_for_hard_delete(db, ids)
     now = _now()
     for voter in voters:
         hard_delete_voter(db, voter, source_id, now)
+    from app.services.campaigns import scrub_recipient_mobiles_for_voters
+
+    scrub_recipient_mobiles_for_voters(db, [voter.voter_id for voter in voters])
     db.commit()
     return len(voters)
