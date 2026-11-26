@@ -404,11 +404,51 @@ abbr { text-decoration: none; color: var(--chili); }
 .campaign-modal-body {
   padding: 14px; overflow: auto; display: grid; gap: 10px; background: #fff;
 }
-.campaign-modal-body label { display: grid; gap: 4px; font-weight: 600; color: #1a2744; }
+.campaign-modal-body label,
+.campaign-modal-body .campaign-field {
+  display: grid; gap: 4px; font-weight: 600; color: #1a2744;
+}
 .campaign-modal-body input,
 .campaign-modal-body select,
 .campaign-modal-body textarea {
   font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-weight: 400;
+}
+.multi-select { position: relative; font-weight: 400; }
+.multi-select-trigger {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; min-height: 44px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.multi-select-trigger:hover { background: #f7f4ef; }
+.multi-select.is-open .multi-select-trigger {
+  border-color: var(--chili); outline: 3px solid #e0b15a; outline-offset: 1px;
+}
+.multi-select-chevron { color: #5c5346; font-size: 0.85rem; line-height: 1; }
+.multi-select-menu {
+  position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+  max-height: min(240px, 40vh); overflow: auto;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff;
+  box-shadow: 0 8px 24px rgba(28, 25, 20, 0.16);
+}
+.multi-select-menu[hidden] { display: none; }
+.multi-select-toolbar {
+  display: flex; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: #fff;
+}
+.multi-select-action {
+  border: 0; background: transparent; color: var(--chili); font: inherit;
+  font-size: 0.85rem; font-weight: 600; padding: 0; cursor: pointer;
+}
+.multi-select-action:hover { text-decoration: underline; }
+.multi-select-options { display: grid; padding: 4px 0; }
+.multi-select-option {
+  display: flex !important; flex-direction: row; align-items: center; gap: 8px;
+  margin: 0; padding: 8px 10px; font-weight: 500 !important; cursor: pointer;
+}
+.multi-select-option:hover { background: #f7f4ef; }
+.multi-select-option input {
+  width: 1.1rem; min-height: 1.1rem; margin: 0; padding: 0; flex: 0 0 auto;
 }
 .campaign-modal-foot {
   display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;

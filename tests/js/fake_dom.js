@@ -1,7 +1,8 @@
 "use strict";
-// A small DOM stand-in so the real app/static scripts (app.js and voter-list-context.js) can run
-// under Node without a browser. It supports only the selectors, events and window APIs those
-// scripts use, and it models capture, target and bubble phases with stopPropagation.
+// A small DOM stand-in so the real app/static scripts (app.js, voter-list-context.js,
+// campaigns.js) can run under Node without a browser. It supports only the selectors,
+// events and window APIs those scripts use, and it models capture, target and bubble
+// phases with stopPropagation.
 // Synthetic test pages only: no real voter data.
 
 const fs = require("fs");
@@ -11,20 +12,39 @@ const vm = require("vm");
 const STATIC_DIR = nodePath.resolve(__dirname, "..", "..", "app", "static");
 const SCRIPT_FILES = ["app.js", "voter-list-context.js"];
 const STORAGE_KEY = "nathavaram.voterList";
-const SIMPLE_SELECTOR = /^([a-z]*)((?:\[[a-z-]+\])*)$/;
+// tag, [attr], [attr="value"], :checked — comma-separated compounds. No descendants.
+const SIMPLE_SELECTOR = /^([a-z]*)((?:\[[a-z-]+(?:="[^"]*")?\])*)(:checked)?$/;
 const FILTER_FIELDS = ["q", "booth", "ward", "mobile", "voter_id", "is_local"];
 
-// Supports "tag", "[attr]" and "tag[attr]" parts, joined by commas. Anything else never matches.
+// Supports "tag", "[attr]", "[attr=\"value\"]", ":checked", and "tag[attr]" parts.
 function matchesCompound(element, compound) {
   const match = SIMPLE_SELECTOR.exec(compound.trim());
-  if (!match || (!match[1] && !match[2])) {
+  if (!match || (!match[1] && !match[2] && !match[3])) {
     return false;
   }
   if (match[1] && element.tag !== match[1]) {
     return false;
   }
-  const names = Array.from(match[2].matchAll(/\[([a-z-]+)\]/g), (found) => found[1]);
-  return names.every((name) => Object.prototype.hasOwnProperty.call(element.attrs, name));
+  if (match[3] === ":checked" && !element.checked) {
+    return false;
+  }
+  const attrs = Array.from(
+    match[2].matchAll(/\[([a-z-]+)(?:="([^"]*)")?\]/g),
+    (found) => ({ name: found[1], value: found[2], hasValue: found[2] !== undefined }),
+  );
+  return attrs.every((attr) => {
+    if (!Object.prototype.hasOwnProperty.call(element.attrs, attr.name)) {
+      return false;
+    }
+    if (!attr.hasValue) {
+      return true;
+    }
+    const actual =
+      attr.name === "value" && element.value !== undefined
+        ? String(element.value)
+        : String(element.attrs[attr.name]);
+    return actual === attr.value;
+  });
 }
 
 function matches(element, selector) {
@@ -41,6 +61,15 @@ function descendants(root) {
   };
   walk(root);
   return found;
+}
+
+function syncClassAttr(element) {
+  const names = Array.from(element._classTokens);
+  if (names.length) {
+    element.attrs.class = names.join(" ");
+  } else {
+    delete element.attrs.class;
+  }
 }
 
 function addListener(holder, type, fn, options) {
@@ -65,6 +94,7 @@ function makeEvent(type, target, init) {
     {
       type: type,
       target: target,
+      key: "",
       button: 0,
       ctrlKey: false,
       metaKey: false,
@@ -85,17 +115,46 @@ function makeEvent(type, target, init) {
 }
 
 function createElement(tag, attrs) {
+  const initialClass = (attrs && attrs.class) || "";
   const element = {
     tag: tag,
     attrs: Object.assign({}, attrs || {}),
     parent: null,
     children: [],
     listeners: {},
+    _classTokens: new Set(initialClass.split(/\s+/).filter(Boolean)),
     name: attrs && attrs.name !== undefined ? attrs.name : "",
-    value: attrs && attrs.value !== undefined ? attrs.value : "",
-    checked: false,
-    hidden: false,
+    _value: attrs && attrs.value !== undefined ? String(attrs.value) : "",
+    _type: attrs && attrs.type !== undefined ? String(attrs.type) : "",
+    checked: Boolean(attrs && (attrs.checked === true || attrs.checked === "" || attrs.checked === "checked")),
+    selected: Boolean(attrs && (attrs.selected === true || attrs.selected === "" || attrs.selected === "selected")),
+    hidden: Boolean(attrs && (attrs.hidden === true || attrs.hidden === "" || attrs.hidden === "hidden")),
+    disabled: false,
     textContent: "",
+    showModalCalls: 0,
+    closeCalls: 0,
+    get value() {
+      return this._value;
+    },
+    set value(next) {
+      this._value = String(next == null ? "" : next);
+      this.attrs.value = this._value;
+    },
+    get type() {
+      return this._type;
+    },
+    set type(next) {
+      this._type = String(next == null ? "" : next);
+      this.attrs.type = this._type;
+    },
+    get className() {
+      return Array.from(this._classTokens).join(" ");
+    },
+    set className(value) {
+      this._classTokens = new Set(String(value || "").split(/\s+/).filter(Boolean));
+      syncClassAttr(this);
+    },
+    classList: null,
     get dataset() {
       const out = {};
       Object.keys(this.attrs).forEach((key) => {
@@ -113,8 +172,50 @@ function createElement(tag, attrs) {
         },
       };
     },
+    get selectedOptions() {
+      return this.children.filter((child) => child.tag === "option" && child.selected);
+    },
+    get firstChild() {
+      return this.children.length ? this.children[0] : null;
+    },
+    get innerHTML() {
+      return this.children.map((child) => "<" + child.tag + ">").join("");
+    },
+    set innerHTML(value) {
+      if (value === "") {
+        this.children.forEach((child) => {
+          child.parent = null;
+        });
+        this.children = [];
+      }
+    },
     getAttribute(name) {
       return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null;
+    },
+    setAttribute(name, value) {
+      const text = String(value);
+      this.attrs[name] = text;
+      if (name === "class") {
+        this._classTokens = new Set(text.split(/\s+/).filter(Boolean));
+      }
+      if (name === "value") {
+        this._value = text;
+      }
+      if (name === "type") {
+        this._type = text;
+      }
+      if (name === "hidden") {
+        this.hidden = true;
+      }
+    },
+    removeAttribute(name) {
+      delete this.attrs[name];
+      if (name === "class") {
+        this._classTokens = new Set();
+      }
+      if (name === "hidden") {
+        this.hidden = false;
+      }
     },
     closest(selector) {
       for (let node = this; node; node = node.parent) {
@@ -124,6 +225,10 @@ function createElement(tag, attrs) {
       }
       return null;
     },
+    contains(other) {
+      if (other === this) return true;
+      return descendants(this).indexOf(other) !== -1;
+    },
     querySelector(selector) {
       return descendants(this).find((node) => matches(node, selector)) || null;
     },
@@ -131,8 +236,20 @@ function createElement(tag, attrs) {
       return descendants(this).filter((node) => matches(node, selector));
     },
     appendChild(child) {
+      if (child.parent) {
+        child.parent.removeChild(child);
+      }
       child.parent = this;
       this.children.push(child);
+      return child;
+    },
+    removeChild(child) {
+      const index = this.children.indexOf(child);
+      if (index === -1) {
+        throw new Error("NotFoundError");
+      }
+      this.children.splice(index, 1);
+      child.parent = null;
       return child;
     },
     addEventListener(type, fn, options) {
@@ -147,6 +264,40 @@ function createElement(tag, attrs) {
       this.submitted = this.submitted || [];
       this.submitted.push(this.formEntries());
     },
+    reset() {
+      this.resetCalls = (this.resetCalls || 0) + 1;
+    },
+    showModal() {
+      this.showModalCalls += 1;
+      this.open = true;
+    },
+    close() {
+      this.closeCalls += 1;
+      this.open = false;
+    },
+    focus() {},
+    setSelectionRange() {},
+  };
+  element.classList = {
+    add: (...names) => {
+      names.forEach((name) => element._classTokens.add(name));
+      syncClassAttr(element);
+    },
+    remove: (...names) => {
+      names.forEach((name) => element._classTokens.delete(name));
+      syncClassAttr(element);
+    },
+    toggle: (name, force) => {
+      const shouldHave = force === undefined ? !element._classTokens.has(name) : Boolean(force);
+      if (shouldHave) {
+        element._classTokens.add(name);
+      } else {
+        element._classTokens.delete(name);
+      }
+      syncClassAttr(element);
+      return shouldHave;
+    },
+    contains: (name) => element._classTokens.has(name),
   };
   return element;
 }
@@ -175,7 +326,7 @@ function createDocument(body) {
 
 function createWindow(pathname, scrollY) {
   const win = {
-    location: { pathname: pathname },
+    location: { pathname: pathname, reloadCalls: 0, reload() { win.location.reloadCalls += 1; } },
     scrollY: scrollY,
     scrollCalls: [],
     listeners: {},
@@ -214,7 +365,16 @@ function createSessionStorage(store) {
 
 class FormDataStub {
   constructor(form) {
-    this.pairs = form.formEntries();
+    this.pairs = form && form.formEntries ? form.formEntries().slice() : [];
+  }
+
+  append(name, value) {
+    this.pairs.push([name, value]);
+  }
+
+  get(name) {
+    const found = this.pairs.find((pair) => pair[0] === name);
+    return found ? found[1] : null;
   }
 
   [Symbol.iterator]() {
@@ -270,25 +430,189 @@ function detailsBody(options) {
   return { body, back, voterId };
 }
 
+// Campaign list page: Quick Message button + modal with compact multi-select (CSP-safe).
+function campaignListBody(options) {
+  const opts = options || {};
+  const channel = opts.channel || "sms";
+  const labels = opts.targetLabels || {
+    ward: "Ward",
+    booth: "Booth",
+    panchayath: "Panchayati",
+    mandal: "Mandalam",
+    constituency: "Constituency",
+  };
+  const body = createElement("body", {});
+  const openBtn = body.appendChild(
+    createElement("button", { type: "button", "data-open-quick-message": "" }),
+  );
+  openBtn.textContent = "Quick Message";
+
+  const modal = body.appendChild(
+    createElement("dialog", {
+      class: "campaign-modal",
+      "data-quick-message-modal": "",
+      "data-channel": channel,
+      "data-channel-label": opts.channelLabel || (channel === "whatsapp" ? "WhatsApp" : "SMS"),
+      "data-csrf-token": opts.csrfToken || "synthetic-csrf",
+      "data-max-photos": String(opts.maxPhotos || 5),
+      "data-max-daily-times": String(opts.maxDailyTimes || 3),
+      "data-target-labels": JSON.stringify(labels),
+    }),
+  );
+  const form = modal.appendChild(
+    createElement("form", { method: "dialog", "data-quick-message-form": "" }),
+  );
+  const targetType = form.appendChild(
+    createElement("select", { name: "target_type", "data-target-type": "" }),
+  );
+  targetType.value = "ward";
+  ["ward", "booth", "panchayath", "mandal", "constituency"].forEach((key) => {
+    const opt = targetType.appendChild(createElement("option", { value: key }));
+    opt.textContent = labels[key] || key;
+    if (key === "ward") {
+      opt.selected = true;
+      opt.setAttribute("selected", "");
+    }
+  });
+  const field = form.appendChild(createElement("div", { class: "campaign-field" }));
+  field.appendChild(createElement("span", { "data-target-values-label": "" })).textContent = labels.ward;
+  const multi = field.appendChild(createElement("div", { class: "multi-select", "data-target-values": "" }));
+  const trigger = multi.appendChild(
+    createElement("button", {
+      type: "button",
+      class: "multi-select-trigger",
+      "data-target-values-trigger": "",
+      "aria-haspopup": "listbox",
+      "aria-expanded": "false",
+    }),
+  );
+  const summary = trigger.appendChild(createElement("span", { "data-target-values-summary": "" }));
+  summary.textContent = "Select Ward...";
+  trigger.appendChild(createElement("span", { class: "multi-select-chevron" })).textContent = "▾";
+  const menu = multi.appendChild(
+    createElement("div", { class: "multi-select-menu", "data-target-values-menu": "", hidden: "" }),
+  );
+  menu.hidden = true;
+  const toolbar = menu.appendChild(createElement("div", { class: "multi-select-toolbar" }));
+  toolbar.appendChild(createElement("button", { type: "button", "data-select-all": "" })).textContent =
+    "Select all";
+  toolbar.appendChild(
+    createElement("button", { type: "button", "data-clear-selection": "" }),
+  ).textContent = "Clear";
+  menu.appendChild(
+    createElement("div", {
+      class: "multi-select-options",
+      "data-target-values-options": "",
+      role: "listbox",
+      "aria-multiselectable": "true",
+    }),
+  );
+  form.appendChild(createElement("p", { "data-match-count": "" })).textContent =
+    "Matched voters with mobile: 0";
+  form.appendChild(createElement("p", { "data-form-error": "", hidden: "" })).hidden = true;
+  const titleInput = form.appendChild(createElement("input", { name: "title", value: "" }));
+  const messageBox = form.appendChild(createElement("textarea", { name: "message", value: "" }));
+  messageBox.selectionStart = 0;
+  messageBox.selectionEnd = 0;
+  form.appendChild(createElement("input", { type: "file", "data-photo-input": "" }));
+  const nowRadio = form.appendChild(
+    createElement("input", {
+      type: "radio",
+      name: "send_mode",
+      value: "now",
+      "data-send-mode": "",
+      checked: "",
+    }),
+  );
+  nowRadio.checked = true;
+  form.appendChild(
+    createElement("input", { type: "radio", name: "send_mode", value: "daily", "data-send-mode": "" }),
+  );
+  form.appendChild(createElement("div", { "data-daily-fields": "", hidden: "" })).hidden = true;
+  const submitBtn = form.appendChild(
+    createElement("button", { type: "button", "data-submit-message": "" }),
+  );
+  submitBtn.textContent = channel === "whatsapp" ? "Send WhatsApp Message" : "Send SMS";
+
+  return {
+    body,
+    openBtn,
+    modal,
+    form,
+    targetType,
+    multi,
+    trigger,
+    summary,
+    menu,
+    titleInput,
+    messageBox,
+    submitBtn,
+    labels,
+    channel,
+  };
+}
+
 // Runs the real static scripts against a page. `store` plays the part of sessionStorage and
 // survives across openPage calls, so one call per navigation models a page load.
+// Pass options.scripts to load a different set (default: app.js + voter-list-context.js).
 function openPage(tree, options) {
   const opts = options || {};
   const store = opts.store || new Map();
   const doc = createDocument(tree.body);
   const win = createWindow(opts.path || "/voters", opts.scrollY || 0);
+  const fetchCalls = [];
+  const formDataCalls = [];
+  const userFetch = opts.fetch;
+  const fetchImpl = async function trackedFetch(url, init) {
+    const request = { url: url, init: init || {} };
+    fetchCalls.push(request);
+    if (userFetch) {
+      return userFetch(url, init || {});
+    }
+    return {
+      ok: true,
+      async json() {
+        return { options: [], with_mobile: 0 };
+      },
+    };
+  };
+  class TrackingFormData extends FormDataStub {
+    constructor(form) {
+      super(form);
+      formDataCalls.push(this);
+    }
+  }
   const sandbox = {
     document: doc,
     window: win,
     sessionStorage: createSessionStorage(store),
-    FormData: FormDataStub,
+    FormData: TrackingFormData,
+    fetch: fetchImpl,
+    Array: Array,
+    Object: Object,
+    JSON: JSON,
+    Promise: Promise,
+    parseInt: parseInt,
+    encodeURIComponent: encodeURIComponent,
+    String: String,
+    Boolean: Boolean,
   };
+  win.fetch = fetchImpl;
+  win.FormData = TrackingFormData;
   const context = vm.createContext(sandbox);
-  SCRIPT_FILES.forEach((file) => {
+  const files = opts.scripts || SCRIPT_FILES;
+  files.forEach((file) => {
     const source = fs.readFileSync(nodePath.join(STATIC_DIR, file), "utf8");
     vm.runInContext(source, context, { filename: file });
   });
-  return { tree: tree, doc: doc, win: win, store: store };
+  return {
+    tree: tree,
+    doc: doc,
+    win: win,
+    store: store,
+    fetchCalls: fetchCalls,
+    formDataCalls: formDataCalls,
+  };
 }
 
 // Capture listeners run from the document down to the target, then bubble listeners run from
@@ -315,6 +639,10 @@ function click(page, target, init) {
   return dispatch(page, target, "click", init);
 }
 
+function change(page, target, init) {
+  return dispatch(page, target, "change", init);
+}
+
 function submit(page, form) {
   return dispatch(page, form, "submit", {});
 }
@@ -323,6 +651,10 @@ function windowEvent(page, type, init) {
   const event = makeEvent(type, null, init);
   runListeners(page.win, event, "bubble");
   return event;
+}
+
+function keydown(page, target, init) {
+  return dispatch(page, target || page.doc.body, "keydown", init);
 }
 
 function saved(store) {
@@ -334,9 +666,12 @@ module.exports = {
   STORAGE_KEY: STORAGE_KEY,
   listBody: listBody,
   detailsBody: detailsBody,
+  campaignListBody: campaignListBody,
   openPage: openPage,
   click: click,
+  change: change,
   submit: submit,
   windowEvent: windowEvent,
+  keydown: keydown,
   saved: saved,
 };

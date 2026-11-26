@@ -135,10 +135,33 @@
           {% endfor %}
         </select>
       </label>
-      <label>
+      <div class="campaign-field">
         <span data-target-values-label>{{ target_labels.ward }}</span>
-        <select name="target_values" data-target-values multiple size="6" required></select>
-      </label>
+        <div class="multi-select" data-target-values>
+          <button
+            type="button"
+            class="multi-select-trigger"
+            data-target-values-trigger
+            aria-haspopup="listbox"
+            aria-expanded="false"
+          >
+            <span data-target-values-summary>Select Ward...</span>
+            <span class="multi-select-chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="multi-select-menu" data-target-values-menu hidden>
+            <div class="multi-select-toolbar">
+              <button type="button" class="multi-select-action" data-select-all>Select all</button>
+              <button type="button" class="multi-select-action" data-clear-selection>Clear</button>
+            </div>
+            <div
+              class="multi-select-options"
+              data-target-values-options
+              role="listbox"
+              aria-multiselectable="true"
+            ></div>
+          </div>
+        </div>
+      </div>
       <p class="hint" data-match-count>Matched voters with mobile: 0</p>
       <label>
         Title
