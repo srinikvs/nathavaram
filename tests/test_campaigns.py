@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -285,6 +287,9 @@ def test_sms_and_whatsapp_pages_render_for_signed_in_user(campaigns):
 
 def test_campaign_list_pages_are_csp_safe_without_inline_scripts(campaigns):
     """Quick Message must work under script-src 'self' (no inline script/handlers)."""
+    _seed_voters(campaigns)
+    assert _create_campaign(campaigns, channel="sms").status_code == 201
+    assert _create_campaign(campaigns, channel="whatsapp").status_code == 201
     _web_login(campaigns)
     for path, channel in (("/campaign/sms", "sms"), ("/campaign/whatsapp", "whatsapp")):
         page = campaigns.client.get(path)
@@ -297,6 +302,8 @@ def test_campaign_list_pages_are_csp_safe_without_inline_scripts(campaigns):
         assert "NATHAVARAM_CAMPAIGN" not in html
         assert not re.search(r"\sonsubmit\s*=", html, flags=re.I), path
         assert not re.search(r"\sonclick\s*=", html, flags=re.I), path
+        assert 'data-confirm="Delete this campaign?"' in html, path
+        assert f'action="/campaign/{channel}/' in html and "/delete" in html, path
 
         modal = re.search(
             r"<dialog\b[^>]*\bdata-quick-message-modal\b[^>]*>",
@@ -1030,3 +1037,63 @@ def test_sms_api_url_over_http_is_rejected_by_config(monkeypatch):
     monkeypatch.setenv("SMS_API_KEY", "key")
     with pytest.raises(RuntimeError, match="SMS_API_URL must use HTTPS"):
         load_settings()
+
+
+# ---- campaigns.js against fake_dom (no browser; synthetic markup only) ----
+
+NODE = shutil.which("node")
+HARNESS = Path(__file__).resolve().parent / "js" / "fake_dom.js"
+needs_node = pytest.mark.skipif(NODE is None, reason="node is not installed")
+
+
+def _run_campaign_js(body: str) -> dict:
+    script = (
+        "const h = require(process.argv[1]);\n"
+        "const out = {};\n" + body + "\nconsole.log(JSON.stringify(out));\n"
+    )
+    result = subprocess.run(
+        [NODE, "-e", script, str(HARNESS)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    return json.loads(result.stdout)
+
+
+@needs_node
+def test_quick_message_reads_data_attrs_and_opens_modal():
+    data = _run_campaign_js(
+        """
+        const tree = h.campaignListBody({
+          channel: 'whatsapp',
+          channelLabel: 'WhatsApp',
+          csrfToken: 'csrf-test-token',
+          maxPhotos: 5,
+          maxDailyTimes: 3,
+        });
+        const page = h.openPage(tree, {
+          path: '/campaign/whatsapp',
+          scripts: ['campaigns.js'],
+        });
+        out.before = tree.modal.showModalCalls;
+        h.click(page, tree.openBtn);
+        out.after = tree.modal.showModalCalls;
+        out.channel = tree.modal.getAttribute('data-channel');
+        out.csrf = tree.modal.getAttribute('data-csrf-token');
+        out.labels = JSON.parse(tree.modal.getAttribute('data-target-labels'));
+        out.fetchUrls = page.fetchCalls.map((call) => call.url);
+        out.resetCalls = tree.form.resetCalls || 0;
+        out.openListeners = (tree.openBtn.listeners.click || []).length;
+        """
+    )
+
+    assert data["before"] == 0
+    assert data["after"] == 1
+    assert data["channel"] == "whatsapp"
+    assert data["csrf"] == "csrf-test-token"
+    assert data["labels"]["ward"] == "Ward"
+    assert data["resetCalls"] == 1
+    assert data["openListeners"] == 1
+    assert any("/api/campaigns/whatsapp/targets/ward" in url for url in data["fetchUrls"])
