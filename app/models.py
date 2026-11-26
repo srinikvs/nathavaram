@@ -4,7 +4,17 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text, false, text, true
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    false,
+    text,
+    true,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.issue_rules import ISSUE_STATUSES, NOTE_KIND, SYSTEM_KIND
@@ -264,6 +274,9 @@ class CampaignDelivery(Base):
         CheckConstraint(
             f"status IN ({_RECIPIENT_STATUS_SQL})", name="ck_campaign_deliveries_status"
         ),
+        UniqueConstraint(
+            "campaign_id", "recipient_id", "slot_key", name="uq_campaign_delivery_slot"
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -287,6 +300,11 @@ class CampaignScheduleRun(Base):
     """Claimed daily IST slot. Prevents double-sending the same campaign time on the same day."""
 
     __tablename__ = "campaign_schedule_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "campaign_id", "run_date", "run_time", name="uq_campaign_schedule_run_slot"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     campaign_id: Mapped[int] = mapped_column(
@@ -297,3 +315,23 @@ class CampaignScheduleRun(Base):
     claimed_at: Mapped[str] = mapped_column(String(32), nullable=False)
     completed_at: Mapped[str | None] = mapped_column(String(32))
     recipient_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class CampaignIdempotencyKey(Base):
+    """Maps an Idempotency-Key header to a campaign so create retries return the same row."""
+
+    __tablename__ = "campaign_idempotency_keys"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "channel", "idem_key", name="uq_campaign_idempotency_user_channel_key"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    idem_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)

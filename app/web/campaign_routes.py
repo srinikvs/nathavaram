@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.campaign_rules import (
@@ -21,7 +21,7 @@ from app.campaign_schemas import CampaignSearch
 from app.config import sms_configured, whatsapp_configured
 from app.database import get_db
 from app.errors import ServiceError
-from app.models import CampaignRecipient
+from app.permissions import can_manage_campaigns
 from app.services.campaigns import (
     campaign_detail,
     campaign_payload,
@@ -67,7 +67,7 @@ def _list_page(
 ):
     query = CampaignSearch(page=page, page_size=20)
     try:
-        rows, total = search_campaigns(db, channel, query)
+        rows, total, recipient_totals = search_campaigns(db, channel, query)
     except ServiceError as exc:
         return render(
             request,
@@ -87,23 +87,19 @@ def _list_page(
                 "target_labels": TARGET_LABELS,
                 "max_photos": MAX_PHOTOS_PER_CAMPAIGN,
                 "max_daily_times": MAX_DAILY_TIMES,
+                "can_manage": can_manage_campaigns(user),
                 "error": exc.message,
                 "notice": "",
             },
             status_code=exc.status_code,
         )
 
-    items = []
-    for row in rows:
-        recipient_total = db.scalar(
-            select(func.count())
-            .select_from(CampaignRecipient)
-            .where(CampaignRecipient.campaign_id == row.id)
-        ) or 0
-        items.append(campaign_payload(row, recipient_total=int(recipient_total)))
-
+    items = [
+        campaign_payload(row, recipient_total=recipient_totals.get(row.id, 0)) for row in rows
+    ]
     page_count = max(1, (total + query.page_size - 1) // query.page_size)
     notice = DONE_NOTICES.get(request.query_params.get("done", ""), "")
+    query_error = request.query_params.get("error") or error
     return render(
         request,
         "campaigns/list.html",
@@ -122,8 +118,9 @@ def _list_page(
             "target_labels": TARGET_LABELS,
             "max_photos": MAX_PHOTOS_PER_CAMPAIGN,
             "max_daily_times": MAX_DAILY_TIMES,
-            "error": error,
-            "notice": notice,
+            "can_manage": can_manage_campaigns(user),
+            "error": query_error,
+            "notice": notice if not query_error else "",
         },
         status_code=status_code,
     )
@@ -175,12 +172,28 @@ def detail_page(
             "channel_label": CHANNEL_LABELS[channel],
             "campaign": detail,
             "provider_mode": _provider_mode(request, channel),
+            "can_manage": can_manage_campaigns(user),
         },
     )
 
 
-def _action_redirect(channel: str, done: str) -> RedirectResponse:
+def _action_redirect(channel: str, *, done: str | None = None, error: str | None = None) -> RedirectResponse:
+    if error:
+        return RedirectResponse(
+            f"/campaign/{channel}?error={quote(error)}", status_code=303
+        )
     return RedirectResponse(f"/campaign/{channel}?done={done}", status_code=303)
+
+
+def _run_action(channel: str, call, *args):
+    channel = channel.casefold()
+    if channel not in CHANNELS:
+        return _action_redirect("whatsapp", error="Unknown campaign channel")
+    try:
+        call(*args)
+    except ServiceError as exc:
+        return _action_redirect(channel, error=exc.message)
+    return None
 
 
 @router.post("/campaign/{channel}/{campaign_id}/pause")
@@ -190,12 +203,8 @@ def pause_action(
     db: Session = Depends(get_db),
     user=Depends(web_user),
 ):
-    channel = channel.casefold()
-    try:
-        pause_campaign(db, campaign_id, channel, user)
-    except ServiceError:
-        pass
-    return _action_redirect(channel, "paused")
+    failed = _run_action(channel, pause_campaign, db, campaign_id, channel.casefold(), user)
+    return failed or _action_redirect(channel.casefold(), done="paused")
 
 
 @router.post("/campaign/{channel}/{campaign_id}/resume")
@@ -205,12 +214,8 @@ def resume_action(
     db: Session = Depends(get_db),
     user=Depends(web_user),
 ):
-    channel = channel.casefold()
-    try:
-        resume_campaign(db, campaign_id, channel, user)
-    except ServiceError:
-        pass
-    return _action_redirect(channel, "resumed")
+    failed = _run_action(channel, resume_campaign, db, campaign_id, channel.casefold(), user)
+    return failed or _action_redirect(channel.casefold(), done="resumed")
 
 
 @router.post("/campaign/{channel}/{campaign_id}/cancel")
@@ -220,12 +225,8 @@ def cancel_action(
     db: Session = Depends(get_db),
     user=Depends(web_user),
 ):
-    channel = channel.casefold()
-    try:
-        cancel_campaign(db, campaign_id, channel, user)
-    except ServiceError:
-        pass
-    return _action_redirect(channel, "cancelled")
+    failed = _run_action(channel, cancel_campaign, db, campaign_id, channel.casefold(), user)
+    return failed or _action_redirect(channel.casefold(), done="cancelled")
 
 
 @router.post("/campaign/{channel}/{campaign_id}/delete")
@@ -236,9 +237,13 @@ def delete_action(
     db: Session = Depends(get_db),
     user=Depends(web_user),
 ):
-    channel = channel.casefold()
-    try:
-        delete_campaign(db, campaign_id, channel, _photo_dir(request))
-    except ServiceError:
-        pass
-    return _action_redirect(channel, "deleted")
+    failed = _run_action(
+        channel,
+        delete_campaign,
+        db,
+        campaign_id,
+        channel.casefold(),
+        _photo_dir(request),
+        user,
+    )
+    return failed or _action_redirect(channel.casefold(), done="deleted")

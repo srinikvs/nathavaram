@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -100,6 +101,10 @@ class CampaignCreate(BaseModel):
         text = str(value).strip()
         if not re.fullmatch(DATE_ISO_RE, text):
             raise ValueError("Dates must be YYYY-MM-DD")
+        try:
+            date.fromisoformat(text)
+        except ValueError as exc:
+            raise ValueError("Dates must be a real calendar day (YYYY-MM-DD)") from exc
         return text
 
     @model_validator(mode="after")

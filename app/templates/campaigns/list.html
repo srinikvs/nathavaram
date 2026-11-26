@@ -26,7 +26,9 @@
 <section class="card issues-card">
   <div class="issues-card-head">
     <h2>{{ channel_label }}</h2>
+    {% if can_manage %}
     <button type="button" class="button" data-open-quick-message>Quick Message</button>
+    {% endif %}
   </div>
   {% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
   {% if notice %}<p class="banner ok">{{ notice }}</p>{% endif %}
@@ -57,6 +59,7 @@
           <td data-label="Status"><span class="status-pill">{{ row.status }}</span></td>
           <td data-label="Action" class="campaign-actions">
             <a class="button ghost" href="/campaign/{{ channel }}/{{ row.id }}">View</a>
+            {% if can_manage %}
             {% if row.send_mode == "daily" and row.status != "cancelled" %}
               {% if row.schedule_active and row.status != "paused" %}
               <form method="post" action="/campaign/{{ channel }}/{{ row.id }}/pause" class="inline-form">
@@ -80,6 +83,7 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button type="submit" class="button ghost">Delete</button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -104,6 +108,7 @@
   {% endif %}
 </section>
 
+{% if can_manage %}
 <dialog class="campaign-modal" data-quick-message-modal aria-labelledby="send-message-title">
   <form method="dialog" class="campaign-modal-shell" data-quick-message-form>
     <header class="campaign-modal-head">
@@ -121,7 +126,7 @@
         </select>
       </label>
       <label>
-        {{ target_labels.ward }}
+        <span data-target-values-label>{{ target_labels.ward }}</span>
         <select name="target_values" data-target-values multiple size="6" required></select>
       </label>
       <p class="hint" data-match-count>Matched voters with mobile: 0</p>
@@ -170,8 +175,10 @@
     </footer>
   </form>
 </dialog>
+{% endif %}
 {% endblock %}
 {% block scripts %}
+{% if can_manage %}
 <script>
   window.NATHAVARAM_CAMPAIGN = {
     channel: {{ channel|tojson }},
@@ -183,4 +190,5 @@
   };
 </script>
 <script src="/static/campaigns.js"></script>
+{% endif %}
 {% endblock %}

@@ -17,6 +17,8 @@
   const photoInput = form.querySelector("[data-photo-input]");
   const messageBox = form.querySelector('textarea[name="message"]');
   const titleInput = form.querySelector('input[name="title"]');
+  const valuesLabel = form.querySelector("[data-target-values-label]");
+  if (!targetType || !targetValues || !submitBtn || !messageBox || !titleInput) return;
 
   function csrfHeaders() {
     const headers = {};
@@ -55,13 +57,7 @@
   async function loadOptions() {
     const type = targetType.value;
     const label = (cfg.targetLabels && cfg.targetLabels[type]) || type;
-    const valueLabel = targetValues.closest("label");
-    if (valueLabel) {
-      const first = valueLabel.childNodes[0];
-      if (first && first.nodeType === Node.TEXT_NODE) {
-        first.textContent = "\n        " + label + "\n        ";
-      }
-    }
+    if (valuesLabel) valuesLabel.textContent = label;
     targetValues.innerHTML = "";
     const response = await fetch(
       "/api/campaigns/" + encodeURIComponent(cfg.channel) + "/targets/" + encodeURIComponent(type),
@@ -82,6 +78,7 @@
   }
 
   async function refreshCount() {
+    if (!matchCount) return;
     const values = selectedValues();
     if (!values.length) {
       matchCount.textContent = "Matched voters with mobile: 0";

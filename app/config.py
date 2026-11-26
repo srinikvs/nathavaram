@@ -51,10 +51,14 @@ class Settings(BaseSettings):
     sms_api_url: str | None = None
     sms_api_key: str | None = None
     sms_sender_id: str | None = None
-    # Optional public base URL used when SMS bodies include photo links.
+    # Optional public base URL used when SMS bodies include signed photo links.
     public_base_url: str | None = None
     # Background scheduler poll interval in seconds (in-process due-slot runner).
     campaign_scheduler_seconds: int = 30
+    # Max voters with a valid mobile allowed in one campaign create.
+    campaign_max_recipients: int = 5000
+    # Max campaign creates per user in a rolling hour.
+    campaign_create_rate_limit: int = 10
 
 
 def normalize_database_url(url: str) -> str:
@@ -191,3 +195,17 @@ def _validate(settings: Settings) -> None:
         raise RuntimeError("JWT_EXPIRE_MINUTES must be at least 5")
     if settings.campaign_scheduler_seconds < 5 or settings.campaign_scheduler_seconds > 3600:
         raise RuntimeError("CAMPAIGN_SCHEDULER_SECONDS must be between 5 and 3600")
+    if settings.campaign_max_recipients < 1 or settings.campaign_max_recipients > 100_000:
+        raise RuntimeError("CAMPAIGN_MAX_RECIPIENTS must be between 1 and 100000")
+    if settings.campaign_create_rate_limit < 1 or settings.campaign_create_rate_limit > 1000:
+        raise RuntimeError("CAMPAIGN_CREATE_RATE_LIMIT must be between 1 and 1000")
+    sms_url = (settings.sms_api_url or "").strip()
+    if sms_url and not sms_url.lower().startswith("https://"):
+        raise RuntimeError("SMS_API_URL must use HTTPS when set")
+    public_base = (settings.public_base_url or "").strip()
+    if public_base:
+        lowered = public_base.lower()
+        if not lowered.startswith(("https://", "http://")):
+            raise RuntimeError("PUBLIC_BASE_URL must be an http(s) URL when set")
+        if is_production(settings) and not lowered.startswith("https://"):
+            raise RuntimeError("PUBLIC_BASE_URL must use HTTPS when APP_ENV is production")

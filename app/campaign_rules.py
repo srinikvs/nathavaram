@@ -33,6 +33,12 @@ MAX_DAILY_TIMES = 3
 MAX_PHOTOS_PER_CAMPAIGN = 5
 TITLE_MAX_LENGTH = 200
 MESSAGE_MAX_LENGTH = 4000
+DEFAULT_MAX_RECIPIENTS = 5000
+DEFAULT_CREATE_RATE_LIMIT = 10  # creates per user per rolling hour
+IDEMPOTENCY_KEY_MAX_LENGTH = 128
+PHOTO_URL_TTL_SECONDS = 7 * 24 * 3600
+RECIPIENTS_PAGE_SIZE_DEFAULT = 50
+RECIPIENTS_PAGE_SIZE_MAX = 100
 
 RECIPIENT_STATUSES: tuple[str, ...] = ("initiated", "processed", "sent", "rejected")
 CAMPAIGN_STATUSES: tuple[str, ...] = (
@@ -61,3 +67,5 @@ PHOTO_CAP_MESSAGE = (
 )
 TOO_MANY_PHOTOS_MESSAGE = f"You can attach up to {MAX_PHOTOS_PER_CAMPAIGN} photos."
 TOO_MANY_TIMES_MESSAGE = f"Choose at most {MAX_DAILY_TIMES} daily send times."
+RATE_LIMIT_MESSAGE = "Too many campaigns created recently. Try again later."
+OWNERSHIP_REFUSED_MESSAGE = "Only the campaign creator or an admin can change this campaign."

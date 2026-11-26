@@ -63,8 +63,18 @@ def create_app() -> FastAPI:
             stop_event.set()
             try:
                 await asyncio.wait_for(scheduler_task, timeout=5)
-            except (asyncio.TimeoutError, Exception):
+            except asyncio.TimeoutError:
                 scheduler_task.cancel()
+                try:
+                    await scheduler_task
+                except asyncio.CancelledError:
+                    pass
+            except Exception:
+                scheduler_task.cancel()
+                try:
+                    await scheduler_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             dispose_db()
 
     app = FastAPI(

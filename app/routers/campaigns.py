@@ -1,8 +1,8 @@
 """Campaign messaging JSON API (SMS and WhatsApp).
 
-Signed-in roles may preview, create, list, view, pause/resume, cancel and delete.
-Filters and target values travel in POST bodies. Photos reuse the Public Issues
-image validation pipeline. Provider credentials come only from environment settings.
+Signed-in roles may list, preview and view. Manager/admin may create, schedule,
+pause/resume, cancel and delete (creator or admin for mutations). Scheduler tick
+is admin-only. Filters and target values travel in POST bodies.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -19,14 +19,16 @@ from app.campaign_rules import CHANNELS, MAX_PHOTOS_PER_CAMPAIGN, TOO_MANY_PHOTO
 from app.campaign_schemas import CampaignCreate, CampaignSearch, RecipientPreview
 from app.config import sms_configured, whatsapp_configured
 from app.database import get_db
-from app.deps import require_user
+from app.deps import require_admin, require_manager, require_user
 from app.errors import ServiceError
 from app.models import User
 from app.services import issue_photos
+from app.services.campaign_providers import verify_photo_token
 from app.services.campaign_scheduler import process_due_schedules
 from app.services.campaigns import (
     campaign_detail,
     campaign_payload,
+    campaign_summary_payload,
     cancel_campaign,
     create_campaign,
     delete_campaign,
@@ -39,8 +41,6 @@ from app.services.campaigns import (
     search_campaigns,
     status_counts,
 )
-from sqlalchemy import func, select
-from app.models import CampaignRecipient
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
@@ -68,6 +68,52 @@ def _provider_mode(request: Request, channel: str) -> str:
     if channel == "whatsapp":
         return "live" if whatsapp_configured(settings) else "dry_run"
     return "live" if sms_configured(settings) else "dry_run"
+
+
+# Static paths registered before /{channel}/... so "scheduler" / "photos" are not captured.
+
+
+@router.get("/photos/{photo_id}/file")
+def photo_file(
+    request: Request,
+    photo_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    photo = _run(get_photo, db, photo_id)
+    path = _run(issue_photos.photo_path, _photo_dir(request), photo.storage_name)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return FileResponse(path, media_type="image/jpeg", filename=f"campaign-{photo_id}.jpg")
+
+
+@router.get("/photos/{photo_id}/public")
+def photo_file_public(
+    request: Request,
+    photo_id: int,
+    exp: int,
+    sig: str,
+    db: Session = Depends(get_db),
+):
+    """Signed, expiring photo download for SMS bodies. No session required."""
+    if not verify_photo_token(request.app.state.settings, photo_id, exp, sig):
+        raise HTTPException(status_code=403, detail="Photo link expired or invalid")
+    photo = _run(get_photo, db, photo_id)
+    path = _run(issue_photos.photo_path, _photo_dir(request), photo.storage_name)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return FileResponse(path, media_type="image/jpeg", filename=f"campaign-{photo_id}.jpg")
+
+
+@router.post("/scheduler/run")
+def run_scheduler(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+) -> dict:
+    """Manually tick the due-slot runner (admin only)."""
+    count = process_due_schedules(db, request.app.state.settings, _photo_dir(request))
+    return {"processed_slots": count}
 
 
 @router.get("/{channel}/summary")
@@ -117,15 +163,10 @@ def search(
     user: User = Depends(require_user),
 ) -> dict:
     channel = _parse_channel(channel)
-    rows, total = _run(search_campaigns, db, channel, body)
-    items = []
-    for row in rows:
-        recipient_total = db.scalar(
-            select(func.count())
-            .select_from(CampaignRecipient)
-            .where(CampaignRecipient.campaign_id == row.id)
-        ) or 0
-        items.append(campaign_payload(row, recipient_total=int(recipient_total)))
+    rows, total, recipient_totals = _run(search_campaigns, db, channel, body)
+    items = [
+        campaign_payload(row, recipient_total=recipient_totals.get(row.id, 0)) for row in rows
+    ]
     return {
         "items": items,
         "total": total,
@@ -171,7 +212,8 @@ async def create(
     schedule_active: str | None = Form("true"),
     photos: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
-    user: User = Depends(require_user),
+    user: User = Depends(require_manager),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict:
     channel = _parse_channel(channel)
     uploads: list[bytes] = []
@@ -212,8 +254,9 @@ async def create(
         request.app.state.settings,
         _photo_dir(request),
         uploads,
+        idempotency_key=idempotency_key,
     )
-    return campaign_detail(db, campaign.id, channel)
+    return campaign_summary_payload(db, campaign)
 
 
 @router.get("/{channel}/{campaign_id}")
@@ -222,9 +265,18 @@ def detail(
     campaign_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
+    recipients_page: int = 1,
+    recipients_page_size: int = 50,
 ) -> dict:
     channel = _parse_channel(channel)
-    return _run(campaign_detail, db, campaign_id, channel)
+    return _run(
+        campaign_detail,
+        db,
+        campaign_id,
+        channel,
+        recipients_page=recipients_page,
+        recipients_page_size=recipients_page_size,
+    )
 
 
 @router.post("/{channel}/{campaign_id}/pause")
@@ -232,7 +284,7 @@ def pause(
     channel: str,
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_user),
+    user: User = Depends(require_manager),
 ) -> dict:
     channel = _parse_channel(channel)
     campaign = _run(pause_campaign, db, campaign_id, channel, user)
@@ -244,7 +296,7 @@ def resume(
     channel: str,
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_user),
+    user: User = Depends(require_manager),
 ) -> dict:
     channel = _parse_channel(channel)
     campaign = _run(resume_campaign, db, campaign_id, channel, user)
@@ -256,7 +308,7 @@ def cancel(
     channel: str,
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_user),
+    user: User = Depends(require_manager),
 ) -> dict:
     channel = _parse_channel(channel)
     campaign = _run(cancel_campaign, db, campaign_id, channel, user)
@@ -269,33 +321,8 @@ def remove(
     channel: str,
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_user),
+    user: User = Depends(require_manager),
 ) -> dict:
     channel = _parse_channel(channel)
-    _run(delete_campaign, db, campaign_id, channel, _photo_dir(request))
+    _run(delete_campaign, db, campaign_id, channel, _photo_dir(request), user)
     return {"deleted": campaign_id}
-
-
-@router.get("/photos/{photo_id}/file")
-def photo_file(
-    request: Request,
-    photo_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_user),
-):
-    photo = _run(get_photo, db, photo_id)
-    path = issue_photos.photo_path(_photo_dir(request), photo.storage_name)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Photo not found")
-    return FileResponse(path, media_type="image/jpeg", filename=f"campaign-{photo_id}.jpg")
-
-
-@router.post("/scheduler/run")
-def run_scheduler(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_user),
-) -> dict:
-    """Manually tick the due-slot runner (useful in tests and ops)."""
-    count = process_due_schedules(db, request.app.state.settings, _photo_dir(request))
-    return {"processed_slots": count}

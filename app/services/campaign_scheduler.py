@@ -2,13 +2,18 @@
 
 Claims a (campaign_id, run_date, run_time) row before sending so concurrent
 pollers cannot double-send. Uses Asia/Kolkata wall clock for date and time.
+
+On the campaign's creation date (IST), only slots at or after the creation time
+are eligible, so a schedule created at 15:30 IST with a 09:00 slot does not fire
+immediately.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -21,7 +26,7 @@ from app.campaign_rules import IST_TZ
 from app.config import Settings
 from app.models import Campaign, CampaignScheduleRun
 from app.services.campaigns import process_campaign_slot
-from app.validation import dump_dt
+from app.validation import dump_dt, parse_dt
 
 logger = logging.getLogger("nathavaram.campaign_scheduler")
 IST = ZoneInfo(IST_TZ)
@@ -36,8 +41,6 @@ def _ist_now(now: datetime | None = None) -> datetime:
 
 
 def _parse_times(raw: str) -> list[str]:
-    import json
-
     try:
         data = json.loads(raw or "[]")
     except json.JSONDecodeError:
@@ -45,6 +48,17 @@ def _parse_times(raw: str) -> list[str]:
     if not isinstance(data, list):
         return []
     return [str(item) for item in data]
+
+
+def _creation_hhmm_ist(campaign: Campaign) -> tuple[str, str] | None:
+    """Return (YYYY-MM-DD, HH:MM) of campaign.created_at in IST, or None if unparseable."""
+    if not campaign.created_at:
+        return None
+    try:
+        created = parse_dt(campaign.created_at).astimezone(IST)
+    except Exception:
+        return None
+    return created.strftime("%Y-%m-%d"), created.strftime("%H:%M")
 
 
 def due_slots_for_campaign(campaign: Campaign, now: datetime | None = None) -> list[tuple[str, str]]:
@@ -60,14 +74,23 @@ def due_slots_for_campaign(campaign: Campaign, now: datetime | None = None) -> l
     if campaign.end_date and run_date > campaign.end_date:
         return []
     current_hhmm = moment.strftime("%H:%M")
+    created = _creation_hhmm_ist(campaign)
     due: list[tuple[str, str]] = []
     for run_time in _parse_times(campaign.daily_times_json):
-        if run_time <= current_hhmm:
-            due.append((run_date, run_time))
+        if run_time > current_hhmm:
+            continue
+        # On the creation day, skip slots that were already in the past at create time.
+        if created is not None:
+            created_date, created_hhmm = created
+            if run_date == created_date and run_time < created_hhmm:
+                continue
+        due.append((run_date, run_time))
     return due
 
 
-def claim_schedule_run(db: Session, campaign_id: int, run_date: str, run_time: str) -> CampaignScheduleRun | None:
+def claim_schedule_run(
+    db: Session, campaign_id: int, run_date: str, run_time: str
+) -> CampaignScheduleRun | None:
     """Insert a claim row. Returns None when the slot was already claimed (idempotent skip)."""
     existing = db.scalar(
         select(CampaignScheduleRun).where(
@@ -82,7 +105,7 @@ def claim_schedule_run(db: Session, campaign_id: int, run_date: str, run_time: s
         campaign_id=campaign_id,
         run_date=run_date,
         run_time=run_time,
-        claimed_at=dump_dt(datetime.now().astimezone()),
+        claimed_at=dump_dt(datetime.now(timezone.utc)),
         recipient_count=0,
     )
     db.add(run)
@@ -133,7 +156,7 @@ def process_due_schedules(
                 )
                 run = db.get(CampaignScheduleRun, run_id)
                 if run is not None:
-                    run.completed_at = dump_dt(datetime.now().astimezone())
+                    run.completed_at = dump_dt(datetime.now(timezone.utc))
                     run.recipient_count = count
                     db.commit()
                 processed += 1
@@ -145,6 +168,10 @@ def process_due_schedules(
                     run_time,
                 )
                 db.rollback()
+                run = db.get(CampaignScheduleRun, run_id)
+                if run is not None and run.completed_at is None:
+                    run.completed_at = dump_dt(datetime.now(timezone.utc))
+                    db.commit()
     return processed
 
 
