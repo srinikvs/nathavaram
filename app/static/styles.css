@@ -366,3 +366,59 @@ abbr { text-decoration: none; color: var(--chili); }
 @media (max-width: 760px) {
   .issue-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Campaign messaging (SMS / WhatsApp) */
+.campaign-hero { background: linear-gradient(135deg, #8d3428, #4a1510); }
+.campaign-eyebrow {
+  margin: 0 0 4px; color: #f6dede; font-size: 0.75rem;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.provider-badge {
+  margin: 0; padding: 6px 10px; border-radius: 8px; background: rgba(255,255,255,0.12);
+  color: #fff; font-size: 0.85rem;
+}
+.campaign-kpi { background: #1c1914; color: #fff; }
+.campaign-kpi .issue-card-label { color: #d9cbb8; }
+.campaign-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.inline-form { display: inline; margin: 0; }
+.pager { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-top: 12px; }
+.pager-link {
+  min-width: 2rem; text-align: center; padding: 4px 8px; border-radius: 6px;
+  text-decoration: none; color: var(--ink); border: 1px solid var(--line); background: var(--paper-2);
+}
+.pager-link.is-active { background: var(--chili); border-color: var(--chili); color: #fff; }
+.campaign-modal {
+  border: 0; padding: 0; border-radius: 10px; width: min(520px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px); box-shadow: 0 12px 40px rgba(28, 25, 20, 0.28);
+}
+.campaign-modal::backdrop { background: rgba(28, 25, 20, 0.45); }
+.campaign-modal-shell { display: grid; grid-template-rows: auto 1fr auto; max-height: calc(100vh - 24px); }
+.campaign-modal-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  background: #1a2744; color: #fff; padding: 12px 14px;
+}
+.campaign-modal-head h2 { margin: 0; font-size: 1.1rem; }
+.campaign-modal-close {
+  background: transparent; border: 0; color: #fff; font-size: 1.4rem; line-height: 1; cursor: pointer;
+}
+.campaign-modal-body {
+  padding: 14px; overflow: auto; display: grid; gap: 10px; background: #fff;
+}
+.campaign-modal-body label { display: grid; gap: 4px; font-weight: 600; color: #1a2744; }
+.campaign-modal-body input,
+.campaign-modal-body select,
+.campaign-modal-body textarea {
+  font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-weight: 400;
+}
+.campaign-modal-foot {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;
+  padding: 12px 14px; background: #fff; border-top: 1px solid var(--line);
+}
+.schedule-fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 8px; }
+.daily-times { display: flex; flex-wrap: wrap; gap: 8px; }
+.inline-check { display: flex !important; flex-direction: row; align-items: center; gap: 8px; font-weight: 500 !important; }
+.emoji-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.emoji-btn {
+  border: 1px solid var(--line); background: var(--paper-2); border-radius: 6px;
+  padding: 4px 8px; cursor: pointer; font: inherit;
+}

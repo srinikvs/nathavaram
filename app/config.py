@@ -42,6 +42,23 @@ class Settings(BaseSettings):
     cookie_name: str = "access_token"
     cookie_secure: bool = False
     issue_photo_dir: str = "data/issue-photos"
+    campaign_photo_dir: str = "data/campaign-photos"
+    # WhatsApp Business Cloud API. All three must be set for live sends; otherwise dry-run.
+    whatsapp_token: str | None = None
+    whatsapp_phone_number_id: str | None = None
+    whatsapp_api_version: str = "v21.0"
+    # SMS HTTP/DLT provider. URL + API key required for live sends; otherwise dry-run.
+    sms_api_url: str | None = None
+    sms_api_key: str | None = None
+    sms_sender_id: str | None = None
+    # Optional public base URL used when SMS bodies include signed photo links.
+    public_base_url: str | None = None
+    # Background scheduler poll interval in seconds (in-process due-slot runner).
+    campaign_scheduler_seconds: int = 30
+    # Max voters with a valid mobile allowed in one campaign create.
+    campaign_max_recipients: int = 5000
+    # Max campaign creates per user in a rolling hour.
+    campaign_create_rate_limit: int = 10
 
 
 def normalize_database_url(url: str) -> str:
@@ -58,7 +75,9 @@ def normalize_database_url(url: str) -> str:
 
 
 DEFAULT_ISSUE_PHOTO_DIR = Path("data/issue-photos")
+DEFAULT_CAMPAIGN_PHOTO_DIR = Path("data/campaign-photos")
 _ISSUE_PHOTO_SUBDIR = "issue-photos"
+_CAMPAIGN_PHOTO_SUBDIR = "campaign-photos"
 _SQLITE_FILE_PREFIX = "sqlite:///"
 
 
@@ -88,18 +107,52 @@ def resolve_issue_photo_dir(explicit: str | None, database_url: str) -> Path:
     return DEFAULT_ISSUE_PHOTO_DIR
 
 
+def resolve_campaign_photo_dir(explicit: str | None, database_url: str) -> Path:
+    """Pick the campaign photo directory. Same rules as resolve_issue_photo_dir."""
+    if explicit is not None and explicit.strip():
+        return Path(explicit.strip())
+    db_file = _sqlite_file_path(database_url)
+    if db_file is not None:
+        return db_file.parent / _CAMPAIGN_PHOTO_SUBDIR
+    return DEFAULT_CAMPAIGN_PHOTO_DIR
+
+
+def _resolve_path_setting(path: Path) -> str:
+    if path.is_absolute():
+        return path.as_posix()
+    return (ROOT / path).resolve().as_posix()
+
+
+def whatsapp_configured(settings: Settings) -> bool:
+    token = (settings.whatsapp_token or "").strip()
+    phone_id = (settings.whatsapp_phone_number_id or "").strip()
+    return bool(token and phone_id)
+
+
+def sms_configured(settings: Settings) -> bool:
+    url = (settings.sms_api_url or "").strip()
+    key = (settings.sms_api_key or "").strip()
+    return bool(url and key)
+
+
 def load_settings() -> Settings:
     settings = Settings()
     # Read before normalize_database_url assigns a field: only values the operator set count.
     explicit_photo_dir = (
         settings.issue_photo_dir if "issue_photo_dir" in settings.model_fields_set else None
     )
+    explicit_campaign_dir = (
+        settings.campaign_photo_dir
+        if "campaign_photo_dir" in settings.model_fields_set
+        else None
+    )
     settings.database_url = normalize_database_url(settings.database_url)
-    photo_path = resolve_issue_photo_dir(explicit_photo_dir, settings.database_url)
-    if photo_path.is_absolute():
-        settings.issue_photo_dir = photo_path.as_posix()
-    else:
-        settings.issue_photo_dir = (ROOT / photo_path).resolve().as_posix()
+    settings.issue_photo_dir = _resolve_path_setting(
+        resolve_issue_photo_dir(explicit_photo_dir, settings.database_url)
+    )
+    settings.campaign_photo_dir = _resolve_path_setting(
+        resolve_campaign_photo_dir(explicit_campaign_dir, settings.database_url)
+    )
     _validate(settings)
     return settings
 
@@ -140,3 +193,19 @@ def _validate(settings: Settings) -> None:
         raise RuntimeError("BCRYPT_ROUNDS must be between 4 and 16")
     if settings.jwt_expire_minutes < 5:
         raise RuntimeError("JWT_EXPIRE_MINUTES must be at least 5")
+    if settings.campaign_scheduler_seconds < 5 or settings.campaign_scheduler_seconds > 3600:
+        raise RuntimeError("CAMPAIGN_SCHEDULER_SECONDS must be between 5 and 3600")
+    if settings.campaign_max_recipients < 1 or settings.campaign_max_recipients > 100_000:
+        raise RuntimeError("CAMPAIGN_MAX_RECIPIENTS must be between 1 and 100000")
+    if settings.campaign_create_rate_limit < 1 or settings.campaign_create_rate_limit > 1000:
+        raise RuntimeError("CAMPAIGN_CREATE_RATE_LIMIT must be between 1 and 1000")
+    sms_url = (settings.sms_api_url or "").strip()
+    if sms_url and not sms_url.lower().startswith("https://"):
+        raise RuntimeError("SMS_API_URL must use HTTPS when set")
+    public_base = (settings.public_base_url or "").strip()
+    if public_base:
+        lowered = public_base.lower()
+        if not lowered.startswith(("https://", "http://")):
+            raise RuntimeError("PUBLIC_BASE_URL must be an http(s) URL when set")
+        if is_production(settings) and not lowered.startswith("https://"):
+            raise RuntimeError("PUBLIC_BASE_URL must use HTTPS when APP_ENV is production")

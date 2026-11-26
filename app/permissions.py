@@ -74,6 +74,11 @@ def can_manage_issues(user) -> bool:
     return can_review_deleted(user)
 
 
+def can_manage_campaigns(user) -> bool:
+    """Manager or admin: create, schedule, pause/resume, cancel and delete campaigns."""
+    return can_review_deleted(user)
+
+
 def can_delete_issue_note(user) -> bool:
     """Only an admin may delete a note on a Public Issue."""
     return is_admin(user)
@@ -94,4 +99,5 @@ def permission_flags(user) -> dict[str, bool]:
         "import": can_import(user),
         "master_data": can_use_master_data(user),
         "accounts": can_manage_accounts(user),
+        "campaigns_manage": can_manage_campaigns(user),
     }

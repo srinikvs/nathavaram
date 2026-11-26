@@ -268,7 +268,8 @@ def hard_delete_voter(db: Session, voter: Voter, source_id: str, now: str) -> No
     """Permanently remove personal data from one soft-deleted row, without committing.
 
     The row stays so sync pulls the wipe: personal fields are nulled, deleted_at is kept,
-    and hard_deleted_at marks the row as unrestorable.
+    and hard_deleted_at marks the row as unrestorable. Callers scrub campaign recipient
+    mobiles separately (batch-friendly).
     """
     strip_to_tombstone(voter)
     voter.deleted_at = voter.deleted_at or now
@@ -286,9 +287,12 @@ def check_hard_deletable(voter: Voter) -> None:
 
 
 def hard_delete(db: Session, voter_id: str, source_id: str) -> Voter:
+    from app.services.campaigns import scrub_recipient_mobiles_for_voters
+
     voter = load_any(db, voter_id)
     check_hard_deletable(voter)
     hard_delete_voter(db, voter, source_id, _now())
+    scrub_recipient_mobiles_for_voters(db, [voter_id])
     db.commit()
     db.refresh(voter)
     return voter
