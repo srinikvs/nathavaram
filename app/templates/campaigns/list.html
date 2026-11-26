@@ -79,7 +79,7 @@
               <button type="submit" class="button ghost">Cancel</button>
             </form>
             {% endif %}
-            <form method="post" action="/campaign/{{ channel }}/{{ row.id }}/delete" class="inline-form" onsubmit="return confirm('Delete this campaign?');">
+            <form method="post" action="/campaign/{{ channel }}/{{ row.id }}/delete" class="inline-form" data-confirm="Delete this campaign?">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button type="submit" class="button ghost">Delete</button>
             </form>
@@ -109,7 +109,17 @@
 </section>
 
 {% if can_manage %}
-<dialog class="campaign-modal" data-quick-message-modal aria-labelledby="send-message-title">
+<dialog
+  class="campaign-modal"
+  data-quick-message-modal
+  data-channel="{{ channel }}"
+  data-channel-label="{{ channel_label }}"
+  data-csrf-token="{{ csrf_token }}"
+  data-max-photos="{{ max_photos }}"
+  data-max-daily-times="{{ max_daily_times }}"
+  data-target-labels='{{ target_labels|tojson }}'
+  aria-labelledby="send-message-title"
+>
   <form method="dialog" class="campaign-modal-shell" data-quick-message-form>
     <header class="campaign-modal-head">
       <h2 id="send-message-title">Send Message</h2>
@@ -179,16 +189,6 @@
 {% endblock %}
 {% block scripts %}
 {% if can_manage %}
-<script>
-  window.NATHAVARAM_CAMPAIGN = {
-    channel: {{ channel|tojson }},
-    channelLabel: {{ channel_label|tojson }},
-    csrfToken: {{ csrf_token|tojson }},
-    maxPhotos: {{ max_photos }},
-    maxDailyTimes: {{ max_daily_times }},
-    targetLabels: {{ target_labels|tojson }}
-  };
-</script>
 <script src="/static/campaigns.js"></script>
 {% endif %}
 {% endblock %}
