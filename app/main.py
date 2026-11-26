@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -19,9 +20,11 @@ from app import database
 from app.database import dispose_db, ensure_sqlite_parent, get_db, init_db
 from app.deps import csrf_guard
 from app.migrate import run_migrations
-from app.routers import auth, issues, master_data, reports, sync, users, voters
+from app.routers import auth, campaigns, issues, master_data, reports, sync, users, voters
 from app.services.bootstrap import seed_admin
+from app.services.campaign_scheduler import scheduler_loop
 from app.services.throttle import LoginThrottle
+from app.web.campaign_routes import router as campaign_web_router
 from app.web.issue_routes import router as issue_web_router
 from app.web.routes import LoginRequired, PasswordChangeRequired
 from app.web.routes import router as web_router
@@ -42,6 +45,7 @@ def create_app() -> FastAPI:
         init_db(settings.database_url)
         # Create the photo root so a fresh service-owned directory appears without a host change.
         Path(settings.issue_photo_dir).mkdir(parents=True, exist_ok=True)
+        Path(settings.campaign_photo_dir).mkdir(parents=True, exist_ok=True)
         if database.SessionLocal is None:
             raise RuntimeError("Database session factory was not created")
         db = database.SessionLocal()
@@ -49,8 +53,19 @@ def create_app() -> FastAPI:
             seed_admin(db, settings)
         finally:
             db.close()
-        yield
-        dispose_db()
+        stop_event = asyncio.Event()
+        scheduler_task = asyncio.create_task(scheduler_loop(app, stop_event))
+        app.state.campaign_scheduler_stop = stop_event
+        app.state.campaign_scheduler_task = scheduler_task
+        try:
+            yield
+        finally:
+            stop_event.set()
+            try:
+                await asyncio.wait_for(scheduler_task, timeout=5)
+            except (asyncio.TimeoutError, Exception):
+                scheduler_task.cancel()
+            dispose_db()
 
     app = FastAPI(
         title=settings.app_name,
@@ -112,8 +127,10 @@ def create_app() -> FastAPI:
     app.include_router(master_data.router)
     app.include_router(sync.router)
     app.include_router(issues.router)
+    app.include_router(campaigns.router)
     app.include_router(web_router)
     app.include_router(issue_web_router)
+    app.include_router(campaign_web_router)
     app.mount("/static", StaticFiles(directory=str(ROOT / "app" / "static")), name="static")
     logger.info("Nathavaram voter list %s ready", __version__)
     return app

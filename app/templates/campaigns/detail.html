@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}{{ campaign.title }} · {{ channel_label }} · Nathavaram{% endblock %}
+{% block content %}
+<section class="card">
+  <p class="eyebrow">{{ channel_label }}</p>
+  <h1>{{ campaign.title }}</h1>
+  <p class="lede">{{ campaign.schedule }} · <span class="status-pill">{{ campaign.status }}</span>
+    {% if provider_mode == "dry_run" or campaign.provider_mode == "dry_run" %}
+    · Dry-run
+    {% endif %}
+  </p>
+  <p><a href="/campaign/{{ channel }}">← Back to {{ channel_label }}</a></p>
+  <dl class="issue-facts">
+    <dt>From</dt><dd translate="no">{{ campaign["from"] }}</dd>
+    <dt>To</dt><dd>{{ campaign.to }}</dd>
+    <dt>Message</dt><dd class="issue-text">{{ campaign.message }}</dd>
+    <dt>Recipients</dt><dd>{{ campaign.recipient_total }}</dd>
+    <dt>Created</dt><dd>{{ campaign.created_at|ist }}</dd>
+  </dl>
+  {% if campaign.photos %}
+  <h2>Photos</h2>
+  <div class="issue-photos">
+    {% for photo in campaign.photos %}
+    <figure>
+      <a href="{{ photo.url }}" target="_blank" rel="noopener">
+        <img src="{{ photo.url }}" alt="Campaign photo {{ photo.id }}" width="96" height="96">
+      </a>
+    </figure>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Recipients</h2>
+  {% if campaign.recipients %}
+  <div class="table-wrap" data-top-scroll>
+    <table class="register">
+      <thead>
+        <tr>
+          <th>VoterId</th>
+          <th>Mobile</th>
+          <th>Status</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in campaign.recipients %}
+        <tr>
+          <td translate="no">{{ row.voter_id }}</td>
+          <td translate="no">{{ row.mobile }}</td>
+          <td><span class="status-pill">{{ row.status }}</span></td>
+          <td class="issue-text">{{ row.last_error or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No recipients.</p>
+  {% endif %}
+</section>
+
+{% if campaign.schedule_runs %}
+<section class="card">
+  <h2>Schedule runs</h2>
+  <div class="table-wrap">
+    <table class="register">
+      <thead>
+        <tr>
+          <th>Date (IST)</th>
+          <th>Time</th>
+          <th>Claimed</th>
+          <th>Completed</th>
+          <th>Sent</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in campaign.schedule_runs %}
+        <tr>
+          <td>{{ run.run_date }}</td>
+          <td>{{ run.run_time }}</td>
+          <td>{{ run.claimed_at|ist }}</td>
+          <td>{{ run.completed_at|ist if run.completed_at else "—" }}</td>
+          <td>{{ run.recipient_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if campaign.deliveries %}
+<section class="card">
+  <h2>Delivery log</h2>
+  <div class="table-wrap">
+    <table class="register">
+      <thead>
+        <tr>
+          <th>Slot</th>
+          <th>Recipient</th>
+          <th>Status</th>
+          <th>Mode</th>
+          <th>Ref</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in campaign.deliveries %}
+        <tr>
+          <td translate="no">{{ row.slot_key }}</td>
+          <td>{{ row.recipient_id }}</td>
+          <td>{{ row.status }}</td>
+          <td>{{ row.provider_mode }}</td>
+          <td translate="no">{{ row.provider_ref or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

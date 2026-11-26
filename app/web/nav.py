@@ -48,8 +48,8 @@ NAV_SECTIONS: tuple[NavSection, ...] = (
     NavSection(
         "Campaign",
         (
-            _soon("SMS", "/campaign/sms"),
-            _soon("WhatsApp", "/campaign/whatsapp"),
+            NavItem("SMS", "/campaign/sms"),
+            NavItem("WhatsApp", "/campaign/whatsapp"),
             _soon("Voice Calls", "/campaign/voice-calls"),
             _soon("Projection", "/campaign/projection"),
             _soon("Activities", "/campaign/activities"),

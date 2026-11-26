@@ -179,3 +179,121 @@ class PublicIssueNote(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     author: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+_CHANNEL_SQL = "'sms', 'whatsapp'"
+_TARGET_SQL = "'ward', 'booth', 'panchayath', 'mandal', 'constituency'"
+_SEND_MODE_SQL = "'now', 'daily'"
+_CAMPAIGN_STATUS_SQL = "'queued', 'sending', 'scheduled', 'paused', 'completed', 'cancelled'"
+_RECIPIENT_STATUS_SQL = "'initiated', 'processed', 'sent', 'rejected'"
+
+
+class Campaign(Base):
+    """One SMS or WhatsApp campaign. target_values_json is a JSON list of selected geo values."""
+
+    __tablename__ = "campaigns"
+    __table_args__ = (
+        CheckConstraint(f"channel IN ({_CHANNEL_SQL})", name="ck_campaigns_channel"),
+        CheckConstraint(f"target_type IN ({_TARGET_SQL})", name="ck_campaigns_target_type"),
+        CheckConstraint(f"send_mode IN ({_SEND_MODE_SQL})", name="ck_campaigns_send_mode"),
+        CheckConstraint(f"status IN ({_CAMPAIGN_STATUS_SQL})", name="ck_campaigns_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_values_json: Mapped[str] = mapped_column(Text, nullable=False)
+    send_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    daily_times_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    start_date: Mapped[str | None] = mapped_column(String(10))
+    end_date: Mapped[str | None] = mapped_column(String(10))
+    schedule_active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default=true())
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    provider_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="dry_run")
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    cancelled_at: Mapped[str | None] = mapped_column(String(32))
+
+
+class CampaignPhoto(Base):
+    """Metadata for one campaign photo. Files live under the campaign photo directory."""
+
+    __tablename__ = "campaign_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    storage_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    uploaded_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class CampaignRecipient(Base):
+    """One voter targeted by a campaign. mobile is stored in full; API/UI mask it."""
+
+    __tablename__ = "campaign_recipients"
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ({_RECIPIENT_STATUS_SQL})", name="ck_campaign_recipients_status"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    voter_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    mobile: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class CampaignDelivery(Base):
+    """One delivery attempt for a recipient in a run slot. Unique per campaign/slot/recipient."""
+
+    __tablename__ = "campaign_deliveries"
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ({_RECIPIENT_STATUS_SQL})", name="ck_campaign_deliveries_status"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    recipient_id: Mapped[int] = mapped_column(
+        ForeignKey("campaign_recipients.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # IST calendar date + HH:MM for scheduled slots; "now" for immediate sends.
+    slot_key: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_ref: Mapped[str | None] = mapped_column(String(128))
+    detail: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class CampaignScheduleRun(Base):
+    """Claimed daily IST slot. Prevents double-sending the same campaign time on the same day."""
+
+    __tablename__ = "campaign_schedule_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    run_date: Mapped[str] = mapped_column(String(10), nullable=False)  # YYYY-MM-DD IST
+    run_time: Mapped[str] = mapped_column(String(5), nullable=False)  # HH:MM
+    claimed_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    completed_at: Mapped[str | None] = mapped_column(String(32))
+    recipient_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

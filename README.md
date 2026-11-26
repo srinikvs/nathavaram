@@ -122,6 +122,10 @@ Editing: any signed-in user can add a voter. On an existing voter the `user` and
 
 `GET /healthz` does not require a login. It returns no voter data.
 
+## Campaign messaging
+
+SMS and WhatsApp campaigns live under `/campaign/sms` and `/campaign/whatsapp` (sidebar Campaign section). Quick Message targets Ward / Booth / Panchayati / Mandalam / Constituency, supports Telugu text and up to 5 photos, and can send now or schedule up to 3 daily IST times. Without provider credentials the app stays in dry-run mode. Details: [docs/CAMPAIGNS.md](docs/CAMPAIGNS.md).
+
 ## Phase 2
 
 The Android app is not in this repository. [docs/SYNC.md](docs/SYNC.md) describes the pull/push contract, last-write-wins by `updated_at`, the server revision counter, and how a change to an existing VoterId is merged. The Room database should use the same snake_case columns, `voter_id` as the primary key, `created_at`, `updated_at`, `revision`, `deleted_at`, and `source_id`.

@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}{{ channel_label }} · Nathavaram{% endblock %}
+{% block content %}
+<section class="issues-hero campaign-hero" aria-labelledby="campaign-title">
+  <p class="campaign-eyebrow">Campaign</p>
+  <div class="issues-hero-head">
+    <div>
+      <h1 id="campaign-title">{{ channel_label }}</h1>
+      <p class="lede">Send and track {{ channel_label }} campaigns.</p>
+    </div>
+    {% if provider_mode == "dry_run" %}
+    <p class="provider-badge" title="Provider credentials are not configured">Dry-run mode</p>
+    {% endif %}
+  </div>
+  <div class="issue-cards" aria-label="Delivery summary">
+    {% for card in kpis %}
+    <div class="issue-card campaign-kpi" data-kpi="{{ card.key }}">
+      <span class="issue-card-icon" aria-hidden="true">{{ card.icon }}</span>
+      <span class="issue-card-count">{{ card.count }}</span>
+      <span class="issue-card-label">{{ card.label|upper }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card issues-card">
+  <div class="issues-card-head">
+    <h2>{{ channel_label }}</h2>
+    <button type="button" class="button" data-open-quick-message>Quick Message</button>
+  </div>
+  {% if error %}<p class="banner bad" role="alert">{{ error }}</p>{% endif %}
+  {% if notice %}<p class="banner ok">{{ notice }}</p>{% endif %}
+  {% if items %}
+  <div class="table-wrap" data-top-scroll>
+    <table class="register issues-register">
+      <thead>
+        <tr>
+          <th>S.No</th>
+          <th>From</th>
+          <th>To</th>
+          <th>Title</th>
+          <th>Message</th>
+          <th>Schedule</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in items %}
+        <tr>
+          <td data-label="S.No">{{ row.id }}</td>
+          <td data-label="From" translate="no">{{ row["from"] }}</td>
+          <td data-label="To">{{ row.to }}</td>
+          <td data-label="Title" class="issue-text">{{ row.title }}</td>
+          <td data-label="Message" class="issue-text">{{ row.message }}</td>
+          <td data-label="Schedule">{{ row.schedule }}</td>
+          <td data-label="Status"><span class="status-pill">{{ row.status }}</span></td>
+          <td data-label="Action" class="campaign-actions">
+            <a class="button ghost" href="/campaign/{{ channel }}/{{ row.id }}">View</a>
+            {% if row.send_mode == "daily" and row.status != "cancelled" %}
+              {% if row.schedule_active and row.status != "paused" %}
+              <form method="post" action="/campaign/{{ channel }}/{{ row.id }}/pause" class="inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="button ghost">Pause</button>
+              </form>
+              {% else %}
+              <form method="post" action="/campaign/{{ channel }}/{{ row.id }}/resume" class="inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="button ghost">Resume</button>
+              </form>
+              {% endif %}
+            {% endif %}
+            {% if row.status != "cancelled" %}
+            <form method="post" action="/campaign/{{ channel }}/{{ row.id }}/cancel" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="button ghost">Cancel</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/campaign/{{ channel }}/{{ row.id }}/delete" class="inline-form" onsubmit="return confirm('Delete this campaign?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="button ghost">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_count > 1 %}
+  <nav class="pager" aria-label="Campaign pages">
+    {% if page > 1 %}
+    <a class="pager-link" href="/campaign/{{ channel }}?page={{ page - 1 }}">‹</a>
+    {% endif %}
+    {% for n in range(1, page_count + 1) %}
+    <a class="pager-link{% if n == page %} is-active{% endif %}" href="/campaign/{{ channel }}?page={{ n }}">{{ n }}</a>
+    {% endfor %}
+    {% if page < page_count %}
+    <a class="pager-link" href="/campaign/{{ channel }}?page={{ page + 1 }}">›</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+  {% else %}
+  <p class="empty">No {{ channel_label }} campaigns yet. Use Quick Message to send one.</p>
+  {% endif %}
+</section>
+
+<dialog class="campaign-modal" data-quick-message-modal aria-labelledby="send-message-title">
+  <form method="dialog" class="campaign-modal-shell" data-quick-message-form>
+    <header class="campaign-modal-head">
+      <h2 id="send-message-title">Send Message</h2>
+      <button type="submit" class="campaign-modal-close" aria-label="Close" value="cancel">×</button>
+    </header>
+    <div class="campaign-modal-body">
+      <p class="banner bad" data-form-error hidden></p>
+      <label>
+        To
+        <select name="target_type" data-target-type required>
+          {% for key in target_types %}
+          <option value="{{ key }}"{% if key == "ward" %} selected{% endif %}>{{ target_labels[key] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        {{ target_labels.ward }}
+        <select name="target_values" data-target-values multiple size="6" required></select>
+      </label>
+      <p class="hint" data-match-count>Matched voters with mobile: 0</p>
+      <label>
+        Title
+        <input name="title" maxlength="200" placeholder="Title" required autocomplete="off">
+      </label>
+      <label>
+        Message
+        <textarea name="message" rows="5" maxlength="4000" placeholder="Message" required></textarea>
+      </label>
+      <div class="emoji-helper" data-emoji-helper>
+        <p class="hint">Quick insert</p>
+        <div class="emoji-row">
+          {% for sym in ["🙏", "✅", "📢", "🌺", "⭐", "🇮🇳", "·", "—", "«", "»"] %}
+          <button type="button" class="emoji-btn" data-insert="{{ sym }}">{{ sym }}</button>
+          {% endfor %}
+        </div>
+      </div>
+      <label>
+        Photos <span class="hint">(up to {{ max_photos }})</span>
+        <input type="file" name="photos" accept="image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif" multiple data-photo-input>
+      </label>
+      <fieldset class="schedule-fieldset">
+        <legend>Scheduling</legend>
+        <label class="inline-check"><input type="radio" name="send_mode" value="now" checked data-send-mode> Send now</label>
+        <label class="inline-check"><input type="radio" name="send_mode" value="daily" data-send-mode> Schedule daily</label>
+        <div class="daily-fields" data-daily-fields hidden>
+          <p class="hint">Up to {{ max_daily_times }} times per day (IST)</p>
+          <div class="daily-times" data-daily-times>
+            <input type="time" name="daily_time_1">
+            <input type="time" name="daily_time_2">
+            <input type="time" name="daily_time_3">
+          </div>
+          <label>Start date <input type="date" name="start_date"></label>
+          <label>End date <input type="date" name="end_date"></label>
+          <label class="inline-check"><input type="checkbox" name="schedule_active" value="true" checked> Schedule active</label>
+        </div>
+      </fieldset>
+    </div>
+    <footer class="campaign-modal-foot">
+      <button type="button" class="button" data-submit-message>
+        {% if channel == "whatsapp" %}Send WhatsApp Message{% else %}Send SMS{% endif %}
+      </button>
+      <button type="submit" class="button ghost" value="cancel">Close</button>
+    </footer>
+  </form>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+  window.NATHAVARAM_CAMPAIGN = {
+    channel: {{ channel|tojson }},
+    channelLabel: {{ channel_label|tojson }},
+    csrfToken: {{ csrf_token|tojson }},
+    maxPhotos: {{ max_photos }},
+    maxDailyTimes: {{ max_daily_times }},
+    targetLabels: {{ target_labels|tojson }}
+  };
+</script>
+<script src="/static/campaigns.js"></script>
+{% endblock %}
