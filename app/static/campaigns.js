@@ -1,13 +1,5 @@
 /* Quick Message modal for SMS / WhatsApp campaign pages. */
 (function () {
-  document.querySelectorAll("form[data-confirm]").forEach((form) => {
-    form.addEventListener("submit", (event) => {
-      if (!window.confirm(form.getAttribute("data-confirm"))) {
-        event.preventDefault();
-      }
-    });
-  });
-
   function configFromModal(modal) {
     if (!modal) return null;
     let labels = {};
@@ -29,7 +21,7 @@
   }
 
   const modal = document.querySelector("[data-quick-message-modal]");
-  const cfg = configFromModal(modal) || window.NATHAVARAM_CAMPAIGN;
+  const cfg = configFromModal(modal);
   if (!cfg) return;
 
   const form = document.querySelector("[data-quick-message-form]");
