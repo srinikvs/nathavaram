@@ -1,13 +1,5 @@
 /* Quick Message modal for SMS / WhatsApp campaign pages. */
 (function () {
-  document.querySelectorAll("form[data-confirm]").forEach((form) => {
-    form.addEventListener("submit", (event) => {
-      if (!window.confirm(form.getAttribute("data-confirm"))) {
-        event.preventDefault();
-      }
-    });
-  });
-
   function configFromModal(modal) {
     if (!modal) return null;
     let labels = {};
@@ -29,7 +21,7 @@
   }
 
   const modal = document.querySelector("[data-quick-message-modal]");
-  const cfg = configFromModal(modal) || window.NATHAVARAM_CAMPAIGN;
+  const cfg = configFromModal(modal);
   if (!cfg) return;
 
   const form = document.querySelector("[data-quick-message-form]");
@@ -48,6 +40,14 @@
   const valuesLabel = form.querySelector("[data-target-values-label]");
   if (!targetType || !targetValues || !submitBtn || !messageBox || !titleInput) return;
 
+  const trigger = targetValues.querySelector("[data-target-values-trigger]");
+  const summary = targetValues.querySelector("[data-target-values-summary]");
+  const menu = targetValues.querySelector("[data-target-values-menu]");
+  const optionsRoot = targetValues.querySelector("[data-target-values-options]");
+  const selectAllBtn = targetValues.querySelector("[data-select-all]");
+  const clearBtn = targetValues.querySelector("[data-clear-selection]");
+  if (!trigger || !summary || !menu || !optionsRoot) return;
+
   function csrfHeaders() {
     const headers = {};
     if (cfg.csrfToken) headers["X-CSRF-Token"] = cfg.csrfToken;
@@ -65,8 +65,88 @@
     errorBox.textContent = text;
   }
 
+  function clearChildren(node) {
+    while (node.firstChild) {
+      node.removeChild(node.firstChild);
+    }
+  }
+
+  function typeLabel() {
+    const type = targetType.value;
+    return (cfg.targetLabels && cfg.targetLabels[type]) || type;
+  }
+
+  function placeholderText() {
+    return "Select " + typeLabel() + "...";
+  }
+
   function selectedValues() {
-    return Array.from(targetValues.selectedOptions).map((opt) => opt.value);
+    return Array.from(optionsRoot.querySelectorAll('input[type="checkbox"]'))
+      .filter((box) => box.checked)
+      .map((box) => box.value);
+  }
+
+  function updateSummary() {
+    const values = selectedValues();
+    if (!values.length) {
+      summary.textContent = placeholderText();
+    } else if (values.length <= 2) {
+      summary.textContent = values.join(", ");
+    } else {
+      summary.textContent = values.length + " selected";
+    }
+  }
+
+  function isMenuOpen() {
+    return !menu.hidden;
+  }
+
+  function setMenuOpen(open) {
+    menu.hidden = !open;
+    trigger.setAttribute("aria-expanded", open ? "true" : "false");
+    targetValues.classList.toggle("is-open", open);
+  }
+
+  function closeMenu() {
+    if (isMenuOpen()) setMenuOpen(false);
+  }
+
+  function openMenu() {
+    setMenuOpen(true);
+  }
+
+  function toggleMenu() {
+    setMenuOpen(!isMenuOpen());
+  }
+
+  function onSelectionChange() {
+    updateSummary();
+    refreshCount();
+  }
+
+  function setAllChecked(checked) {
+    optionsRoot.querySelectorAll('input[type="checkbox"]').forEach((box) => {
+      box.checked = checked;
+    });
+    onSelectionChange();
+  }
+
+  function renderOptions(values) {
+    clearChildren(optionsRoot);
+    (values || []).forEach((value) => {
+      const row = document.createElement("label");
+      row.className = "multi-select-option";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = value;
+      box.addEventListener("change", onSelectionChange);
+      const text = document.createElement("span");
+      text.textContent = String(value);
+      row.appendChild(box);
+      row.appendChild(text);
+      optionsRoot.appendChild(row);
+    });
+    updateSummary();
   }
 
   function updateSubmitLabel() {
@@ -83,12 +163,13 @@
   }
 
   async function loadOptions() {
-    const type = targetType.value;
-    const label = (cfg.targetLabels && cfg.targetLabels[type]) || type;
+    const label = typeLabel();
     if (valuesLabel) valuesLabel.textContent = label;
-    targetValues.innerHTML = "";
+    closeMenu();
+    renderOptions([]);
+    updateSummary();
     const response = await fetch(
-      "/api/campaigns/" + encodeURIComponent(cfg.channel) + "/targets/" + encodeURIComponent(type),
+      "/api/campaigns/" + encodeURIComponent(cfg.channel) + "/targets/" + encodeURIComponent(targetType.value),
       { headers: csrfHeaders(), credentials: "same-origin" }
     );
     if (!response.ok) {
@@ -96,12 +177,7 @@
       return;
     }
     const data = await response.json();
-    (data.options || []).forEach((value) => {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value;
-      targetValues.appendChild(opt);
-    });
+    renderOptions(data.options || []);
     await refreshCount();
   }
 
@@ -204,14 +280,62 @@
     showError("");
     form.reset();
     const ward = form.querySelector('option[value="ward"]');
-    if (ward) ward.selected = true;
+    if (ward) {
+      ward.selected = true;
+      targetType.value = "ward";
+    }
+    closeMenu();
     updateSubmitLabel();
     loadOptions();
     if (typeof modal.showModal === "function") modal.showModal();
   });
 
+  trigger.addEventListener("click", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleMenu();
+  });
+
+  if (selectAllBtn) {
+    selectAllBtn.addEventListener("click", function (event) {
+      event.preventDefault();
+      setAllChecked(true);
+    });
+  }
+  if (clearBtn) {
+    clearBtn.addEventListener("click", function (event) {
+      event.preventDefault();
+      setAllChecked(false);
+    });
+  }
+
+  // Escape closes the dropdown first; only a later Escape closes the dialog.
+  let suppressDialogCancel = false;
+
+  document.addEventListener("click", function (event) {
+    if (!isMenuOpen()) return;
+    if (targetValues.contains && targetValues.contains(event.target)) return;
+    closeMenu();
+  });
+
+  modal.addEventListener("cancel", function (event) {
+    if (isMenuOpen() || suppressDialogCancel) {
+      event.preventDefault();
+      closeMenu();
+      suppressDialogCancel = false;
+    }
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") return;
+    if (!isMenuOpen()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressDialogCancel = true;
+    closeMenu();
+  });
+
   targetType.addEventListener("change", loadOptions);
-  targetValues.addEventListener("change", refreshCount);
   form.querySelectorAll("[data-send-mode]").forEach((input) => {
     input.addEventListener("change", updateSubmitLabel);
   });
@@ -232,5 +356,6 @@
     });
   });
 
+  updateSummary();
   updateSubmitLabel();
 })();

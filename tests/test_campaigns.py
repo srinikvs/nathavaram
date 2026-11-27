@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -285,6 +287,9 @@ def test_sms_and_whatsapp_pages_render_for_signed_in_user(campaigns):
 
 def test_campaign_list_pages_are_csp_safe_without_inline_scripts(campaigns):
     """Quick Message must work under script-src 'self' (no inline script/handlers)."""
+    _seed_voters(campaigns)
+    assert _create_campaign(campaigns, channel="sms").status_code == 201
+    assert _create_campaign(campaigns, channel="whatsapp").status_code == 201
     _web_login(campaigns)
     for path, channel in (("/campaign/sms", "sms"), ("/campaign/whatsapp", "whatsapp")):
         page = campaigns.client.get(path)
@@ -297,6 +302,13 @@ def test_campaign_list_pages_are_csp_safe_without_inline_scripts(campaigns):
         assert "NATHAVARAM_CAMPAIGN" not in html
         assert not re.search(r"\sonsubmit\s*=", html, flags=re.I), path
         assert not re.search(r"\sonclick\s*=", html, flags=re.I), path
+        assert 'data-confirm="Delete this campaign?"' in html, path
+        assert f'action="/campaign/{channel}/' in html and "/delete" in html, path
+        assert 'data-target-values-trigger' in html, path
+        assert 'data-target-values-menu' in html, path
+        assert "Select Ward..." in html
+        assert not re.search(r'<select[^>]*\bname="target_values"', html, flags=re.I), path
+        assert not re.search(r'\bsize="6"', html), path
 
         modal = re.search(
             r"<dialog\b[^>]*\bdata-quick-message-modal\b[^>]*>",
@@ -1030,3 +1042,225 @@ def test_sms_api_url_over_http_is_rejected_by_config(monkeypatch):
     monkeypatch.setenv("SMS_API_KEY", "key")
     with pytest.raises(RuntimeError, match="SMS_API_URL must use HTTPS"):
         load_settings()
+
+
+# ---- campaigns.js against fake_dom (no browser; synthetic markup only) ----
+
+NODE = shutil.which("node")
+HARNESS = Path(__file__).resolve().parent / "js" / "fake_dom.js"
+needs_node = pytest.mark.skipif(NODE is None, reason="node is not installed")
+
+
+def _run_campaign_js(body: str) -> dict:
+    script = (
+        "const h = require(process.argv[1]);\n"
+        "const flush = async (times = 8) => {\n"
+        "  for (let i = 0; i < times; i += 1) await Promise.resolve();\n"
+        "};\n"
+        "(async () => {\n"
+        "  const out = {};\n"
+        f"{body}\n"
+        "  console.log(JSON.stringify(out));\n"
+        "})().catch((err) => { console.error(err && err.stack ? err.stack : err); process.exit(1); });\n"
+    )
+    result = subprocess.run(
+        [NODE, "-e", script, str(HARNESS)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    return json.loads(result.stdout)
+
+
+@needs_node
+def test_quick_message_reads_data_attrs_and_opens_modal():
+    data = _run_campaign_js(
+        """
+        const tree = h.campaignListBody({
+          channel: 'whatsapp',
+          channelLabel: 'WhatsApp',
+          csrfToken: 'csrf-test-token',
+          maxPhotos: 5,
+          maxDailyTimes: 3,
+        });
+        const page = h.openPage(tree, {
+          path: '/campaign/whatsapp',
+          scripts: ['campaigns.js'],
+        });
+        out.before = tree.modal.showModalCalls;
+        h.click(page, tree.openBtn);
+        await flush();
+        out.after = tree.modal.showModalCalls;
+        out.channel = tree.modal.getAttribute('data-channel');
+        out.csrf = tree.modal.getAttribute('data-csrf-token');
+        out.labels = JSON.parse(tree.modal.getAttribute('data-target-labels'));
+        out.fetchUrls = page.fetchCalls.map((call) => call.url);
+        out.resetCalls = tree.form.resetCalls || 0;
+        out.openListeners = (tree.openBtn.listeners.click || []).length;
+        out.summary = tree.summary.textContent;
+        """
+    )
+
+    assert data["before"] == 0
+    assert data["after"] == 1
+    assert data["channel"] == "whatsapp"
+    assert data["csrf"] == "csrf-test-token"
+    assert data["labels"]["ward"] == "Ward"
+    assert data["resetCalls"] == 1
+    assert data["openListeners"] == 1
+    assert any("/api/campaigns/whatsapp/targets/ward" in url for url in data["fetchUrls"])
+    assert data["summary"] == "Select Ward..."
+
+
+@needs_node
+def test_target_multiselect_dropdown_opens_selects_and_submits_values():
+    data = _run_campaign_js(
+        """
+        const tree = h.campaignListBody({ channel: 'sms', csrfToken: 'csrf-drop' });
+        const page = h.openPage(tree, {
+          path: '/campaign/sms',
+          scripts: ['campaigns.js'],
+          fetch: async function (url, init) {
+            if (String(url).indexOf('/targets/') !== -1) {
+              return { ok: true, async json() { return { options: ['83', '84', '85'] }; } };
+            }
+            if (String(url).indexOf('/preview') !== -1) {
+              return { ok: true, async json() { return { with_mobile: 2 }; } };
+            }
+            if (init && init.method === 'POST') {
+              return { ok: true, async json() { return { id: 99 }; } };
+            }
+            return { ok: true, async json() { return {}; } };
+          },
+        });
+
+        h.click(page, tree.openBtn);
+        await flush();
+
+        out.menuHiddenBefore = tree.menu.hidden;
+        out.summaryEmpty = tree.summary.textContent;
+        h.click(page, tree.trigger);
+        out.menuHiddenOpen = tree.menu.hidden;
+        out.ariaExpanded = tree.trigger.getAttribute('aria-expanded');
+        const boxes = tree.multi.querySelectorAll('input[type="checkbox"]');
+        out.optionValues = boxes.map((box) => box.value);
+        out.optionCount = boxes.length;
+
+        boxes[0].checked = true;
+        h.change(page, boxes[0]);
+        await flush();
+        out.summaryOne = tree.summary.textContent;
+
+        boxes[1].checked = true;
+        h.change(page, boxes[1]);
+        await flush();
+        out.summaryTwo = tree.summary.textContent;
+
+        boxes[2].checked = true;
+        h.change(page, boxes[2]);
+        await flush();
+        out.summaryThree = tree.summary.textContent;
+
+        const match = tree.form.querySelector('[data-match-count]');
+        out.matchCount = match.textContent;
+
+        tree.titleInput.value = 'Hello';
+        tree.messageBox.value = 'Body';
+        h.click(page, tree.submitBtn);
+        await flush();
+
+        const createCall = page.fetchCalls.find(
+          (call) => call.init && call.init.method === 'POST' && String(call.url).endsWith('/api/campaigns/sms'),
+        );
+        out.createUrl = createCall ? createCall.url : null;
+        out.formData = page.formDataCalls.length
+          ? Object.fromEntries(page.formDataCalls[page.formDataCalls.length - 1].pairs)
+          : null;
+
+        h.click(page, tree.trigger);
+        out.menuHiddenAfterToggle = tree.menu.hidden;
+        h.keydown(page, tree.menu, { key: 'Escape' });
+        out.menuHiddenAfterEscape = tree.menu.hidden;
+        """
+    )
+
+    assert data["menuHiddenBefore"] is True
+    assert data["summaryEmpty"] == "Select Ward..."
+    assert data["menuHiddenOpen"] is False
+    assert data["ariaExpanded"] == "true"
+    assert data["optionValues"] == ["83", "84", "85"]
+    assert data["summaryOne"] == "83"
+    assert data["summaryTwo"] == "83, 84"
+    assert data["summaryThree"] == "3 selected"
+    assert data["matchCount"] == "Matched voters with mobile: 2"
+    assert data["createUrl"] == "/api/campaigns/sms"
+    assert data["formData"] is not None
+    assert data["formData"]["target_type"] == "ward"
+    assert json.loads(data["formData"]["target_values"]) == ["83", "84", "85"]
+    assert data["formData"]["title"] == "Hello"
+    assert data["formData"]["message"] == "Body"
+    assert data["menuHiddenAfterEscape"] is True
+
+
+@needs_node
+def test_target_type_change_resets_multiselect_placeholder_and_options():
+    data = _run_campaign_js(
+        """
+        const tree = h.campaignListBody({ channel: 'whatsapp' });
+        const page = h.openPage(tree, {
+          path: '/campaign/whatsapp',
+          scripts: ['campaigns.js'],
+          fetch: async function (url) {
+            if (String(url).indexOf('/targets/booth') !== -1) {
+              return { ok: true, async json() { return { options: ['10', '11'] }; } };
+            }
+            if (String(url).indexOf('/targets/ward') !== -1) {
+              return { ok: true, async json() { return { options: ['1', '2'] }; } };
+            }
+            return { ok: true, async json() { return { with_mobile: 0 }; } };
+          },
+        });
+
+        h.click(page, tree.openBtn);
+        await flush();
+
+        const wardBoxes = tree.multi.querySelectorAll('input[type="checkbox"]');
+        out.wardOptionCount = wardBoxes.length;
+        wardBoxes[0].checked = true;
+        h.change(page, wardBoxes[0]);
+        await flush();
+        out.afterWardSelect = tree.summary.textContent;
+
+        tree.targetType.value = 'booth';
+        const boothOpt = tree.targetType.children.find((child) => child.value === 'booth');
+        if (boothOpt) boothOpt.selected = true;
+        h.change(page, tree.targetType);
+        await flush();
+
+        out.label = tree.form.querySelector('[data-target-values-label]').textContent;
+        out.summary = tree.summary.textContent;
+        out.optionValues = tree.multi
+          .querySelectorAll('input[type="checkbox"]')
+          .map((box) => box.value);
+        out.checkedCount = tree.multi
+          .querySelectorAll('input[type="checkbox"]')
+          .filter((box) => box.checked).length;
+        """
+    )
+
+    assert data["afterWardSelect"] == "1"
+    assert data["label"] == "Booth"
+    assert data["summary"] == "Select Booth..."
+    assert data["optionValues"] == ["10", "11"]
+    assert data["checkedCount"] == 0
+
+
+def test_campaigns_js_has_no_nathavaram_campaign_fallback_or_duplicate_confirm():
+    source = (Path(__file__).resolve().parent.parent / "app" / "static" / "campaigns.js").read_text(
+        encoding="utf-8"
+    )
+    assert "NATHAVARAM_CAMPAIGN" not in source
+    assert 'form[data-confirm]' not in source
+    assert "multi-select" in source or "data-target-values-trigger" in source
